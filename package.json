@@ -1,0 +1,22 @@
+{
+  "name": "omero-pos",
+  "version": "1.0.0",
+  "description": "Omero POS — Electron desktop wrapper",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build": "tsc && electron-builder",
+    "build:win": "tsc && electron-builder --win",
+    "build:mac": "tsc && electron-builder --mac",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^22.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.0.0"
+  }
+}
