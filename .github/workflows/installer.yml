@@ -1,0 +1,58 @@
+name: Build Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Create resources directories
+        run: |
+          New-Item -ItemType Directory -Force -Path resources/backend
+          New-Item -ItemType Directory -Force -Path resources/frontend
+          New-Item -ItemType Directory -Force -Path resources/jre
+
+      - name: Download latest backend JAR
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Avesousa/omero-backend/releases/download/backend-latest/omero-backend.jar" -OutFile "resources/backend/omero-backend.jar"
+
+      - name: Download latest frontend
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Avesousa/omero/releases/download/frontend-latest/frontend.zip" -OutFile frontend.zip
+          Expand-Archive -Path frontend.zip -DestinationPath resources/frontend -Force
+
+      - name: Download JRE 21 Temurin
+        run: |
+          $jreUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jre_x64_windows_hotspot_21.0.5_11.zip"
+          Invoke-WebRequest -Uri $jreUrl -OutFile jre.zip
+          Expand-Archive -Path jre.zip -DestinationPath jre-tmp -Force
+          Move-Item jre-tmp/jdk-21.0.5+11-jre/* resources/jre/
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron app
+        run: npm run build
+
+      - name: Build NSIS installer
+        run: npx electron-builder --win --config electron-builder.config.ts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/omero-pos-setup.exe
