@@ -5,9 +5,10 @@
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "electron .",
-    "build": "tsc && electron-builder",
-    "build:win": "tsc && electron-builder --win",
-    "build:mac": "tsc && electron-builder --mac",
+    "copy:html": "cp main/splash.html dist/main/splash.html",
+    "build": "tsc && npm run copy:html && electron-builder",
+    "build:win": "tsc && npm run copy:html && electron-builder --win",
+    "build:mac": "tsc && npm run copy:html && electron-builder --mac",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
