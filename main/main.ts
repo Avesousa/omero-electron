@@ -25,6 +25,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    fullscreen: true,
     frame: false,            // No OS title bar — POS provides its own drag region
     autoHideMenuBar: true,
     webPreferences: {
