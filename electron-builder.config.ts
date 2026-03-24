@@ -11,6 +11,23 @@ const config: Configuration = {
     'dist/**/*',
     'package.json'
   ],
+  extraResources: [
+    {
+      from: 'resources/jre',
+      to: 'jre',
+      filter: ['**/*'],
+    },
+    {
+      from: 'resources/backend',
+      to: 'backend',
+      filter: ['*.jar'],
+    },
+    {
+      from: 'resources/frontend',
+      to: 'frontend',
+      filter: ['**/*'],
+    },
+  ],
   win: {
     target: [
       {
@@ -23,8 +40,11 @@ const config: Configuration = {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    createStartMenuShortcut: true,
     installerIcon: 'assets/icon.ico',
-    uninstallerIcon: 'assets/icon.ico'
+    uninstallerIcon: 'assets/icon.ico',
+    shortcutName: 'Omero POS'
   },
   mac: {
     target: [
