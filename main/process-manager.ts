@@ -3,6 +3,7 @@ import { utilityProcess, UtilityProcess } from 'electron'
 import { app } from 'electron'
 import path from 'path'
 import net from 'net'
+import { backendLogger, frontendLogger, electronLogger, makeLineHandler, getBetterStackToken } from './logger'
 
 const IS_PACKAGED = app.isPackaged
 const ROOT = IS_PACKAGED
@@ -18,11 +19,17 @@ let backendProcess: ChildProcess | null = null
 let frontendProcess: UtilityProcess | null = null
 
 export function startBackend(): void {
+  const token = getBetterStackToken()
+  const metricsArgs = token
+    ? [`-DBETTERSTACK_TOKEN=${token}`, '-DBETTERSTACK_METRICS_ENABLED=true']
+    : []
+
   backendProcess = spawn(JRE_JAVA, [
     '-Xmx256m',
     '-XX:TieredStopAtLevel=1',
     `-DOMERO_DATA_DIR=${DATA_DIR}`,
     '-Dspring.profiles.active=local',
+    ...metricsArgs,
     '-jar',
     BACKEND_JAR,
   ], {
@@ -31,9 +38,9 @@ export function startBackend(): void {
     stdio: 'pipe',
   })
 
-  backendProcess.stdout?.on('data', (d) => console.log('[backend]', d.toString().trim()))
-  backendProcess.stderr?.on('data', (d) => console.error('[backend]', d.toString().trim()))
-  backendProcess.on('exit', (code) => console.log(`[backend] exited with code ${code}`))
+  backendProcess.stdout?.on('data', makeLineHandler(backendLogger.info))
+  backendProcess.stderr?.on('data', makeLineHandler(backendLogger.error))
+  backendProcess.on('exit', (code) => electronLogger.info(`backend exited with code ${code}`))
 }
 
 export function startFrontend(): void {
@@ -49,8 +56,8 @@ export function startFrontend(): void {
     stdio: 'pipe',
   })
 
-  frontendProcess.stdout?.on('data', (d) => console.log('[frontend]', d.toString().trim()))
-  frontendProcess.stderr?.on('data', (d) => console.error('[frontend]', d.toString().trim()))
+  frontendProcess.stdout?.on('data', makeLineHandler(frontendLogger.info))
+  frontendProcess.stderr?.on('data', makeLineHandler(frontendLogger.error))
 }
 
 export async function waitForBackend(timeoutMs = 60_000): Promise<void> {

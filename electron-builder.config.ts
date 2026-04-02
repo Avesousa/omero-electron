@@ -27,6 +27,14 @@ const config: Configuration = {
       to: 'frontend',
       filter: ['**/*'],
     },
+    // Optional: bundled Better Stack token for production builds.
+    // Create resources/betterstack.token locally or in CI before building.
+    // This file is .gitignored — never commit the token.
+    {
+      from: 'resources',
+      to: '.',
+      filter: ['betterstack.token'],
+    },
   ],
   win: {
     target: [
