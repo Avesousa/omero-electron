@@ -61,6 +61,12 @@ function createMainWindow(): void {
     electronLogger.info('main window ready')
   })
 
+  // Keep POS window focused in production so OS shortcuts (Esc, etc.)
+  // are always captured by the app before Windows intercepts them.
+  if (app.isPackaged) {
+    mainWindow.on('blur', () => mainWindow?.focus())
+  }
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
