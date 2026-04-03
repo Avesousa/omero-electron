@@ -1,52 +1,16 @@
 import { BrowserWindow } from 'electron'
 
 /**
- * Numpad restriction + shortcode interception at OS level.
- *
- * IMPORTANT: This file must NOT be imported by any shared POS hook in omero/.
- * Electron-specific input restriction lives here only.
- *
- * Allowed keys:
- *   - Digits 0–9 (numpad and top row)
- *   - Enter / NumpadEnter
- *   - Backspace
- *   - Decimal point / NumpadDecimal
- *   - Numpad operators: +, -, *, /
- *   - Escape
- *   - Shortcode keys (configurable via SHORTCODE_KEYS)
- *
- * All alphabetic and other non-numeric keys are blocked.
+ * Minimal keyboard filter — only blocks F1 (opens browser help in some environments).
+ * All other keys are passed through to the renderer, which handles its own logic.
+ * OS-level key focus is maintained via the blur→focus handler in main.ts.
  */
 
-// Shortcode keys allowed through the filter (e.g. F-keys or single letters mapped to POS actions)
-const SHORTCODE_KEYS = new Set<string>([
-  'Tab', // Resumen del día
-])
-
-const ALLOWED_KEY_CODES = new Set<string>([
-  // Numpad digits
-  'Numpad0', 'Numpad1', 'Numpad2', 'Numpad3', 'Numpad4',
-  'Numpad5', 'Numpad6', 'Numpad7', 'Numpad8', 'Numpad9',
-  // Top-row digits
-  'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
-  'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
-  // Control keys
-  'NumpadEnter', 'Enter', 'Backspace', 'Escape',
-  // Some external numpads send ShiftLeft/ShiftRight for their Esc key
-  'ShiftLeft', 'ShiftRight',
-  // Numpad operators
-  'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide',
-  'NumpadDecimal', 'Period'
-])
+const BLOCKED_KEYS = new Set<string>(['F1'])
 
 export function setupKeyboardFilter(win: BrowserWindow): void {
   win.webContents.on('before-input-event', (event, input) => {
-    // Allow modifier combos (Ctrl+R for reload in dev, etc.)
-    if (input.control || input.meta || input.alt) return
-
-    const allowed = ALLOWED_KEY_CODES.has(input.code) || SHORTCODE_KEYS.has(input.code)
-
-    if (!allowed) {
+    if (BLOCKED_KEYS.has(input.code)) {
       event.preventDefault()
     }
   })

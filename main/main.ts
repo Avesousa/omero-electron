@@ -39,7 +39,7 @@ function createMainWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    kiosk: true,
+    fullscreen: true,
     frame: false,
     autoHideMenuBar: true,
     show: false,
