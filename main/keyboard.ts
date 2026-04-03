@@ -20,7 +20,7 @@ import { BrowserWindow } from 'electron'
 
 // Shortcode keys allowed through the filter (e.g. F-keys or single letters mapped to POS actions)
 const SHORTCODE_KEYS = new Set<string>([
-  // Add shortcode keyCodes here as needed, e.g.: 'KeyV' for "ventas", 'F1', 'F2' ...
+  'F1', // Resumen del día
 ])
 
 const ALLOWED_KEY_CODES = new Set<string>([
