@@ -43,6 +43,14 @@ export function setupKeyboardFilter(win: BrowserWindow): void {
     if (input.control || input.meta || input.alt) return
 
     const allowed = ALLOWED_KEY_CODES.has(input.code) || SHORTCODE_KEYS.has(input.code)
+
+    // DEBUG: log every key so we can identify unknown keycodes from external numpad
+    // TODO: remove after debugging numpad ESC key
+    win.webContents.executeJavaScript(
+      `console.log('[keyboard filter] code="${input.code}" key="${input.key}" allowed=${allowed}')`,
+      true
+    ).catch(() => {})
+
     if (!allowed) {
       event.preventDefault()
     }

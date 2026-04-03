@@ -59,6 +59,9 @@ function createMainWindow(): void {
     splashWindow = null
     mainWindow?.show()
     electronLogger.info('main window ready')
+    // DEBUG: open DevTools detached to inspect key events from external numpad
+    // TODO: remove after debugging
+    mainWindow?.webContents.openDevTools({ mode: 'detach' })
   })
 
   // Keep POS window focused in production so OS shortcuts (Esc, etc.)
