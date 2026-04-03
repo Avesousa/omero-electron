@@ -32,6 +32,8 @@ const ALLOWED_KEY_CODES = new Set<string>([
   'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
   // Control keys
   'NumpadEnter', 'Enter', 'Backspace', 'Escape',
+  // Some external numpads send ShiftLeft/ShiftRight for their Esc key
+  'ShiftLeft', 'ShiftRight',
   // Numpad operators
   'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide',
   'NumpadDecimal', 'Period'
@@ -43,13 +45,6 @@ export function setupKeyboardFilter(win: BrowserWindow): void {
     if (input.control || input.meta || input.alt) return
 
     const allowed = ALLOWED_KEY_CODES.has(input.code) || SHORTCODE_KEYS.has(input.code)
-
-    // DEBUG: log every key so we can identify unknown keycodes from external numpad
-    // TODO: remove after debugging numpad ESC key
-    win.webContents.executeJavaScript(
-      `console.log('[keyboard filter] code="${input.code}" key="${input.key}" allowed=${allowed}')`,
-      true
-    ).catch(() => {})
 
     if (!allowed) {
       event.preventDefault()
