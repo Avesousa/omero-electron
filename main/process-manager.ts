@@ -49,7 +49,6 @@ export function startFrontend(): void {
     cwd: FRONTEND_DIR,
     env: {
       NODE_ENV: 'production',
-      NEXT_PUBLIC_API_URL: 'http://localhost:8080',
       PORT: '3000',
       HOSTNAME: '127.0.0.1',
     },
