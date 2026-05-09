@@ -18,21 +18,17 @@ const DATA_DIR = path.join(app.getPath('userData'), 'data')
 let backendProcess: ChildProcess | null = null
 let frontendProcess: UtilityProcess | null = null
 
-export function startBackend(lanAccess = false): void {
+export function startBackend(): void {
   const token = getBetterStackToken()
   const metricsArgs = token
     ? [`-DBETTERSTACK_TOKEN=${token}`, '-DBETTERSTACK_METRICS_ENABLED=true']
     : []
-  const corsArg = lanAccess
-    ? '-DCORS_ALLOWED_ORIGINS=*'
-    : '-DCORS_ALLOWED_ORIGINS=http://localhost:3000,file://'
 
   backendProcess = spawn(JRE_JAVA, [
     '-Xmx256m',
     '-XX:TieredStopAtLevel=1',
     `-DOMERO_DATA_DIR=${DATA_DIR}`,
     '-Dspring.profiles.active=local',
-    corsArg,
     ...metricsArgs,
     '-jar',
     BACKEND_JAR,
@@ -47,14 +43,14 @@ export function startBackend(lanAccess = false): void {
   backendProcess.on('exit', (code) => electronLogger.info(`backend exited with code ${code}`))
 }
 
-export function startFrontend(lanAccess = false): void {
+export function startFrontend(): void {
   const serverJs = path.join(FRONTEND_DIR, 'server.js')
   frontendProcess = utilityProcess.fork(serverJs, [], {
     cwd: FRONTEND_DIR,
     env: {
       NODE_ENV: 'production',
       PORT: '3000',
-      HOSTNAME: lanAccess ? '0.0.0.0' : '127.0.0.1',
+      HOSTNAME: '127.0.0.1',
     },
     stdio: 'pipe',
   })

@@ -3,7 +3,6 @@ import path from 'path'
 import { setupKeyboardFilter } from './keyboard'
 import { POS_URL } from './config'
 import { startBackend, startFrontend, waitForBackend, stopAll, isPortFree } from './process-manager'
-import { readSetupConfig, writeSetupConfig } from './setup-config'
 import { initLogger, electronLogger, flushLogs } from './logger'
 
 import { autoUpdater } from 'electron-updater'
@@ -102,24 +101,8 @@ app.on('ready', async () => {
     return
   }
 
-  let setupConfig = readSetupConfig()
-  if (setupConfig === null) {
-    const { response } = await dialog.showMessageBox({
-      type: 'question',
-      title: 'Configuración de red',
-      message: '¿Permitir acceso desde otros dispositivos en la red local?',
-      detail: 'Si activás esta opción, otros dispositivos conectados a la misma red Wi-Fi podrán acceder al sistema.',
-      buttons: ['No, solo este equipo', 'Sí, permitir acceso desde la red'],
-      defaultId: 0,
-      cancelId: 0,
-    })
-    setupConfig = { lanAccess: response === 1 }
-    writeSetupConfig(setupConfig)
-  }
-
-  const lanAccess = setupConfig.lanAccess
-  startBackend(lanAccess)
-  startFrontend(lanAccess)
+  startBackend()
+  startFrontend()
 
   try {
     await waitForBackend()
