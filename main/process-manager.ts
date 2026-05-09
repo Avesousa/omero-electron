@@ -50,7 +50,7 @@ export function startFrontend(): void {
     env: {
       NODE_ENV: 'production',
       PORT: '3000',
-      HOSTNAME: '0.0.0.0',
+      HOSTNAME: '127.0.0.1',
     },
     stdio: 'pipe',
   })
