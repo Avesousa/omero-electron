@@ -11,6 +11,7 @@ export type CatalogRoute =
   | { kind: 'products' } // GET /api/products (lista completa, sin query)
   | { kind: 'product'; code: string } // GET /api/products/{code}
   | { kind: 'promotions' } // GET /api/promotions (lista completa, sin query)
+  | { kind: 'setting'; key: string } // GET /api/business/config/{key} (p. ej. mp_offline)
 
 /** Metadatos del último snapshot exitoso de un recurso. */
 export interface CatalogMeta {
@@ -57,6 +58,9 @@ export interface CatalogStore {
   /** Busca por código → código de barras → id (mismo orden que `findProductByCode` del POS). */
   findProduct(code: string): string | null
   getMeta(resource: CatalogResource): CatalogMeta | null
+  /** Configuración de negocio cacheada (JSON crudo del backend) y cuándo se sincronizó. */
+  getSetting(key: string): { json: string; syncedAt: string } | null
+  upsertSetting(key: string, json: string, now?: Date): void
   close(): void
   /** Cierra y borra los archivos de la base (.sqlite, -wal, -shm). */
   wipe(): void

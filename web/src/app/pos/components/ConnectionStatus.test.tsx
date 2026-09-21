@@ -99,3 +99,51 @@ describe('<ConnectionStatus />', () => {
     expect(screen.getByText(/Sin conexión/).getAttribute('title')).toBeNull()
   })
 })
+
+describe('<ConnectionStatus /> con outbox', () => {
+  it('con conexión y solo para revisar: muestra "N para revisar" y abre la lista', () => {
+    const onOpenList = vi.fn()
+    render(<ConnectionStatus status={status()} pendingCount={0} reviewCount={2} onOpenList={onOpenList} />)
+    fireEvent.click(screen.getByRole('button', { name: '2 para revisar' }))
+    expect(onOpenList).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/pendiente/)).not.toBeInTheDocument()
+  })
+
+  it('pendientes y para revisar juntos, ambos abren la lista', () => {
+    const onOpenList = vi.fn()
+    render(<ConnectionStatus status={status()} pendingCount={3} reviewCount={1} onOpenList={onOpenList} />)
+    fireEvent.click(screen.getByRole('button', { name: '3 pendientes sin sync' }))
+    fireEvent.click(screen.getByRole('button', { name: '1 para revisar' }))
+    expect(onOpenList).toHaveBeenCalledTimes(2)
+  })
+
+  it('sin onOpenList los avisos no son clicables', () => {
+    render(<ConnectionStatus status={status()} pendingCount={1} reviewCount={1} />)
+    expect(screen.getByRole('button', { name: '1 pendiente sin sync' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '1 para revisar' })).toBeDisabled()
+  })
+
+  it('sesión vencida con pendientes: explica que hay que iniciar sesión', () => {
+    render(<ConnectionStatus status={status()} pendingCount={2} syncBlock="unauthorized" />)
+    expect(screen.getByTestId('sync-blocked')).toHaveTextContent('Sesión vencida')
+  })
+
+  it('backend sin soporte con pendientes: lo indica; sin pendientes no muestra el bloqueo', () => {
+    const { rerender } = render(<ConnectionStatus status={status()} pendingCount={1} syncBlock="unsupported" />)
+    expect(screen.getByTestId('sync-blocked')).toHaveTextContent('aún no acepta')
+    rerender(<ConnectionStatus status={status({ online: false })} pendingCount={0} syncBlock="unsupported" />)
+    expect(screen.queryByTestId('sync-blocked')).not.toBeInTheDocument()
+  })
+
+  it('en web no se muestra nada aunque haya outbox', () => {
+    const { container } = render(<ConnectionStatus status={status({ runtime: 'web' })} pendingCount={2} reviewCount={2} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('el botón Actualizar sigue solo verificando la conexión', () => {
+    const s = status()
+    render(<ConnectionStatus status={s} pendingCount={1} reviewCount={1} />)
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar/ }))
+    expect(s.check).toHaveBeenCalledTimes(1)
+  })
+})

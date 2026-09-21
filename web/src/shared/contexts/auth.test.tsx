@@ -5,7 +5,12 @@ const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 const wipeLocalCatalogCache = vi.fn()
-vi.mock('@/lib/localCache', () => ({ wipeLocalCatalogCache: () => wipeLocalCatalogCache() }))
+const pendingOutboxCount = vi.fn(async () => 0)
+vi.mock('@/lib/localCache', () => ({
+  wipeLocalCatalogCache: () => wipeLocalCatalogCache(),
+  pendingOutboxCount: () => pendingOutboxCount(),
+  logoutWarning: (n: number) => `aviso ${n}`,
+}))
 
 const clearSession = vi.fn()
 vi.mock('@/lib/sessionManager', () => ({
@@ -31,6 +36,8 @@ beforeEach(() => {
   push.mockClear()
   clearSession.mockClear()
   wipeLocalCatalogCache.mockClear()
+  pendingOutboxCount.mockReset()
+  pendingOutboxCount.mockResolvedValue(0)
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -46,6 +53,41 @@ describe('AuthProvider.logout', () => {
     expect(wipeLocalCatalogCache.mock.invocationCallOrder[0]).toBeLessThan(clearSession.mock.invocationCallOrder.at(-1)!)
     expect(push).toHaveBeenCalledWith('/login')
     expect(screen.getByRole('button', { name: 'anónimo' })).toBeInTheDocument()
+  })
+})
+
+describe('AuthProvider.logout con ventas/gastos sin subir (outbox)', () => {
+  const click = async () => {
+    render(<AuthProvider><LogoutButton /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'salir' }).click() })
+  }
+
+  it('avisa y, si el cajero confirma, cierra sesión (el outbox no se borra: solo se limpia la caché de catálogo)', async () => {
+    pendingOutboxCount.mockResolvedValue(3)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await click()
+    expect(confirm).toHaveBeenCalledWith('aviso 3')
+    expect(wipeLocalCatalogCache).toHaveBeenCalledTimes(1)
+    expect(clearSession).toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/login')
+  })
+
+  it('si el cajero cancela, NO cierra sesión ni borra nada', async () => {
+    pendingOutboxCount.mockResolvedValue(2)
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await click()
+    expect(wipeLocalCatalogCache).not.toHaveBeenCalled()
+    expect(clearSession).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'salir' })).toBeInTheDocument()
+  })
+
+  it('sin pendientes no pregunta nada', async () => {
+    const confirm = vi.spyOn(window, 'confirm')
+    await click()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/login')
   })
 })
 

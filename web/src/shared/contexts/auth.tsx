@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { useRouter } from 'next/navigation'
 import { postLogin } from '@/shared/services/authService'
 import { setSession, clearSession, getSessionUser } from '@/lib/sessionManager'
-import { wipeLocalCatalogCache } from '@/lib/localCache'
+import { logoutWarning, pendingOutboxCount, wipeLocalCatalogCache } from '@/lib/localCache'
 import type { AuthContextValue, AuthState, LoginCredentials } from '@/shared/types/auth'
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -60,10 +60,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router])
 
   const logout = useCallback(() => {
-    wipeLocalCatalogCache() // desktop: borra la caché SQLite del tenant (antes de limpiar el token). Solo logout explícito.
-    clearSession()
-    setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
-    router.push('/login')
+    void (async () => {
+      // Desktop: si hay ventas/gastos sin subir se avisa (NO se borran: el outbox sobrevive al logout y se sube al
+      // volver a iniciar sesión con conexión).
+      const pending = await pendingOutboxCount()
+      if (pending > 0 && typeof window !== 'undefined' && !window.confirm(logoutWarning(pending))) return
+      wipeLocalCatalogCache() // desktop: borra la caché SQLite del tenant (antes de limpiar el token). Solo logout explícito.
+      clearSession()
+      setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
+      router.push('/login')
+    })()
   }, [router])
 
   return (

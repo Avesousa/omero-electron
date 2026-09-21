@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LATEST_SCHEMA_VERSION } from './migrations'
+import { LATEST_SCHEMA_VERSION, MIGRATIONS } from './migrations'
 import { resolveDbPath, SqliteCatalogStore, wipeTenantFiles } from './sqlite-store'
 
 const TENANT = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
@@ -235,6 +235,42 @@ describe('promociones', () => {
     const s = open()
     s.replaceProducts([product(1, '001')])
     expect(s.getMeta('promotions')).toBeNull()
+  })
+})
+
+describe('settings (configuración de negocio)', () => {
+  it('guarda y lee el JSON crudo con la fecha del sync; upsert reemplaza', () => {
+    const s = open()
+    expect(s.getSetting('mp_offline')).toBeNull()
+    s.upsertSetting('mp_offline', '{"key":"mp_offline","value":"false"}', new Date('2026-01-01T10:00:00Z'))
+    expect(s.getSetting('mp_offline')).toEqual({ json: '{"key":"mp_offline","value":"false"}', syncedAt: '2026-01-01T10:00:00.000Z' })
+    s.upsertSetting('mp_offline', '{"key":"mp_offline","value":"true"}', new Date('2026-01-01T10:05:00Z'))
+    expect(JSON.parse(s.getSetting('mp_offline')!.json).value).toBe('true')
+  })
+
+  it('las claves son independientes y no afectan a products/promotions', () => {
+    const s = open()
+    s.upsertSetting('a', '{"v":1}')
+    s.upsertSetting('b', '{"v":2}')
+    expect(s.getSetting('a')!.json).toBe('{"v":1}')
+    expect(s.getMeta('products')).toBeNull()
+  })
+
+  it('una base v1 (sin settings) migra a v2 conservando productos y promociones', () => {
+    const file = path.join(dir, `${TENANT}.sqlite`)
+    const v1 = new Database(file)
+    v1.exec(MIGRATIONS[0].sql)
+    v1.pragma('user_version = 1')
+    v1.prepare('INSERT INTO products (id, code, barcode, json) VALUES (?, ?, ?, ?)').run('1', '001', null, '{"id":1,"code":"001"}')
+    v1.close()
+
+    const s = open()
+    expect(s.getProducts()).toEqual(['{"id":1,"code":"001"}'])
+    s.upsertSetting('mp_offline', '{}')
+    expect(s.getSetting('mp_offline')).not.toBeNull()
+    const raw = new Database(file, { readonly: true })
+    expect(raw.pragma('user_version', { simple: true })).toBe(LATEST_SCHEMA_VERSION)
+    raw.close()
   })
 })
 

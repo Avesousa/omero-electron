@@ -8,6 +8,8 @@ interface PaymentModalProps {
   paymentState: PaymentState
   total: number
   mpConnected: boolean
+  /** Desktop sin conexión y sin `mp_offline`: el cobro con MercadoPago no está permitido. */
+  mpDisabled?: boolean
   onSelectMethod: (method: 'mercadopago' | 'cash') => void
   onConfirmPayment: () => void
   onBack: () => void
@@ -20,6 +22,7 @@ export const PaymentModal = ({
   paymentState,
   total,
   mpConnected,
+  mpDisabled = false,
   onSelectMethod,
   onConfirmPayment,
   onBack,
@@ -152,10 +155,13 @@ export const PaymentModal = ({
             <div className="grid grid-cols-2 gap-6">
               <button
                 onClick={() => onSelectMethod('mercadopago')}
-                className="bg-blue-600 border-4 border-blue-400 text-white font-bold py-8 px-6 text-xl hover:bg-blue-700 transition-colors"
+                disabled={mpDisabled}
+                title={mpDisabled ? 'MercadoPago no está habilitado sin conexión' : undefined}
+                className="bg-blue-600 border-4 border-blue-400 text-white font-bold py-8 px-6 text-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
               >
                 <div className="text-4xl mb-2">💳</div>
                 <div>1 - {STRINGS.PAYMENT_MERCADOPAGO}</div>
+                {mpDisabled && <div className="text-sm font-normal mt-2" data-testid="mp-disabled-msg">No disponible sin conexión</div>}
               </button>
               
               <button

@@ -44,6 +44,10 @@ export function applyCatalogPayload(store: CatalogStore, route: CatalogRoute, te
       if (!isProduct(data)) return false
       store.upsertProduct(data)
       return true
+    case 'setting':
+      if (!isObject(data)) return false
+      store.upsertSetting(route.key, JSON.stringify(data))
+      return true
   }
 }
 

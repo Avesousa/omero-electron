@@ -1,0 +1,827 @@
+{
+  "project": "omero-electron (+ omero-backend + omero)",
+  "feature": "pos-offline-outbox",
+  "ticket_id": null,
+  "raw_input": "Fase 3 — outbox de ventas y gastos offline con sincronización asíncrona (cruza omero-electron, omero-backend y omero; base develop)",
+  "type": "feature",
+  "branch": "feature/pos-offline-outbox",
+  "main_branch": "develop",
+  "repos": {
+    "omero-electron": "feature/pos-offline-outbox",
+    "omero-backend": "feature/pos-offline-outbox (a crear desde develop)",
+    "omero": "feature/pos-offline-outbox (a crear desde develop)"
+  },
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "build-done",
+  "created_at": "2026-09-21T00:00:00Z",
+  "updated_at": "2026-09-21T17:03:57Z",
+  "git": true,
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "done",
+    "build": "done",
+    "finish": "pending"
+  },
+  "open_questions": [],
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 0,
+      "repo": "backend",
+      "description": "[backend] Rama en omero-backend y línea base de tests",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T004",
+        "T005",
+        "T006"
+      ],
+      "done_when": "Rama creada desde develop; `./mvnw test` corre y se registra el resultado base (verde o la lista de tests ya rotos).",
+      "complexity": "S",
+      "files_affected": [
+        "(omero-backend) —"
+      ],
+      "started_at": "2026-09-21T15:47:58Z",
+      "completed_at": "2026-09-21T15:51:08Z",
+      "files_modified": [
+        "(omero-backend) rama feature/pos-offline-outbox; baseline 94 tests OK"
+      ]
+    },
+    {
+      "id": "T002",
+      "phase": 0,
+      "repo": "backend",
+      "description": "[backend] Migración V17 y campos de entidades",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`./mvnw test` sigue verde con la migración aplicada sobre Postgres; una prueba manual/automática confirma el backfill del snapshot y que borrar un producto deja el ítem con `product_id NULL`.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) src/main/resources/db/migration/V17__sales_outbox_review.sql",
+        "(omero-backend) model/Sale.java",
+        "model/SaleItem.java",
+        "model/Expense.java"
+      ],
+      "started_at": "2026-09-21T15:53:36Z",
+      "completed_at": "2026-09-21T15:56:45Z",
+      "files_modified": [
+        "(omero-backend) db/migration/V17__sales_outbox_review.sql",
+        "model/Sale.java",
+        "model/SaleItem.java",
+        "model/Expense.java",
+        "model/SaleReviewStatus.java",
+        "service/SaleService.java",
+        "test/BusinessConfigControllerTest.java"
+      ]
+    },
+    {
+      "id": "T003",
+      "phase": 1,
+      "repo": "backend",
+      "description": "[backend] Blindar los consumidores de `item.getProduct()`",
+      "status": "done",
+      "depends_on": [
+        "T002"
+      ],
+      "can_parallelize_with": [
+        "T004"
+      ],
+      "done_when": "Con una venta con ítem huérfano, `GET /api/sales`, dashboard, stats y reportes responden 200 y el ítem cae en \"Sin identificar\" (verificado en T021); el código compila y los tests existentes pasan.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) model/SaleItem.java",
+        "dto/SaleItemResponseDto.java",
+        "dto/SaleResponseDto.java",
+        "service/DashboardService.java",
+        "service/StatsService.java",
+        "service/ReportService.java",
+        "service/PromotionService.java"
+      ],
+      "started_at": "2026-09-21T15:56:45Z",
+      "completed_at": "2026-09-21T15:59:56Z",
+      "files_modified": [
+        "(omero-backend) model/SaleItem.java",
+        "dto/SaleItemResponseDto.java",
+        "dto/SaleResponseDto.java",
+        "model/ReviewReasons.java",
+        "service/DashboardService.java",
+        "service/StatsService.java",
+        "service/ReportService.java",
+        "service/PromotionService.java"
+      ]
+    },
+    {
+      "id": "T004",
+      "phase": 1,
+      "repo": "POS",
+      "description": "[POS] Outbox SQLite: esquema, migraciones y `OutboxStore`",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001",
+        "T005",
+        "T006"
+      ],
+      "done_when": "Con archivos temporales: enqueue/lecturas/transiciones/purga funcionan, `client_id` es único, el orden es por `seq`, y una base corrupta se aparta sin perder el archivo; `tsc` OK.",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/outbox/outbox-store.ts",
+        "web/src/lib/outbox/outbox-migrations.ts",
+        "web/src/lib/outbox/outbox-registry.ts",
+        "web/src/lib/outbox/types.ts"
+      ],
+      "started_at": "2026-09-21T15:48:32Z",
+      "completed_at": "2026-09-21T15:51:29Z",
+      "files_modified": [
+        "web/src/lib/outbox/types.ts",
+        "web/src/lib/outbox/outbox-migrations.ts",
+        "web/src/lib/outbox/outbox-store.ts",
+        "web/src/lib/outbox/outbox-registry.ts",
+        "web/src/lib/catalog/store-registry.ts"
+      ]
+    },
+    {
+      "id": "T005",
+      "phase": 1,
+      "repo": "POS",
+      "description": "[POS] Caché de `settings` (mp_offline) en la caché del catálogo",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001",
+        "T004",
+        "T006"
+      ],
+      "done_when": "Online el valor de `mp_offline` queda cacheado; sin conexión se sirve desde SQLite; una base v1 se migra a v2 sin perder productos/promociones.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/catalog/migrations.ts",
+        "web/src/lib/catalog/sqlite-store.ts",
+        "web/src/lib/catalog/types.ts",
+        "web/src/lib/catalog/cache-policy.ts",
+        "web/src/lib/catalog/catalog-proxy.ts",
+        "web/src/lib/catalog/snapshot.ts"
+      ],
+      "started_at": "2026-09-21T15:52:01Z",
+      "completed_at": "2026-09-21T15:52:45Z",
+      "files_modified": [
+        "web/src/lib/catalog/migrations.ts",
+        "web/src/lib/catalog/types.ts",
+        "web/src/lib/catalog/sqlite-store.ts",
+        "web/src/lib/catalog/cache-policy.ts",
+        "web/src/lib/catalog/snapshot.ts",
+        "web/src/lib/catalog/catalog-proxy.ts",
+        "web/src/lib/catalog/syncer.ts"
+      ]
+    },
+    {
+      "id": "T006",
+      "phase": 1,
+      "repo": "admin",
+      "description": "[admin] Rama en omero (admin) y tipos/API de revisión",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001",
+        "T004",
+        "T005"
+      ],
+      "done_when": "Rama creada; los tipos y helpers compilan (`tsc`).",
+      "complexity": "S",
+      "files_affected": [
+        "(omero) src/shared/types/salesReview.ts",
+        "src/lib/salesReviewApi.ts"
+      ],
+      "started_at": "2026-09-21T15:52:58Z",
+      "completed_at": "2026-09-21T15:53:28Z",
+      "files_modified": [
+        "(omero) rama feature/pos-offline-outbox",
+        "src/shared/types/salesReview.ts",
+        "src/lib/salesReviewApi.ts"
+      ]
+    },
+    {
+      "id": "T007",
+      "phase": 2,
+      "repo": "backend",
+      "description": "[backend] Servicio de sincronización por lotes (`SyncBatchService`)",
+      "status": "done",
+      "depends_on": [
+        "T002",
+        "T003"
+      ],
+      "can_parallelize_with": [
+        "T009"
+      ],
+      "done_when": "Verificado por T020: `CREATED`, `DUPLICATE` (sin duplicar ni volver a descontar), lote mixto, fechas, producto faltante, stock piso 0, MP PENDING.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) dto/sync/*",
+        "service/SyncBatchService.java",
+        "service/SyncItemProcessor.java",
+        "service/SaleService.java",
+        "service/ExpenseService.java"
+      ],
+      "started_at": "2026-09-21T16:00:31Z",
+      "completed_at": "2026-09-21T16:07:24Z",
+      "files_modified": []
+    },
+    {
+      "id": "T008",
+      "phase": 2,
+      "repo": "backend",
+      "description": "[backend] `SyncController` `POST /api/sync/batch` con validación y límites",
+      "status": "done",
+      "depends_on": [
+        "T007"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "El endpoint responde el contrato de la tech-spec; excesos de tamaño/validación devuelven 400; el tenant sale del JWT.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) controller/SyncController.java",
+        "config/SecurityConfig.java (si aplica)"
+      ],
+      "completed_at": "2026-09-21T16:11:27Z",
+      "files_modified": [
+        "omero-backend/controller/SyncController.java",
+        "omero-backend/test/SyncControllerTest.java"
+      ]
+    },
+    {
+      "id": "T009",
+      "phase": 2,
+      "repo": "backend",
+      "description": "[backend] Endpoints de revisión para el admin",
+      "status": "done",
+      "depends_on": [
+        "T002",
+        "T003"
+      ],
+      "can_parallelize_with": [
+        "T007"
+      ],
+      "done_when": "Los cuatro endpoints funcionan y respetan tenant y rol (verificado en T021).",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) controller/SaleReviewController.java",
+        "service/SaleReviewService.java",
+        "dto/review/*",
+        "repository/SaleRepository.java"
+      ],
+      "completed_at": "2026-09-21T16:16:46Z",
+      "files_modified": [
+        "omero-backend/SaleReviewController",
+        "omero-backend/SaleReviewService",
+        "omero-backend/dto/review",
+        "omero-backend/SaleRepository",
+        "omero-backend/SaleReviewControllerTest",
+        "omero/salesReview.ts"
+      ]
+    },
+    {
+      "id": "T010",
+      "phase": 2,
+      "repo": "POS",
+      "description": "[POS] `OutboxSender`: lotes, backoff y estados",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T012",
+        "T014"
+      ],
+      "done_when": "Con timers falsos y backend falso: secuencia de backoff exacta, un lote a la vez, transiciones de estado correctas, reanudación con token nuevo (verificado en T022/T023).",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/outbox/outbox-sender.ts",
+        "web/src/lib/catalog/syncer.ts"
+      ],
+      "started_at": "2026-09-21T16:16:46Z",
+      "completed_at": "2026-09-21T16:19:56Z",
+      "files_modified": [
+        "web/src/lib/outbox/outbox-sender.ts",
+        "web/src/lib/outbox/outbox-sender.test.ts",
+        "web/src/lib/catalog/syncer.ts",
+        "web/src/lib/catalog/syncer.test.ts"
+      ]
+    },
+    {
+      "id": "T011",
+      "phase": 2,
+      "repo": "POS",
+      "description": "[POS] Intercepción de `POST /api/sales` y `/api/expenses` (desktop)",
+      "status": "done",
+      "depends_on": [
+        "T004",
+        "T010"
+      ],
+      "can_parallelize_with": [
+        "T013"
+      ],
+      "done_when": "Desktop: 201 inmediato + fila en el outbox; web y degradación: pass-through; el resto de rutas sin cambios (verificado en T023).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/outbox/outbox-proxy.ts",
+        "web/src/lib/data-layer.ts"
+      ],
+      "started_at": "2026-09-21T16:19:56Z",
+      "completed_at": "2026-09-21T16:21:36Z",
+      "files_modified": [
+        "web/src/lib/outbox/outbox-proxy.ts",
+        "web/src/lib/outbox/outbox-proxy.test.ts",
+        "web/src/lib/data-layer.ts",
+        "web/src/lib/catalog/tenant.ts"
+      ]
+    },
+    {
+      "id": "T012",
+      "phase": 2,
+      "repo": "POS",
+      "description": "[POS] Stock mostrado = backend − pendientes (`stock-adjust`)",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T010",
+        "T014"
+      ],
+      "done_when": "Con ventas pendientes el stock del catálogo baja en esa cantidad (piso 0) y deja de descontarse cuando un snapshot posterior lo incluye (verificado en T022/T023).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/outbox/stock-adjust.ts",
+        "web/src/lib/catalog/catalog-proxy.ts"
+      ],
+      "started_at": "2026-09-21T16:21:36Z",
+      "completed_at": "2026-09-21T16:22:48Z",
+      "files_modified": [
+        "web/src/lib/outbox/stock-adjust.ts",
+        "web/src/lib/outbox/stock-adjust.test.ts",
+        "web/src/lib/catalog/catalog-proxy.ts"
+      ]
+    },
+    {
+      "id": "T013",
+      "phase": 2,
+      "repo": "POS",
+      "description": "[POS] Endpoints locales del outbox",
+      "status": "done",
+      "depends_on": [
+        "T004",
+        "T010"
+      ],
+      "can_parallelize_with": [
+        "T011"
+      ],
+      "done_when": "Los endpoints responden con el contrato de la tech-spec y respetan el aislamiento por tenant.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/api/%5Flocal/outbox/route.ts",
+        "web/src/app/api/%5Flocal/outbox/import/route.ts",
+        "web/src/app/api/%5Flocal/outbox/[clientId]/dismiss/route.ts",
+        "web/src/app/api/%5Flocal/connectivity/route.ts"
+      ],
+      "started_at": "2026-09-21T16:22:48Z",
+      "completed_at": "2026-09-21T16:24:57Z",
+      "files_modified": [
+        "web/src/lib/outbox/local-api.ts",
+        "web/src/app/api/_local/outbox routes",
+        "web/src/app/api/_local/connectivity/route.ts",
+        "web/src/lib/outbox/local-api.test.ts"
+      ]
+    },
+    {
+      "id": "T014",
+      "phase": 2,
+      "repo": "POS",
+      "description": "[POS] Importación de la cola vieja de `localStorage`",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T010",
+        "T012"
+      ],
+      "done_when": "Importar dos veces la misma cola no duplica; los ítems quedan `PENDING` con su fecha original.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/outbox/legacy-import.ts"
+      ],
+      "completed_at": "2026-09-21T16:24:58Z",
+      "files_modified": [
+        "web/src/lib/outbox/legacy-import.ts",
+        "web/src/lib/outbox/legacy-import.test.ts",
+        "web/src/lib/outbox/outbox-proxy.ts"
+      ]
+    },
+    {
+      "id": "T015",
+      "phase": 3,
+      "repo": "POS",
+      "description": "[POS] Cliente POS: `useSales`, `useExpenses`, `useOfflineQueue`",
+      "status": "done",
+      "depends_on": [
+        "T011",
+        "T014"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Desktop: la venta se confirma al instante y aparece en el contador del outbox; web: sin encolado local y error visible si falla; la cola vieja se importa una sola vez.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/pos/hooks/useSales.ts",
+        "web/src/app/pos/hooks/useOfflineQueue.ts",
+        "web/src/app/pos/hooks/useExpenses.ts",
+        "web/src/lib/purchaseQueueStorage.ts"
+      ],
+      "completed_at": "2026-09-21T16:27:52Z",
+      "files_modified": [
+        "web/src/app/pos/hooks/useSales.ts",
+        "web/src/app/pos/hooks/useOfflineQueue.ts",
+        "web/src/app/pos/page.tsx",
+        "web/src/app/pos/hooks/__tests__/legacyQueue.test.ts",
+        "web/src/app/pos/hooks/__tests__/useSales.test.ts"
+      ]
+    },
+    {
+      "id": "T016",
+      "phase": 3,
+      "repo": "POS",
+      "description": "[POS] UI del POS: pendientes, revisión, MP offline y logout",
+      "status": "done",
+      "depends_on": [
+        "T013",
+        "T015",
+        "T005"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Las tres vistas funcionan en desktop; en web el header queda como hoy; el botón MP respeta `mp_offline` (verificado en T024).",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/app/pos/hooks/useOutboxStatus.ts",
+        "web/src/app/pos/hooks/useBusinessConfig.ts",
+        "web/src/app/pos/components/ConnectionStatus.tsx",
+        "web/src/app/pos/components/OutboxListModal.tsx",
+        "web/src/app/pos/components/modals/PaymentModal.tsx",
+        "web/src/shared/contexts/auth.tsx"
+      ],
+      "started_at": "2026-09-21T16:27:52Z",
+      "completed_at": "2026-09-21T16:31:13Z",
+      "files_modified": [
+        "web/src/app/pos/hooks/useOutboxStatus.ts",
+        "web/src/app/pos/hooks/useBusinessConfig.ts",
+        "web/src/app/pos/components/ConnectionStatus.tsx",
+        "web/src/app/pos/components/OutboxListModal.tsx",
+        "web/src/app/pos/components/modals/PaymentModal.tsx",
+        "web/src/app/pos/page.tsx",
+        "web/src/shared/contexts/auth.tsx",
+        "web/src/lib/localCache.ts"
+      ]
+    },
+    {
+      "id": "T017",
+      "phase": 3,
+      "repo": "admin",
+      "description": "[admin] Admin: pantalla \"Ventas a revisar\"",
+      "status": "done",
+      "depends_on": [
+        "T006",
+        "T009"
+      ],
+      "can_parallelize_with": [
+        "T018",
+        "T019"
+      ],
+      "done_when": "El admin puede listar, ver el detalle, marcar revisada y asignar producto contra el backend (o un mock) sin errores de consola.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero) src/app/admin/sales/review/page.tsx",
+        "src/app/admin/sales/review/components/*"
+      ],
+      "started_at": "2026-09-21T16:31:18Z",
+      "completed_at": "2026-09-21T16:32:54Z",
+      "files_modified": [
+        "omero/src/app/admin/sales/review/page.tsx",
+        "omero/src/app/admin/sales/review/components"
+      ]
+    },
+    {
+      "id": "T018",
+      "phase": 3,
+      "repo": "admin",
+      "description": "[admin] Admin: indicador, insignia en ventas y vistas a prueba de ítems sin producto",
+      "status": "done",
+      "depends_on": [
+        "T006",
+        "T009"
+      ],
+      "can_parallelize_with": [
+        "T017",
+        "T019"
+      ],
+      "done_when": "El contador aparece y se actualiza; una venta con ítem sin producto se ve bien en el listado.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero) src/app/components/HomeNavCards.tsx",
+        "src/app/components/nav/navConfig.ts",
+        "src/app/admin/sales/page.tsx"
+      ],
+      "started_at": "2026-09-21T16:32:54Z",
+      "completed_at": "2026-09-21T16:34:00Z",
+      "files_modified": [
+        "omero/src/lib/useReviewCount.ts",
+        "omero/src/lib/apiTypes.ts",
+        "omero/src/app/admin/sales/page.tsx",
+        "omero/src/app/components/nav/navConfig.ts",
+        "omero/src/app/components/nav/NavDrawer.tsx",
+        "omero/src/app/components/HomeNavCards.tsx"
+      ]
+    },
+    {
+      "id": "T019",
+      "phase": 3,
+      "repo": "admin",
+      "description": "[admin] Admin: switch `mp_offline` en MercadoPago",
+      "status": "done",
+      "depends_on": [
+        "T006",
+        "T002"
+      ],
+      "can_parallelize_with": [
+        "T017",
+        "T018"
+      ],
+      "done_when": "El switch lee y guarda el valor; un usuario no admin no puede modificarlo.",
+      "complexity": "S",
+      "files_affected": [
+        "(omero) src/app/admin/mercadopago/page.tsx"
+      ],
+      "started_at": "2026-09-21T16:34:00Z",
+      "completed_at": "2026-09-21T16:34:28Z",
+      "files_modified": [
+        "omero/src/app/admin/mercadopago/components/MpOfflineSwitch.tsx",
+        "omero/src/app/admin/mercadopago/page.tsx"
+      ]
+    },
+    {
+      "id": "T020",
+      "phase": 4,
+      "repo": "backend",
+      "description": "[backend] Tests de integración del batch",
+      "status": "done",
+      "depends_on": [
+        "T008"
+      ],
+      "can_parallelize_with": [
+        "T021"
+      ],
+      "done_when": "`./mvnw test` pasa incluyendo la clase nueva; el contrato coincide con la tech-spec.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) src/test/java/com/omero/integration/SyncBatchControllerTest.java"
+      ],
+      "completed_at": "2026-09-21T16:39:36Z",
+      "files_modified": [
+        "omero-backend/SyncControllerTest"
+      ]
+    },
+    {
+      "id": "T021",
+      "phase": 4,
+      "repo": "backend",
+      "description": "[backend] Tests: revisión, asignación, migración, blindaje y `mp_offline`",
+      "status": "done",
+      "depends_on": [
+        "T009",
+        "T003",
+        "T002"
+      ],
+      "can_parallelize_with": [
+        "T020"
+      ],
+      "done_when": "`./mvnw test` pasa incluyendo las clases nuevas.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) src/test/java/com/omero/integration/SaleReviewControllerTest.java",
+        "OrphanItemHardeningTest.java",
+        "MigrationV17Test.java"
+      ],
+      "completed_at": "2026-09-21T16:39:36Z",
+      "files_modified": [
+        "omero-backend/SaleReviewControllerTest",
+        "omero-backend/OrphanItemHardeningTest",
+        "omero-backend/BusinessConfigService"
+      ]
+    },
+    {
+      "id": "T022",
+      "phase": 4,
+      "repo": "POS",
+      "description": "[POS] Tests unit del POS (outbox)",
+      "status": "done",
+      "depends_on": [
+        "T004",
+        "T005",
+        "T010",
+        "T012",
+        "T014"
+      ],
+      "can_parallelize_with": [
+        "T023"
+      ],
+      "done_when": "`npm --prefix web run check` pasa con los umbrales.",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/outbox/*.test.ts",
+        "web/src/lib/catalog/*.test.ts",
+        "web/vitest.config.mts"
+      ],
+      "started_at": "2026-09-21T16:39:36Z",
+      "completed_at": "2026-09-21T16:43:55Z",
+      "files_modified": [
+        "web/src/lib/outbox/outbox-registry.test.ts",
+        "web/vitest.config.mts"
+      ]
+    },
+    {
+      "id": "T023",
+      "phase": 4,
+      "repo": "POS",
+      "description": "[POS] Tests de integración del POS: outbox + backend falso + SQLite real",
+      "status": "done",
+      "depends_on": [
+        "T011",
+        "T012",
+        "T013",
+        "T014"
+      ],
+      "can_parallelize_with": [
+        "T022"
+      ],
+      "done_when": "`npx vitest run` de la clase pasa 3 veces seguidas.",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/outbox/outbox.integration.test.ts"
+      ],
+      "completed_at": "2026-09-21T16:43:55Z",
+      "files_modified": [
+        "web/src/lib/outbox/outbox.integration.test.ts",
+        "web/src/lib/outbox/outbox-runtime.ts",
+        "web/src/lib/outbox/outbox-sender.ts"
+      ]
+    },
+    {
+      "id": "T024",
+      "phase": 4,
+      "repo": "POS",
+      "description": "[POS] Tests de UI del POS",
+      "status": "done",
+      "depends_on": [
+        "T015",
+        "T016"
+      ],
+      "can_parallelize_with": [
+        "T025"
+      ],
+      "done_when": "`npm --prefix web test` pasa.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/pos/**/*.test.ts(x)",
+        "web/src/shared/contexts/auth.test.tsx"
+      ],
+      "started_at": "2026-09-21T16:43:55Z",
+      "completed_at": "2026-09-21T16:45:54Z",
+      "files_modified": [
+        "web/src/app/pos/components/ConnectionStatus.test.tsx",
+        "web/src/app/pos/components/OutboxListModal.test.tsx",
+        "web/src/app/pos/components/modals/PaymentModal.test.tsx",
+        "web/src/app/pos/hooks/__tests__",
+        "web/src/lib/localCache.test.ts",
+        "web/src/shared/contexts/auth.test.tsx"
+      ]
+    },
+    {
+      "id": "T025",
+      "phase": 4,
+      "repo": "admin",
+      "description": "[admin] Tests del admin",
+      "status": "done",
+      "depends_on": [
+        "T017",
+        "T018",
+        "T019"
+      ],
+      "can_parallelize_with": [
+        "T024"
+      ],
+      "done_when": "`yarn test` y `tsc --noEmit` pasan en omero.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero) src/app/admin/sales/review/*.test.tsx",
+        "src/app/admin/mercadopago/*.test.tsx"
+      ],
+      "started_at": "2026-09-21T16:45:55Z",
+      "completed_at": "2026-09-21T16:48:14Z",
+      "files_modified": [
+        "omero/src/app/admin/sales/review/page.test.tsx",
+        "omero/src/app/admin/mercadopago/components/MpOfflineSwitch.test.tsx",
+        "omero/src/app/components/HomeNavCards.test.tsx",
+        "omero/src/lib/__tests__/salesReviewApi.test.ts",
+        "omero/src/lib/__tests__/useReviewCount.test.ts",
+        "omero/src/app/components/nav/navConfig.test.ts"
+      ]
+    },
+    {
+      "id": "T026",
+      "phase": 4,
+      "repo": "E2E",
+      "description": "[E2E] Smoke end-to-end local con los 3 repos",
+      "status": "done",
+      "depends_on": [
+        "T008",
+        "T009",
+        "T011",
+        "T013",
+        "T016",
+        "T017",
+        "T019"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Los checks pasan y quedan con fecha en manual-checklist.md.",
+      "complexity": "L",
+      "files_affected": [
+        "AiBuild/feature/pos-offline-outbox/WIP/manual-checklist.md"
+      ],
+      "started_at": "2026-09-21T16:48:14Z",
+      "completed_at": "2026-09-21T17:00:39Z",
+      "files_modified": [
+        "AiBuild/feature/pos-offline-outbox/WIP/manual-checklist.md",
+        "web/src/lib/outbox/outbox-runtime.ts",
+        "omero-backend/BusinessConfigService"
+      ]
+    },
+    {
+      "id": "T027",
+      "phase": 5,
+      "repo": "E2E",
+      "description": "[E2E] Documentación de los tres repos",
+      "status": "done",
+      "depends_on": [
+        "T016",
+        "T017",
+        "T019"
+      ],
+      "can_parallelize_with": [
+        "T028"
+      ],
+      "done_when": "Un desarrollador nuevo entiende el flujo completo desde los CLAUDE.md; la spec refleja lo construido.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) CLAUDE.md",
+        "(omero-electron) CLAUDE.md",
+        "README.md",
+        "(omero) CLAUDE.md",
+        "technical-spec.md"
+      ],
+      "started_at": "2026-09-21T17:00:39Z",
+      "completed_at": "2026-09-21T17:01:57Z",
+      "files_modified": [
+        "omero-backend/CLAUDE.md",
+        "omero-electron/CLAUDE.md",
+        "omero/CLAUDE.md",
+        "AiBuild/feature/pos-offline-outbox/WIP/technical-spec.md"
+      ]
+    },
+    {
+      "id": "T028",
+      "phase": 5,
+      "repo": "E2E",
+      "description": "[E2E] Checklist manual, deuda técnica y preparación de los 3 PRs",
+      "status": "done",
+      "depends_on": [
+        "T026"
+      ],
+      "can_parallelize_with": [
+        "T027"
+      ],
+      "done_when": "Checklist y deuda documentados; los tres PRs con descripción y test plan.",
+      "complexity": "S",
+      "files_affected": [
+        "AiBuild/feature/pos-offline-outbox/WIP/manual-checklist.md"
+      ],
+      "completed_at": "2026-09-21T17:01:57Z",
+      "files_modified": [
+        "AiBuild/feature/pos-offline-outbox/WIP/manual-checklist.md"
+      ]
+    }
+  ],
+  "build_completed_at": "2026-09-21T17:03:57Z"
+}

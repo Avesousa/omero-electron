@@ -20,3 +20,5 @@ export { KeyboardGuide } from './keyboard/KeyboardGuide'
 
 // Notification components
 export { Notification } from './notifications/Notification' 
+// Outbox (desktop)
+export { OutboxListModal } from './OutboxListModal'

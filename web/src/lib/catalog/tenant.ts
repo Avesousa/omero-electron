@@ -38,3 +38,9 @@ export function tokenExpiry(authHeader: string | null | undefined): number | nul
   const exp = payloadOf(authHeader)?.exp
   return typeof exp === 'number' && Number.isFinite(exp) ? exp : null
 }
+
+/** UUID del usuario (claim `userId`, informativo: cajero que creó la venta) o null si no hay/ no es UUID. */
+export function userIdFromAuthHeader(authHeader: string | null | undefined): string | null {
+  const claim = payloadOf(authHeader)?.userId
+  return typeof claim === 'string' && UUID.test(claim) ? claim.toLowerCase() : null
+}
