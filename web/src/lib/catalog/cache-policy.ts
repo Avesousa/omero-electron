@@ -13,6 +13,8 @@ import type { CatalogRoute } from './types'
  */
 
 const PRODUCT_CODE = /^\d{1,20}$/
+/** Claves de business_config (p. ej. `mp_offline`): solo alfanuméricas y guion bajo. */
+const SETTING_KEY = /^[A-Za-z0-9_]{1,64}$/
 
 export function matchCatalogRoute(method: string, pathname: string, search: string): CatalogRoute | null {
   if (method.toUpperCase() !== 'GET') return null
@@ -22,6 +24,12 @@ export function matchCatalogRoute(method: string, pathname: string, search: stri
 
   if (path === '/api/products') return { kind: 'products' }
   if (path === '/api/promotions') return { kind: 'promotions' }
+
+  const configPrefix = '/api/business/config/'
+  if (path.startsWith(configPrefix)) {
+    const key = path.slice(configPrefix.length)
+    return SETTING_KEY.test(key) ? { kind: 'setting', key } : null
+  }
 
   const prefix = '/api/products/'
   if (path.startsWith(prefix)) {

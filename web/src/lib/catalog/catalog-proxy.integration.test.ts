@@ -34,6 +34,7 @@ const backend = {
   hits: [] as string[],
   products: [] as { id: number; code: string; name: string; barcode?: number | null }[],
   promotions: [] as { id: string; name: string }[],
+  config: {} as Record<string, string>,
 }
 
 const server = http.createServer((req, res) => {
@@ -55,6 +56,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/products') return json({ success: true, data: backend.products })
   if (url.pathname === '/api/promotions') return json({ success: true, data: backend.promotions })
   if (url.pathname === '/api/products/search') return json({ success: true, data: backend.products })
+  const cfg = /^\/api\/business\/config\/([A-Za-z0-9_]+)$/.exec(url.pathname)
+  if (cfg) return json({ success: true, data: { key: cfg[1], value: backend.config[cfg[1]] ?? 'false', type: 'boolean' } })
   const single = /^\/api\/products\/(\d+)$/.exec(url.pathname)
   if (single) {
     const p = backend.products.find((x) => x.code === single[1] || String(x.barcode) === single[1] || String(x.id) === single[1])
@@ -83,6 +86,7 @@ beforeEach(() => {
     { id: 2, code: '002', name: 'Agua 1.5L' },
   ]
   backend.promotions = [{ id: 'promo-1', name: '2x1' }]
+  backend.config = { mp_offline: 'true' }
   vi.stubEnv('OMERO_RUNTIME', 'desktop')
   vi.stubEnv('BACKEND_URL', `http://127.0.0.1:${(server.address() as AddressInfo).port}`)
   vi.stubEnv('OMERO_DATA_DIR', dataDir)
@@ -242,6 +246,35 @@ describe('backend caído → sirve desde SQLite', () => {
   it('sin datos locales y backend inalcanzable → 502 del proxy', async () => {
     backend.mode = 'reset'
     expect((await get('/api/products')).status).toBe(502)
+  })
+})
+
+describe('configuración de negocio (mp_offline)', () => {
+  it('online pasa tal cual y queda cacheada; sin conexión se sirve desde SQLite', async () => {
+    const online = await (await get('/api/business/config/mp_offline')).json()
+    expect(online.data).toMatchObject({ key: 'mp_offline', value: 'true' })
+    expect(getCatalogStore(TENANT_A)!.getSetting('mp_offline')).not.toBeNull()
+
+    backend.mode = 503
+    const res = await get('/api/business/config/mp_offline')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-omero-cache')).toBe('hit')
+    expect((await res.json()).data.value).toBe('true')
+  })
+
+  it('sin valor cacheado y sin conexión → 503 original', async () => {
+    backend.mode = 503
+    expect((await get('/api/business/config/mp_offline')).status).toBe(503)
+  })
+
+  it('un 404 real de una clave desconocida pasa sin tocar la caché', async () => {
+    backend.mode = 404
+    expect((await get('/api/business/config/otra')).status).toBe(404)
+  })
+
+  it('la lista completa de config no se cachea', async () => {
+    backend.mode = 503
+    expect((await get('/api/business/config')).status).toBe(503)
   })
 })
 

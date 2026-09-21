@@ -22,6 +22,8 @@ function makeStore(): CatalogStore & { replaceProducts: ReturnType<typeof vi.fn>
     replaceProducts: vi.fn(() => ({ written: true, itemCount: 1, lastSyncAt: '' })),
     replacePromotions: vi.fn(() => ({ written: true, itemCount: 1, lastSyncAt: '' })),
     upsertProduct: vi.fn(),
+    getSetting: vi.fn(() => null),
+    upsertSetting: vi.fn(),
     getProducts: vi.fn(() => []),
     getPromotions: vi.fn(() => []),
     findProduct: vi.fn(() => null),
@@ -32,7 +34,7 @@ function makeStore(): CatalogStore & { replaceProducts: ReturnType<typeof vi.fn>
 }
 
 /** fetch simulado: /api/health, /api/products y /api/promotions con respuestas configurables. */
-function makeFetch(state: { health: number | 'error'; products: number | 'error'; promotions?: number | 'error' }) {
+function makeFetch(state: { health: number | 'error'; products: number | 'error'; promotions?: number | 'error'; setting?: number | 'error' }) {
   return vi.fn(async (input: string) => {
     const url = String(input)
     const pick = (v: number | 'error', body: unknown) => {
@@ -42,6 +44,7 @@ function makeFetch(state: { health: number | 'error'; products: number | 'error'
     if (url.endsWith('/api/health')) return pick(state.health, { status: 'UP' })
     if (url.endsWith('/api/products')) return pick(state.products, PRODUCTS)
     if (url.endsWith('/api/promotions')) return pick(state.promotions ?? state.products, PROMOS)
+    if (url.endsWith('/api/business/config/mp_offline')) return pick(state.setting ?? state.products, { success: true, data: { key: 'mp_offline', value: 'true' } })
     return new Response('nope', { status: 404 })
   })
 }
@@ -82,7 +85,11 @@ describe('sincronización periódica', () => {
 
     await vi.advanceTimersByTimeAsync(1000)
     const urls = fetchFn.mock.calls.map((c) => String(c[0]))
-    expect(urls).toEqual(['https://backend.test/api/products', 'https://backend.test/api/promotions'])
+    expect(urls).toEqual([
+      'https://backend.test/api/products',
+      'https://backend.test/api/promotions',
+      'https://backend.test/api/business/config/mp_offline',
+    ])
     expect((fetchFn.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: auth })
     expect(store.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data)
     expect(store.replacePromotions).toHaveBeenCalledWith(PROMOS.data)
@@ -131,7 +138,7 @@ describe('sincronización periódica', () => {
     const b = s.syncAll() // mientras el primero sigue en curso
     release()
     await Promise.all([a, b])
-    expect(fetchFn).toHaveBeenCalledTimes(2) // solo /products y /promotions del primer sync
+    expect(fetchFn).toHaveBeenCalledTimes(3) // solo products, promotions y mp_offline del primer sync
     s.stop()
   })
 })
@@ -239,6 +246,26 @@ describe('modo recuperación', () => {
   })
 })
 
+describe('configuración de negocio (mp_offline)', () => {
+  it('se cachea en cada sync', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    s.remember(TENANT, validAuth())
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    expect(store.upsertSetting).toHaveBeenCalledWith('mp_offline', JSON.stringify({ key: 'mp_offline', value: 'true' }))
+    s.stop()
+  })
+
+  it.each([404, 500, 'error'] as const)('si falla (%s) NO cuenta como fallo del sync ni dispara recuperación', async (setting) => {
+    const s = syncer(makeFetch({ health: 200, products: 200, setting }))
+    s.remember(TENANT, validAuth())
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    expect(store.replaceProducts).toHaveBeenCalled()
+    expect(s.inRecovery).toBe(false)
+    expect(s.online).toBe(true)
+    s.stop()
+  })
+})
+
 describe('estado y ciclo de vida', () => {
   it('setOnline() es pasivo: no dispara sincronizaciones', async () => {
     const fetchFn = makeFetch({ health: 200, products: 200 })
@@ -291,5 +318,80 @@ describe('dependencias por defecto y singleton', () => {
 
   it('getSyncer() devuelve siempre la misma instancia', () => {
     expect(getSyncer()).toBe(getSyncer())
+  })
+})
+
+describe('eventos y token para el outbox', () => {
+  it('getAuthorization devuelve el token vigente y null si falta o venció', () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    expect(s.getAuthorization(TENANT)).toBeNull()
+    const auth = validAuth()
+    s.remember(TENANT, auth)
+    expect(s.getAuthorization(TENANT)).toBe(auth)
+    vi.setSystemTime(new Date(T0.getTime() + 2 * 3600_000))
+    expect(s.getAuthorization(TENANT)).toBeNull()
+    s.stop()
+  })
+
+  it('remember emite "authorization" solo cuando el token es nuevo o cambió', () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    const events: unknown[] = []
+    const off = s.subscribe((e) => events.push(e))
+    const auth = validAuth()
+    s.remember(TENANT, auth)
+    s.remember(TENANT, auth) // mismo token: sin evento
+    s.remember(TENANT, jwt(Math.floor(T0.getTime() / 1000) + 7200)) // token distinto
+    expect(events).toEqual([
+      { type: 'authorization', tenantId: TENANT },
+      { type: 'authorization', tenantId: TENANT },
+    ])
+    off()
+    s.remember(TENANT, jwt(Math.floor(T0.getTime() / 1000) + 9000))
+    expect(events).toHaveLength(2) // desuscripto
+    s.stop()
+  })
+
+  it('emite "online" al recuperar (setOnline y sincronización) y no en cada éxito', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    const events: unknown[] = []
+    s.subscribe((e) => events.push(e))
+    s.setOnline(false)
+    s.setOnline(true)
+    s.setOnline(true) // ya estaba online: sin evento
+    expect(events.filter((e) => (e as { type: string }).type === 'online')).toHaveLength(1)
+
+    s.setOnline(false)
+    s.remember(TENANT, validAuth())
+    await s.syncAll() // éxito tras estar offline → recuperó
+    expect(events.filter((e) => (e as { type: string }).type === 'online')).toHaveLength(2)
+    await s.syncAll() // éxito sostenido: sin evento nuevo
+    expect(events.filter((e) => (e as { type: string }).type === 'online')).toHaveLength(2)
+    s.stop()
+  })
+
+  it('un listener que falla no rompe al syncer ni a los demás', () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    const ok = vi.fn()
+    s.subscribe(() => {
+      throw new Error('boom')
+    })
+    s.subscribe(ok)
+    s.setOnline(true)
+    expect(ok).toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('listener falló'))
+    s.stop()
+  })
+
+  it('el sondeo de recuperación emite "online" cuando el backend vuelve', async () => {
+    const fetchFn = makeFetch({ health: 200, products: 500 })
+    const s = syncer(fetchFn)
+    const events: unknown[] = []
+    s.subscribe((e) => events.push(e))
+    s.remember(TENANT, validAuth())
+    await s.syncAll() // falla → recuperación
+    expect(s.inRecovery).toBe(true)
+    await vi.advanceTimersByTimeAsync(RECOVERY_INTERVAL_MS)
+    expect(events.some((e) => (e as { type: string }).type === 'online')).toBe(true)
+    s.stop()
   })
 })

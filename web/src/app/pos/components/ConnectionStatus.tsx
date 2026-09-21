@@ -13,8 +13,14 @@ export function formatCacheAge(seconds: number): string {
 
 interface Props {
   status: ConnectionStatusState
-  /** Ventas/compras encoladas por subir (cola local del POS). */
+  /** Ventas/gastos guardados en esta caja y aún sin subir al backend. */
   pendingCount: number
+  /** Ventas/gastos que el backend marcó para revisión o rechazó (los resuelve un administrador / se marcan como vistos). */
+  reviewCount?: number
+  /** Abre la lista de pendientes / para revisar. */
+  onOpenList?: () => void
+  /** Por qué el envío está detenido aunque haya conexión (sesión vencida / backend sin soporte). */
+  syncBlock?: 'unauthorized' | 'unsupported' | null
 }
 
 /**
@@ -22,9 +28,9 @@ interface Props {
  * El botón "Actualizar" únicamente verifica la conexión (no sincroniza ni envía datos).
  * En modo web no se renderiza: el header conserva su botón de refresco de productos.
  */
-export function ConnectionStatus({ status, pendingCount }: Props) {
+export function ConnectionStatus({ status, pendingCount, reviewCount = 0, onOpenList, syncBlock = null }: Props) {
   if (status.runtime !== 'desktop') return null
-  if (status.online && pendingCount <= 0) return null
+  if (status.online && pendingCount <= 0 && reviewCount <= 0) return null
 
   const { cache } = status
   const cacheText = cache
@@ -45,9 +51,36 @@ export function ConnectionStatus({ status, pendingCount }: Props) {
         </span>
       )}
       {pendingCount > 0 && (
-        <span className="bg-amber-500 text-black text-sm font-bold px-3 py-1 rounded-full">
+        <button
+          type="button"
+          onClick={onOpenList}
+          disabled={!onOpenList}
+          title="Ver lo que falta subir"
+          className="bg-amber-500 text-black text-sm font-bold px-3 py-1 rounded-full disabled:cursor-default"
+        >
           {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} sin sync
+        </button>
+      )}
+      {pendingCount > 0 && syncBlock === 'unauthorized' && (
+        <span className="bg-red-600 text-white text-sm font-bold px-3 py-1 rounded-full" data-testid="sync-blocked">
+          Sesión vencida: iniciá sesión para subirlas
         </span>
+      )}
+      {pendingCount > 0 && syncBlock === 'unsupported' && (
+        <span className="bg-red-600 text-white text-sm font-bold px-3 py-1 rounded-full" data-testid="sync-blocked">
+          El servidor aún no acepta la sincronización
+        </span>
+      )}
+      {reviewCount > 0 && (
+        <button
+          type="button"
+          onClick={onOpenList}
+          disabled={!onOpenList}
+          title="Ver ventas y gastos para revisar"
+          className="bg-orange-600 text-white text-sm font-bold px-3 py-1 rounded-full disabled:cursor-default"
+        >
+          {reviewCount} para revisar
+        </button>
       )}
       <button
         onClick={() => void status.check()}

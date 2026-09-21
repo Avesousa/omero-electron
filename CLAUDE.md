@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   En ambos, `/api/*` se reenvía al `omero-backend` de Railway con un **proxy en runtime** (`BACKEND_URL`).
 - **`main/`** — wrapper de Electron (frameless, teclado numérico). Ya **no** incluye Java/JRE/JAR: solo levanta el Next local.
 
-Si `omero` (admin) cae, el POS sigue funcionando. En **desktop** el Next mantiene una **caché SQLite de solo lectura del catálogo** (productos y promociones, una base por tenant) que sirve las lecturas cuando el backend no responde (fase 2). Fases futuras (no implementadas): outbox de ventas/gastos, `mp_offline`, sesión larga de dispositivo (ver `AiBuild/.../functional-spec.md`).
+Si `omero` (admin) cae, el POS sigue funcionando. En **desktop** el Next mantiene una **caché SQLite de solo lectura del catálogo** (productos y promociones, una base por tenant) que sirve las lecturas cuando el backend no responde (fase 2). En **desktop** las ventas y gastos se guardan primero en un **outbox SQLite** y se suben en segundo plano (fase 3). Fase futura (no implementada): sesión larga de dispositivo (ver `AiBuild/.../functional-spec.md`).
 
 ## Commands
 
@@ -59,7 +59,8 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 ├── src/app/api/%5Flocal/cache/        DELETE → borra la base del tenant (logout)
 ├── src/lib/runtime.ts        getRuntime(), getBackendUrl(), getProxyTimeoutMs()
 ├── src/lib/backend-proxy.ts  proxyToBackend(request)
-├── src/lib/data-layer.ts     handleApiRequest(): web → proxy directo; desktop → proxyWithCatalog (punto de extensión de la fase 3)
+├── src/lib/data-layer.ts     handleApiRequest(): web → proxy directo; desktop → outbox (POST /api/sales|expenses) o proxyWithCatalog
+├── src/lib/outbox/           outbox de ventas/gastos (ver sección abajo)
 ├── src/lib/catalog/          caché SQLite del catálogo (ver sección abajo)
 ├── src/instrumentation*.ts   valida entorno al arrancar (process.exit(1) si es inválido)
 └── Dockerfile, railway.toml  modo web
@@ -97,6 +98,21 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
   sin error (la caché jamás rompe una request).
 - **Limitación aceptada:** el JWT dura 1 h y no se renueva: sin conexión el POS abierto sigue operando, pero un reinicio pasada la hora pide
   login (lo resuelve la fase 4).
+
+### Outbox de ventas y gastos (fase 3, solo desktop)
+
+`web/src/lib/outbox/`. Toda venta/gasto se confirma al cajero **después de escribirse en SQLite** y un sender la sube al backend en segundo plano.
+
+- **Intercepción** (`outbox-proxy` + `data-layer`): `POST /api/sales` y `POST /api/expenses` en desktop → valida liviano, arma el payload con **lista blanca** (jamás viaja el costo; el backend lo resuelve), lo inserta en el outbox y responde `201 { id:null, clientId, queued:true, createdAt, … }`. Sin tenant/token, sin outbox o con error de disco devuelve `null` → proxy directo (degradación sin error). En web **nunca** intercepta.
+- **Base** (`outbox-store`, `outbox-migrations`, `outbox-registry`): `<OMERO_DATA_DIR>/<tenantId>.outbox.sqlite` (archivo distinto de la caché), `synchronous=FULL`, WAL. Filas `PENDING → SENT | REVIEW | FAILED` con `client_id` UUID único (idempotencia), `created_at` = hora de la caja. Base corrupta o de esquema más nuevo → se aparta a `.corrupt-<ts>`, **nunca se borra**. Retención: `SENT` 7 d; `REVIEW` y `FAILED` descartados 30 d. **El logout borra la caché de catálogo pero NO el outbox.**
+- **Sender** (`outbox-sender`): lotes de hasta 50 (más viejo primero) → `POST {BACKEND_URL}/api/sync/batch`. Reintentos de transporte (red/timeout/5xx/404/respuesta inválida) a **30 s → 90 s → 270 s → 810 s y luego cada 810 s**; un lote exitoso reinicia la cuenta; `413` parte el lote. Por ítem: `CREATED/DUPLICATE` → `SENT` (o `REVIEW` si el backend lo marcó), `REJECTED/VALIDATION` → `FAILED` (sin reintento), `INTERNAL_ERROR` → sigue `PENDING`. **401/403 → se detiene y olvida el token** (`backend:"unauthorized"`; lo pendiente no se pierde); 404 → `unsupported`. Nunca sube con el token de otro tenant. Estados en `GET /api/_local/outbox` (`backend`, `nextAttemptAt`).
+- **Token**: sale del `CatalogSyncer` (solo en memoria, `getAuthorization`). `rememberSession()` (`outbox-runtime`) crea el sender **antes** de registrar el token: el evento "token nuevo" es lo que sube los pendientes tras reiniciar la caja. El syncer publica `online` (al recuperar conexión → reintento inmediato) y `authorization`.
+- **Stock mostrado** (`stock-adjust`): en `GET /api/products` y `/{code}` (en vivo y desde caché) = stock del backend − ventas `PENDING` (o enviadas después del snapshot − 2 s), piso 0, el código `000` no se ajusta. Solo ajusta la **respuesta**; la caché guarda el valor crudo.
+- **Endpoints locales** (no se proxean; tenant del JWT): `GET /api/_local/outbox` (`counts`, `backend`, `items` sin payload; `?status=`, `?limit=`, `?detail=<clientId>` con payload), `POST /api/_local/outbox/import` (cola vieja de localStorage, idempotente por `clientId` derivado), `POST /api/_local/outbox/{clientId}/dismiss` (un `FAILED` deja de contarse). `GET /api/_local/connectivity` suma `outbox:{pending,review,failed,backend,nextAttemptAt}`. En web/sin outbox responden `available:false`.
+- **Configuración offline**: la caché de catálogo también guarda `mp_offline` (`settings`). En el POS, el botón MercadoPago se bloquea sin conexión salvo `mp_offline` (`useBusinessFlag`, `PaymentModal`); el negocio lo activa en el admin.
+- **UI**: `ConnectionStatus` (chips "N pendientes sin sync" / "N para revisar", "Sesión vencida: iniciá sesión…"), `OutboxListModal` (lista y "Entendido" para rechazos), `useOutboxStatus` (5 s con pendientes / 20 s en reposo). Cerrar sesión con pendientes pregunta antes (no los borra). `useSales` hace **un solo intento** (sin reintentos ni `localStorage`); `useOfflineQueue` solo **migra** la cola vieja (desktop → import al outbox; web → la sube una vez).
+- **Limitación conocida**: el JWT dura 1 h y no se renueva; pasada la hora hay que iniciar sesión para subir lo pendiente (fase 4: sesión de dispositivo de semanas, revocable).
+- Tests: unit por módulo + `outbox.integration.test.ts` (backend HTTP falso + SQLite real: envío, `DUPLICATE`, mixto, red caída, 401 y reanudación, 404, reinicio, aislamiento de tenants, cola vieja, web y degradación). `npm --prefix web run check` (umbral 85 % también en `lib/outbox/**`).
 
 ### Empaquetado del módulo nativo
 
@@ -162,7 +178,7 @@ No definir `NEXT_PUBLIC_API_URL` en el POS (mismo origen + proxy).
 
 - **Migración de datos H2 → Railway** de las instalaciones actuales (rama `master`, con Java+H2) antes de actualizarlas.
 - Eliminar `/pos` de `omero` tras validar este POS.
-- Fases 3–4: outbox (ventas/gastos, `mp_offline`, ventas a revisar en admin, stock en 0 y tabla de sobreventas), sesión de dispositivo larga (token de semanas, revocable).
+- Fase 4: sesión de dispositivo larga (token de semanas, revocable). Idea futura: tabla de sobreventas (hoy el stock se limita a 0 y no queda registro de lo vendido de más).
 - Node 20 (Docker/CI del POS web) está fuera de soporte; el desktop corre en Node 24. Base SQLite sin cifrar (SQLCipher fuera de alcance).
 
 ## SDD Features

@@ -210,6 +210,22 @@ export class SqliteCatalogStore implements CatalogStore {
       .run(String(item.id), String(item.code), item.barcode == null ? null : String(item.barcode), JSON.stringify(item))
   }
 
+  getSetting(key: string): { json: string; syncedAt: string } | null {
+    const r = this.conn.prepare('SELECT json, synced_at FROM settings WHERE key = ?').get(key) as
+      | { json: string; synced_at: string }
+      | undefined
+    return r ? { json: r.json, syncedAt: r.synced_at } : null
+  }
+
+  upsertSetting(key: string, json: string, now: Date = new Date()): void {
+    this.conn
+      .prepare(
+        `INSERT INTO settings (key, json, synced_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET json = excluded.json, synced_at = excluded.synced_at`,
+      )
+      .run(key, json, now.toISOString())
+  }
+
   getProducts(): string[] {
     return (this.conn.prepare('SELECT json FROM products ORDER BY rowid').all() as { json: string }[]).map((r) => r.json)
   }

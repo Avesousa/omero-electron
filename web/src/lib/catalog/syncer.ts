@@ -35,12 +35,18 @@ export interface SyncerDeps {
 
 type TenantResult = 'ok' | 'unauthorized' | 'failed'
 
+/** Eventos que el syncer publica para otros componentes (el sender del outbox). */
+export type SyncerEvent =
+  | { type: 'online' } // el backend volvió a responder (transición de no-conectado a conectado)
+  | { type: 'authorization'; tenantId: string } // hay un token nuevo (o distinto) para el tenant
+
 export class CatalogSyncer {
   private readonly tokens = new Map<string, TokenEntry>()
   private timer: ReturnType<typeof setInterval> | null = null
   private recoveryTimer: ReturnType<typeof setInterval> | null = null
   private running = false
   private lastOnline: boolean | null = null
+  private readonly listeners = new Set<(event: SyncerEvent) => void>()
   private readonly deps: Required<SyncerDeps>
 
   constructor(deps: SyncerDeps = {}) {
@@ -62,7 +68,33 @@ export class CatalogSyncer {
 
   /** Registra pasivamente el estado (lo informa el endpoint de conectividad; no dispara sincronización). */
   setOnline(value: boolean): void {
+    const recovered = value && this.lastOnline !== true
     this.lastOnline = value
+    if (recovered) this.emit({ type: 'online' })
+  }
+
+  /** Suscribe a los eventos del syncer. Devuelve la función para desuscribirse. */
+  subscribe(listener: (event: SyncerEvent) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  private emit(event: SyncerEvent): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(event)
+      } catch (err) {
+        this.deps.log(`listener falló: ${(err as Error).message}`)
+      }
+    }
+  }
+
+  /** Último Authorization vigente del tenant (solo en memoria), o null si no hay o venció. */
+  getAuthorization(tenantId: string): string | null {
+    const entry = this.tokens.get(tenantId)
+    if (!entry) return null
+    if (entry.exp !== null && entry.exp * 1000 <= this.deps.now()) return null
+    return entry.authorization
   }
 
   get inRecovery(): boolean {
@@ -75,8 +107,10 @@ export class CatalogSyncer {
 
   /** Guarda el último Authorization del tenant y arranca el timer si hace falta. */
   remember(tenantId: string, authorization: string): void {
+    const changed = this.tokens.get(tenantId)?.authorization !== authorization
     this.tokens.set(tenantId, { authorization, exp: tokenExpiry(authorization) })
     this.start()
+    if (changed) this.emit({ type: 'authorization', tenantId })
   }
 
   forget(tenantId: string): void {
@@ -112,7 +146,9 @@ export class CatalogSyncer {
       fetchFn: this.deps.fetchFn,
       backendUrl: this.deps.backendUrl(),
     })
+    const recovered = status.online && this.lastOnline !== true
     this.lastOnline = status.online
+    if (recovered) this.emit({ type: 'online' })
     if (status.online) await this.syncAll()
   }
 
@@ -142,8 +178,10 @@ export class CatalogSyncer {
       this.lastOnline = false
       this.startRecovery()
     } else if (this.tokens.size > 0) {
+      const recovered = this.lastOnline !== true
       this.lastOnline = true
       this.stopRecovery()
+      if (recovered) this.emit({ type: 'online' })
     }
   }
 
@@ -151,13 +189,16 @@ export class CatalogSyncer {
     const store = this.deps.getStore(tenantId)
     if (!store) return 'ok' // sin caché no hay nada que refrescar
 
-    const routes: { path: string; route: CatalogRoute }[] = [
+    const routes: { path: string; route: CatalogRoute; optional?: boolean }[] = [
       { path: '/api/products', route: { kind: 'products' } },
       { path: '/api/promotions', route: { kind: 'promotions' } },
+      // Configuración que el POS necesita sin conexión. No crítica: un 404 (backend viejo) o un error no dispara la
+      // recuperación; si la red cayó ya lo detectan products/promotions.
+      { path: '/api/business/config/mp_offline', route: { kind: 'setting', key: 'mp_offline' }, optional: true },
     ]
 
     let failed = false
-    for (const { path, route } of routes) {
+    for (const { path, route, optional } of routes) {
       try {
         const res = await this.deps.fetchFn(`${this.deps.backendUrl()}${path}`, {
           headers: { Authorization: authorization, Accept: 'application/json' },
@@ -166,12 +207,12 @@ export class CatalogSyncer {
         })
         if (res.status === 401 || res.status === 403) return 'unauthorized'
         if (!res.ok) {
-          failed = true
+          if (!optional) failed = true
           continue
         }
-        if (!applyCatalogPayload(store, route, await res.text())) failed = true
+        if (!applyCatalogPayload(store, route, await res.text()) && !optional) failed = true
       } catch {
-        failed = true // red caída / timeout
+        if (!optional) failed = true // red caída / timeout
       }
     }
     return failed ? 'failed' : 'ok'

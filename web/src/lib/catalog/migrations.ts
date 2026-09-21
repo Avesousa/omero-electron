@@ -39,6 +39,17 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    description: 'settings (configuración de negocio, p. ej. mp_offline)',
+    sql: `
+      CREATE TABLE settings (
+        key       TEXT PRIMARY KEY,   -- clave de business_config (alfanumérica/_)
+        json      TEXT NOT NULL,      -- BusinessConfigEntryDto tal como lo devolvió el backend
+        synced_at TEXT NOT NULL       -- ISO-8601 UTC
+      );
+    `,
+  },
 ]
 
 /** Versión de esquema más nueva que conoce este build. */

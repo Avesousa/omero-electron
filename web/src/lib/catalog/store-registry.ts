@@ -43,7 +43,7 @@ function warnOnce(key: string, message: string): void {
  * resolverlo en build y falla con "Module not found". Así el bundler no lo ve y solo se resuelve en runtime, desde el
  * `cwd` del proceso (dev: web/; Docker: /app; Electron: resources/frontend, donde prepare-frontend lo copia).
  */
-const defaultLoader: DatabaseLoader = () => {
+export const defaultLoader: DatabaseLoader = () => {
   const nodeRequire = createRequire(path.join(/* turbopackIgnore: true */ process.cwd(), 'noop.js'))
   return nodeRequire('better-sqlite3') as DatabaseConstructor
 }

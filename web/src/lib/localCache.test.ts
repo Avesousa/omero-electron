@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const authHeaders = vi.fn()
 vi.mock('@/lib/sessionManager', () => ({ authHeaders: () => authHeaders() }))
 
-import { wipeLocalCatalogCache } from './localCache'
+import { logoutWarning, pendingOutboxCount, wipeLocalCatalogCache } from './localCache'
 
 let fetchMock: ReturnType<typeof vi.fn>
 
@@ -46,5 +46,35 @@ describe('wipeLocalCatalogCache', () => {
     })
     expect(() => wipeLocalCatalogCache()).not.toThrow()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('pendingOutboxCount / logoutWarning', () => {
+  it('cuenta los pendientes del outbox local', async () => {
+    authHeaders.mockReturnValue({ Authorization: 'Bearer t' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: true, data: { available: true, counts: { pending: 4 } } }))))
+    expect(await pendingOutboxCount()).toBe(4)
+  })
+
+  it.each([
+    ['sin sesión', {}, undefined],
+    ['web / outbox no disponible', { Authorization: 'Bearer t' }, { success: true, data: { available: false, counts: { pending: 9 } } }],
+    ['respuesta inesperada', { Authorization: 'Bearer t' }, { success: false }],
+  ])('%s → 0', async (_n, headers, body) => {
+    authHeaders.mockReturnValue(headers)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body ?? {}))))
+    expect(await pendingOutboxCount()).toBe(0)
+  })
+
+  it('si el servidor local no responde → 0 (jamás impide cerrar sesión)', async () => {
+    authHeaders.mockReturnValue({ Authorization: 'Bearer t' })
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('x') }))
+    expect(await pendingOutboxCount()).toBe(0)
+  })
+
+  it('el aviso concuerda en singular y plural y aclara que NO se borra', () => {
+    expect(logoutWarning(1)).toContain('1 venta/gasto sin subir')
+    expect(logoutWarning(3)).toContain('3 ventas/gastos sin subir')
+    expect(logoutWarning(2)).toContain('NO las borra')
   })
 })

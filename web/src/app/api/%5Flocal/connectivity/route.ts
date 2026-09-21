@@ -2,6 +2,7 @@ import { checkBackend } from '@/lib/catalog/connectivity'
 import { getCatalogStore } from '@/lib/catalog/store-registry'
 import { getSyncer } from '@/lib/catalog/syncer'
 import { tenantFromAuthHeader } from '@/lib/catalog/tenant'
+import { outboxSummary } from '@/lib/outbox/local-api'
 import { getRuntime } from '@/lib/runtime'
 
 // Estado de la conexión con el backend + estado de la caché de catálogo (para el aviso del POS).
@@ -44,8 +45,11 @@ export async function GET(request: Request) {
     }
   }
 
+  // Pendientes/por revisar/fallidas del outbox (null en web o sin outbox); el header las suma al aviso.
+  const outbox = mode === 'desktop' ? outboxSummary(request) : null
+
   return Response.json(
-    { online: status.online, checkedAt: status.checkedAt, latencyMs: status.latencyMs, runtime: mode, cache },
+    { online: status.online, checkedAt: status.checkedAt, latencyMs: status.latencyMs, runtime: mode, cache, outbox },
     { headers: { 'Cache-Control': 'no-store' } },
   )
 }

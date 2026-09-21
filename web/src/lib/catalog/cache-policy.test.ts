@@ -48,6 +48,23 @@ describe('matchCatalogRoute', () => {
     },
   )
 
+  it('configuración de negocio por clave (p. ej. mp_offline)', () => {
+    expect(matchCatalogRoute('GET', '/api/business/config/mp_offline', '')).toEqual({ kind: 'setting', key: 'mp_offline' })
+    expect(matchCatalogRoute('GET', '/api/business/config/currency/', '')).toEqual({ kind: 'setting', key: 'currency' })
+  })
+
+  it.each(['/api/business/config', '/api/business/config/', '/api/business/config/a-b', '/api/business/config/a/b', '/api/business/config/mp offline'])(
+    'no cachea la lista completa ni claves raras: %s',
+    (path) => {
+      expect(matchCatalogRoute('GET', path, '')).toBeNull()
+    },
+  )
+
+  it('la config solo se cachea con GET y sin query', () => {
+    expect(matchCatalogRoute('PUT', '/api/business/config/mp_offline', '')).toBeNull()
+    expect(matchCatalogRoute('GET', '/api/business/config/mp_offline', '?x=1')).toBeNull()
+  })
+
   it('rechaza códigos absurdamente largos (>20 dígitos)', () => {
     expect(matchCatalogRoute('GET', `/api/products/${'1'.repeat(21)}`, '')).toBeNull()
   })

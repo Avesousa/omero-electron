@@ -1,8 +1,9 @@
 import { proxyToBackend } from '../backend-proxy'
+import { adjustStockBody } from '../outbox/stock-adjust'
 import { matchCatalogRoute } from './cache-policy'
 import { applyCatalogPayload, itemBody, listBody } from './snapshot'
 import { getCatalogStore } from './store-registry'
-import { getSyncer } from './syncer'
+import { rememberSession } from '../outbox/outbox-runtime'
 import { tenantFromAuthHeader } from './tenant'
 import type { CatalogRoute, CatalogStore } from './types'
 
@@ -13,13 +14,14 @@ import type { CatalogRoute, CatalogStore } from './types'
  *   backend 502/503/504 + datos → responde desde SQLite con `X-Omero-Cache: hit` (+ fecha y antigüedad)
  *   cualquier otra respuesta    → pasa sin modificar (401/403/404/500 son respuestas REALES del backend)
  *
+ * En ambos casos el stock de `products` se muestra como stock − ventas pendientes del outbox (`stock-adjust`).
  * `proxyToBackend` ya mapea red caída → 502 y timeout → 504, así que "sin conexión" llega acá como 502/504.
  * Cualquier error de la caché se traga y se loguea: la caché jamás debe romper una request.
  */
 
 const CACHEABLE_FAILURES = new Set([502, 503, 504])
 
-function serveFromCache(store: CatalogStore, route: CatalogRoute): Response | null {
+function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: string): Response | null {
   let body: string
   let syncedAt: string | null
 
@@ -38,6 +40,13 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute): Response | nu
       syncedAt = meta.lastSyncAt
       break
     }
+    case 'setting': {
+      const setting = store.getSetting(route.key)
+      if (!setting) return null
+      body = itemBody(setting.json)
+      syncedAt = setting.syncedAt
+      break
+    }
     case 'product': {
       const json = store.findProduct(route.code)
       if (!json) return null
@@ -46,6 +55,9 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute): Response | nu
       break
     }
   }
+
+  // La caché guarda el stock crudo del backend; lo vendido sin sincronizar se descuenta recién al responder.
+  body = adjustStockBody(tenantId, route, body, { since: syncedAt })
 
   const headers = new Headers({
     'Content-Type': 'application/json',
@@ -69,7 +81,7 @@ export async function proxyWithCatalog(request: Request): Promise<Response> {
   const store = getCatalogStore(tenantId)
   if (!store) return proxyToBackend(request)
 
-  getSyncer().remember(tenantId, authorization)
+  rememberSession(tenantId, authorization)
 
   const upstream = await proxyToBackend(request)
 
@@ -82,12 +94,13 @@ export async function proxyWithCatalog(request: Request): Promise<Response> {
     }
     const headers = new Headers(upstream.headers)
     headers.delete('content-length') // el body se re-armó desde texto
-    return new Response(text, { status: 200, statusText: upstream.statusText, headers })
+    // Respuesta en vivo: el backend ya descontó lo enviado; solo falta restar lo PENDIENTE del outbox.
+    return new Response(adjustStockBody(tenantId, route, text), { status: 200, statusText: upstream.statusText, headers })
   }
 
   if (CACHEABLE_FAILURES.has(upstream.status)) {
     try {
-      const cached = serveFromCache(store, route)
+      const cached = serveFromCache(store, route, tenantId)
       if (cached) {
         await upstream.body?.cancel().catch(() => {})
         return cached

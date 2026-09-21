@@ -15,6 +15,7 @@ import {
   ProductsModal,
   DailySummaryModal,
   MpTransactionsModal,
+  OutboxListModal,
   FreePriceModal,
   Notification,
   KeyboardGuide
@@ -33,7 +34,7 @@ import {
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
 import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
-import { useProducts, useSales, useOfflineQueue, useConnectionStatus } from './hooks'
+import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag } from './hooks'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
@@ -61,6 +62,7 @@ export default function POSPage() {
   })
   const [showDailySummary, setShowDailySummary] = useState(false)
   const [showMpTransactions, setShowMpTransactions] = useState(false)
+  const [showOutboxList, setShowOutboxList] = useState(false)
   const mpListRef = useRef<HTMLDivElement>(null)
   const [showFreePrice, setShowFreePrice] = useState(false)
   const [cacheRefreshing, setCacheRefreshing] = useState(false)
@@ -101,9 +103,18 @@ export default function POSPage() {
     searchProductByCodePrefix,
     fetchProducts
   } = useProducts()
-  const { flushQueue, pendingCount, refreshCount } = useOfflineQueue()
   const connection = useConnectionStatus()
-  const { createSale, isProcessing } = useSales(showNotification, flushQueue, refreshCount)
+  // Cola vieja de localStorage: se migra una vez (desktop → outbox SQLite; web → se sube y se borra).
+  const { legacyPending } = useOfflineQueue(connection.runtime)
+  // Outbox SQLite (solo desktop): ventas/gastos guardados en esta caja y su estado de subida.
+  const outbox = useOutboxStatus(connection.runtime)
+  const pendingCount = outbox.counts.pending + legacyPending
+  const reviewCount = outbox.counts.review + outbox.counts.failed
+  const syncBlock = outbox.backend === 'unauthorized' || outbox.backend === 'unsupported' ? outbox.backend : null
+  // `mp_offline` (config del negocio): permite cobrar con MercadoPago sin conexión. Sin ella, el botón se bloquea offline.
+  const mpOffline = useBusinessFlag('mp_offline', { enabled: connection.runtime === 'desktop', refreshKey: connection.online })
+  const mpBlocked = connection.runtime === 'desktop' && !connection.online && !mpOffline
+  const { createSale, isProcessing } = useSales()
   const {
     expenseState,
     openExpenseModal,
@@ -367,13 +378,15 @@ export default function POSPage() {
       const result = await createSale(cart, cashAmount, mpAmount, change)
 
       if (result.success) {
-        showNotification('Venta procesada exitosamente', 'success')
-        // Recargar productos después de la venta
+        if (result.queued && !connection.online) {
+          // Desktop sin conexión: la venta ya está guardada en el outbox local y se sube sola al volver la red.
+          showNotification('Venta guardada sin conexión. Se sincronizará automáticamente.', 'offline_saved')
+        } else {
+          showNotification('Venta procesada exitosamente', 'success')
+        }
+        // Recargar productos después de la venta (el stock mostrado descuenta lo pendiente de sincronizar)
+        void outbox.refresh()
         await fetchProducts()
-        return true
-      } else if (!result.success && result.queuing) {
-        // Sale will be retried / queued offline — treat as success so UI clears
-        // The offline notification is shown by useSales after queue write completes
         return true
       } else {
         showNotification(result.error || 'Error al procesar la venta', 'error')
@@ -470,6 +483,10 @@ export default function POSPage() {
 
   // Keyboard handling
   const handleKeyPress = (key: string) => {
+    if (showOutboxList) {
+      if (key === 'Escape' || key === 'Tab') setShowOutboxList(false)
+      return
+    }
     if (showMpTransactions) {
       if (key === 'Escape' || key === 'Tab') setShowMpTransactions(false)
       else if (key === 'ArrowUp' || key === '8') mpListRef.current?.scrollBy({ top: -120 })
@@ -539,7 +556,7 @@ export default function POSPage() {
     // Handle expense modal
     if (expenseState.showExpenseModal) {
       if (key === 'Enter') {
-        createExpense(() => {})
+        createExpense(() => { void outbox.refresh() })
         return
       } else if (key === 'Escape') {
         closeExpenseModal()
@@ -613,6 +630,10 @@ export default function POSPage() {
     // Handle payment modal
     if (paymentState.showPaymentModal && !paymentState.paymentMethod) {
       if (key === '1') {
+        if (mpBlocked) {
+          showNotification('MercadoPago no está habilitado sin conexión. Cobrá en efectivo.', 'error')
+          return
+        }
         selectPaymentMethod('mercadopago')
         return
       } else if (key === '2') {
@@ -765,7 +786,13 @@ export default function POSPage() {
           </div>
           <div className="flex items-center gap-3">
             {/* Desktop: aviso de conexión/pendientes (el botón solo verifica la conexión). Web: header de siempre. */}
-            <ConnectionStatus status={connection} pendingCount={pendingCount} />
+            <ConnectionStatus
+              status={connection}
+              pendingCount={pendingCount}
+              reviewCount={reviewCount}
+              syncBlock={syncBlock}
+              onOpenList={() => setShowOutboxList(true)}
+            />
             {connection.runtime === 'web' && (
               <>
               {pendingCount > 0 && (
@@ -857,6 +884,7 @@ export default function POSPage() {
         paymentState={paymentState}
         total={total}
         mpConnected={mpConnected}
+        mpDisabled={mpBlocked}
         onSelectMethod={selectPaymentMethod}
         onConfirmPayment={
           paymentState.showingChange
@@ -887,7 +915,7 @@ export default function POSPage() {
         amount={expenseState.amount}
         isProcessing={expenseState.isProcessing}
         onAmountChange={updateAmount}
-        onConfirm={() => createExpense(() => {})}
+        onConfirm={() => createExpense(() => { void outbox.refresh() })}
         onCancel={closeExpenseModal}
         onKeyPress={handleKeyPress}
       />
@@ -906,6 +934,12 @@ export default function POSPage() {
       />
 
       <MpTransactionsModal show={showMpTransactions} listRef={mpListRef} />
+      <OutboxListModal
+        isOpen={showOutboxList}
+        onClose={() => setShowOutboxList(false)}
+        items={outbox.items}
+        onDismiss={(clientId) => void outbox.dismiss(clientId)}
+      />
 
       <FreePriceModal
         show={showFreePrice}
