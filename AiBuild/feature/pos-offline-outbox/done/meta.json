@@ -14,7 +14,7 @@
   "tests_required": true,
   "language": "es",
   "create_claude_md": false,
-  "status": "build-done",
+  "status": "finished",
   "created_at": "2026-09-21T00:00:00Z",
   "updated_at": "2026-09-21T17:03:57Z",
   "git": true,
@@ -23,7 +23,7 @@
     "technical_spec": "done",
     "plan": "done",
     "build": "done",
-    "finish": "pending"
+    "finish": "done"
   },
   "open_questions": [],
   "tasks": [
@@ -823,5 +823,6 @@
       ]
     }
   ],
-  "build_completed_at": "2026-09-21T17:03:57Z"
+  "build_completed_at": "2026-09-21T17:03:57Z",
+  "finished_at": "2026-09-21T18:18:48Z"
 }
