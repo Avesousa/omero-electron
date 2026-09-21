@@ -6,6 +6,8 @@
  * Solo se usan en el servidor (BACKEND_URL nunca debe llegar al navegador).
  */
 
+import path from 'node:path'
+
 export type Runtime = 'web' | 'desktop'
 
 type Env = Record<string, string | undefined>
@@ -61,4 +63,31 @@ export function getProxyTimeoutMs(env: Env = process.env): number {
   if (!raw) return DEFAULT_PROXY_TIMEOUT_MS
   const n = Number(raw)
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_PROXY_TIMEOUT_MS
+}
+
+/** Intervalo del refresco de la caché de catálogo (ms). */
+export const DEFAULT_SYNC_INTERVAL_MS = 300_000
+
+/**
+ * Directorio de las bases SQLite del catálogo (`OMERO_DATA_DIR`; Electron lo inyecta en desktop).
+ * En desarrollo (NODE_ENV distinto de "production") sin definir → `<cwd>/.data`.
+ * En producción sin definir → null: no hay caché y todo sigue funcionando por proxy directo.
+ */
+export function getDataDir(env: Env = process.env): string | null {
+  const raw = env.OMERO_DATA_DIR?.trim()
+  if (raw) return raw
+  return env.NODE_ENV === 'production' ? null : path.join(process.cwd(), '.data')
+}
+
+/** Ruta al `.node` de better-sqlite3 a usar (binario de Electron empaquetado), o null para el binding por defecto. */
+export function getSqliteBinding(env: Env = process.env): string | null {
+  return env.OMERO_SQLITE_BINDING?.trim() || null
+}
+
+/** `CATALOG_SYNC_INTERVAL_MS` (opcional). Entero positivo; si es inválido se usa el default (5 min). */
+export function getSyncIntervalMs(env: Env = process.env): number {
+  const raw = env.CATALOG_SYNC_INTERVAL_MS?.trim()
+  if (!raw) return DEFAULT_SYNC_INTERVAL_MS
+  const n = Number(raw)
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_SYNC_INTERVAL_MS
 }

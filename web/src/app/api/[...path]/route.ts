@@ -1,10 +1,11 @@
-import { proxyToBackend } from '@/lib/backend-proxy'
+import { handleApiRequest } from '@/lib/data-layer'
 
-// Proxy runtime /api/* → omero-backend (BACKEND_URL se lee en cada request, no en el build).
+// /api/* → capa de datos (proxy runtime al omero-backend; en desktop, catálogo con caché SQLite).
+// BACKEND_URL se lee en cada request, no en el build.
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const handler = (request: Request) => proxyToBackend(request)
+const handler = (request: Request) => handleApiRequest(request)
 
 export {
   handler as GET,

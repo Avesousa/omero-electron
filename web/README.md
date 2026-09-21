@@ -15,6 +15,9 @@ En ambos, `/api/*` se reenvía al `omero-backend` de Railway mediante el proxy e
 | `OMERO_RUNTIME` | `web` \| `desktop`. Obligatoria; el servidor no arranca sin ella |
 | `BACKEND_URL` | Origen del `omero-backend` (sin path). Obligatoria |
 | `PROXY_TIMEOUT_MS` | Timeout hasta recibir headers del backend (default 30000) |
+| `OMERO_DATA_DIR` | (desktop) carpeta de las bases SQLite del catálogo. Dev sin definir: `web/.data` |
+| `OMERO_SQLITE_BINDING` | (desktop) ruta al `.node` de better-sqlite3 para el ABI de Electron |
+| `CATALOG_SYNC_INTERVAL_MS` | (desktop) refresco de la caché, default 300000 |
 
 `web/.env.example` tiene una plantilla. **No** definir `NEXT_PUBLIC_API_URL`: el POS llama a `/api/*` del mismo origen.
 
@@ -28,6 +31,12 @@ npm run check          # typecheck + tests con cobertura (umbral 85 % en runtime
 ```
 
 `GET /api/_local/health` → `{ ok, runtime, backendConfigured }` (local, no toca el backend).
+`GET /api/_local/connectivity` → `{ online, checkedAt, latencyMs, runtime, cache }` (solo verifica la conexión). `DELETE /api/_local/cache` borra la caché del tenant (logout).
+
+## Caché SQLite del catálogo (solo `OMERO_RUNTIME=desktop`)
+
+Ver `src/lib/catalog/` y la sección correspondiente del `CLAUDE.md` de la raíz. En modo web no se crea ninguna base ni se carga el módulo nativo.
+`better-sqlite3` es `optionalDependencies` (versión exacta): **no** instalar con `--omit=optional` (rompe Tailwind/SWC).
 
 ## Código copiado de `omero` (duplicado a propósito)
 

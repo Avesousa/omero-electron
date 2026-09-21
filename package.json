@@ -10,20 +10,23 @@
     "build:config": "node scripts/write-build-config.mjs",
     "build:web": "npm --prefix web run build",
     "prepare:frontend": "node scripts/prepare-frontend.mjs",
-    "prepare:app": "npm run build:config && npm run build:web && npm run prepare:frontend",
+    "prepare:app": "npm run build:config && npm run fetch:native && npm run build:web && npm run prepare:frontend && npm run verify:native -- --module resources/frontend/node_modules/better-sqlite3",
     "build": "npm run prepare:app && tsc && npm run copy:html && electron-builder",
     "build:win": "npm run prepare:app && tsc && npm run copy:html && electron-builder --win",
     "build:mac": "npm run prepare:app && tsc && npm run copy:html && electron-builder --mac",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "check": "npm run typecheck && npm run test:coverage"
+    "check": "npm run typecheck && npm run test:coverage",
+    "fetch:native": "node scripts/fetch-native.mjs",
+    "verify:native": "node scripts/verify-native.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
     "@vitest/coverage-v8": "^4.1.11",
     "electron": "^40.10.6",
     "electron-builder": "^25.0.0",
+    "tar": "^7.5.22",
     "typescript": "^5.0.0",
     "vitest": "^4.1.11"
   },

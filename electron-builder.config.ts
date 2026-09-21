@@ -18,6 +18,13 @@ const config: Configuration = {
       to: 'frontend',
       filter: ['**/*'],
     },
+    // Binarios de better-sqlite3 (ABI de Electron) por plataforma/arquitectura (npm run fetch:native).
+    // El runtime elige uno con process.platform/arch (OMERO_SQLITE_BINDING); el DMG universal lleva los dos de macOS.
+    {
+      from: 'resources/native',
+      to: 'native',
+      filter: ['*.node'],
+    },
     // build-config.json: URL del backend por defecto (npm run build:config).
     // betterstack.token (opcional): token de Better Stack para builds de producción.
     // Créalo local o en CI antes de compilar. Está en .gitignore — nunca lo commitees.

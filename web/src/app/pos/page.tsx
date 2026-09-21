@@ -33,7 +33,8 @@ import {
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
 import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
-import { useProducts, useSales, useOfflineQueue } from './hooks'
+import { useProducts, useSales, useOfflineQueue, useConnectionStatus } from './hooks'
+import { ConnectionStatus } from './components/ConnectionStatus'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
@@ -101,6 +102,7 @@ export default function POSPage() {
     fetchProducts
   } = useProducts()
   const { flushQueue, pendingCount, refreshCount } = useOfflineQueue()
+  const connection = useConnectionStatus()
   const { createSale, isProcessing } = useSales(showNotification, flushQueue, refreshCount)
   const {
     expenseState,
@@ -762,34 +764,40 @@ export default function POSPage() {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            {pendingCount > 0 && (
-              <span className="bg-amber-500 text-black text-sm font-bold px-3 py-1 rounded-full">
-                {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} sin sync
-              </span>
+            {/* Desktop: aviso de conexión/pendientes (el botón solo verifica la conexión). Web: header de siempre. */}
+            <ConnectionStatus status={connection} pendingCount={pendingCount} />
+            {connection.runtime === 'web' && (
+              <>
+              {pendingCount > 0 && (
+                <span className="bg-amber-500 text-black text-sm font-bold px-3 py-1 rounded-full">
+                  {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} sin sync
+                </span>
+              )}
+              <button
+                onClick={async () => {
+                  if (cacheRefreshing) return
+                  setCacheRefreshing(true)
+                  setCacheRefreshed(false)
+                  await refreshProducts()
+                  setCacheRefreshing(false)
+                  setCacheRefreshed(true)
+                  setTimeout(() => setCacheRefreshed(false), 2000)
+                }}
+                disabled={cacheRefreshing}
+                title="Actualizar productos"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={cacheRefreshed
+                  ? { borderColor: '#22c55e', color: '#22c55e', background: 'rgba(34,197,94,0.1)' }
+                  : { borderColor: '#FF6B00', color: '#FF6B00', background: 'transparent' }
+                }
+              >
+                <span className={cacheRefreshing ? 'animate-spin inline-block' : 'inline-block'}>
+                  {cacheRefreshed ? '✓' : '↻'}
+                </span>
+                <span>{cacheRefreshing ? 'Actualizando...' : cacheRefreshed ? 'Actualizado' : 'Actualizar'}</span>
+              </button>
+              </>
             )}
-            <button
-              onClick={async () => {
-                if (cacheRefreshing) return
-                setCacheRefreshing(true)
-                setCacheRefreshed(false)
-                await refreshProducts()
-                setCacheRefreshing(false)
-                setCacheRefreshed(true)
-                setTimeout(() => setCacheRefreshed(false), 2000)
-              }}
-              disabled={cacheRefreshing}
-              title="Actualizar productos"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              style={cacheRefreshed
-                ? { borderColor: '#22c55e', color: '#22c55e', background: 'rgba(34,197,94,0.1)' }
-                : { borderColor: '#FF6B00', color: '#FF6B00', background: 'transparent' }
-              }
-            >
-              <span className={cacheRefreshing ? 'animate-spin inline-block' : 'inline-block'}>
-                {cacheRefreshed ? '✓' : '↻'}
-              </span>
-              <span>{cacheRefreshing ? 'Actualizando...' : cacheRefreshed ? 'Actualizado' : 'Actualizar'}</span>
-            </button>
             <ThemeToggle />
           </div>
         </div>
