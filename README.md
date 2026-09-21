@@ -1,6 +1,11 @@
 # 🖥️ Omero POS — Electron Desktop App
 
-Wrapper de escritorio para el sistema de punto de venta [Omero](https://github.com/Avesousa/omero). Envuelve la interfaz POS en una ventana Electron sin chrome de browser, con entrada restringida a teclado numérico para uso en terminales de caja dedicadas.
+Punto de venta de [Omero](https://github.com/Avesousa/omero) como proyecto independiente del admin. Un mismo Next (`web/`) corre en dos modos y en ambos habla con el `omero-backend` de Railway:
+
+- **Web** (`OMERO_RUNTIME=web`): servicio propio en Railway, se usa desde el navegador.
+- **Desktop** (`OMERO_RUNTIME=desktop`): instalador de Electron que levanta el Next local en `localhost:3000` (sin Java) y abre el POS en una ventana sin chrome de browser, con entrada restringida a teclado numérico para terminales de caja dedicadas.
+
+En ambos modos el Next hace de **proxy** `/api/*` → backend (la URL se lee en runtime, `BACKEND_URL`). Si `omero` (admin) cae, el POS sigue funcionando.
 
 ## 🚀 Características
 
@@ -8,12 +13,13 @@ Wrapper de escritorio para el sistema de punto de venta [Omero](https://github.c
 - **Entrada restringida a numpad** — solo dígitos, Enter, Backspace, operadores y Escape; teclas alfabéticas bloqueadas a nivel OS
 - **Shortcodes configurables** — se agregan en `main/keyboard.ts` sin tocar el frontend
 - **Detección automática** — el frontend detecta `window.electronAPI.isElectron` y adapta el hook de teclado
+- **Sin Java** — el backend es el de Railway; el instalador solo trae Electron + el Next del POS
 - **Auto-updater preparado** — scaffold de `electron-updater` listo para activar cuando se configure code signing
 
 ## 🛠️ Tecnologías
 
-- **Electron** (latest LTS)
-- **TypeScript 5**
+- **Electron 33** + **TypeScript 5** (`main/`)
+- **Next.js 16 / React 18 / Tailwind 4** (`web/`, el POS)
 - **electron-builder** — empaquetado para Windows y macOS
 - **electron-updater** — stub de auto-actualización
 
@@ -21,35 +27,59 @@ Wrapper de escritorio para el sistema de punto de venta [Omero](https://github.c
 
 ```
 omero-electron/
-├── main/
-│   ├── main.ts           # Main process: BrowserWindow, ciclo de vida de la app
-│   ├── keyboard.ts       # Filtro de teclas via before-input-event
-│   ├── preload.ts        # contextBridge mínimo (expone isElectron, platform)
-│   └── config.ts         # POS_URL — configurable por variable de entorno
-├── electron-builder.config.ts   # Targets: Windows NSIS x64, macOS DMG universal
-├── package.json
-└── tsconfig.json
+├── main/                         # Electron (CommonJS)
+│   ├── main.ts                   # Ciclo de vida: splash → Next local → ventana
+│   ├── process-manager.ts        # Levanta/espera/detiene el Next (utilityProcess)
+│   ├── config.ts                 # POS_URL, resolveBackendUrl() (BACKEND_URL > default del build)
+│   ├── build-config.ts           # Lee resources/build-config.json
+│   ├── keyboard.ts               # Filtro de teclas via before-input-event
+│   └── preload.ts                # contextBridge mínimo (isElectron, platform)
+├── web/                          # Next.js del POS (ESM) — ver web/README.md
+│   ├── src/app/pos, login/       # POS (copiado de omero; se rediseñará)
+│   ├── src/app/api/[...path]/    # Proxy runtime /api/* → BACKEND_URL
+│   ├── src/app/api/_local/health # Readiness local (Electron / Railway)
+│   ├── src/lib/{runtime,backend-proxy}.ts
+│   ├── Dockerfile, railway.toml  # Modo web en Railway (Root Directory = web/)
+│   └── .env.example
+├── scripts/
+│   ├── prepare-frontend.mjs      # web/.next/standalone → resources/frontend
+│   └── write-build-config.mjs    # OMERO_DEFAULT_BACKEND_URL → resources/build-config.json
+├── electron-builder.config.ts    # Windows NSIS x64, macOS DMG universal
+└── .github/workflows/installer.yml
 ```
 
 ## ⚙️ Requisitos previos
 
 - Node.js 20+
-- El servidor Next.js de [omero](https://github.com/Avesousa/omero) corriendo (local o deployed)
+- Un `omero-backend` accesible (local con `./dev.sh up` desde la raíz de omeroShop, o el de Railway)
 
 ## 🚀 Desarrollo
 
 ```bash
-# Instalar dependencias
+# 1) Dependencias (raíz = Electron, web/ = POS)
 npm install
+npm --prefix web install
 
-# Compilar TypeScript
-npx tsc
+# 2) Variables del POS
+cp web/.env.example web/.env.local      # OMERO_RUNTIME + BACKEND_URL
 
-# Levantar en modo desarrollo (apunta a http://localhost:3000/pos por defecto)
+# 3) POS en el navegador (modo web) → http://localhost:3000/pos
+npm run dev:web
+
+# 4) (opcional) Electron cargando ese POS
 npm run dev
 ```
 
-Asegurate de tener el servidor Next.js corriendo en `localhost:3000` antes de ejecutar el app.
+> `./dev.sh up` también levanta el Next de `omero` en `:3000`. Para no chocar: `PORT=3001 npm run dev:web` y
+> `OMERO_POS_URL=http://localhost:3001/pos npm run dev`.
+
+Usuarios de prueba del backend `devdata`: `cajero1@minegocio.com` / `123456789`.
+
+### Calidad
+```bash
+npm run check              # Electron: typecheck + tests (100 % en resolveBackendUrl)
+npm --prefix web run check # POS: typecheck + tests (umbral 85 % en runtime/backend-proxy)
+```
 
 ## 🎮 Cómo usar el POS en Electron
 
@@ -67,33 +97,50 @@ Las teclas alfabéticas están bloqueadas — toda la operación es con numpad.
 ## 📦 Build y distribución
 
 ```bash
-# Build para macOS (DMG universal — Intel + Apple Silicon)
-npm run build:mac
+# El instalador necesita la URL por defecto del backend de Railway (origen, sin path):
+export OMERO_DEFAULT_BACKEND_URL=https://omero-backend.up.railway.app
 
-# Build para Windows (instalador NSIS x64)
-npm run build:win
-
-# Build para ambas plataformas
-npm run build
+npm run build:mac    # DMG universal (Intel + Apple Silicon)
+npm run build:win    # Instalador NSIS x64
 ```
+
+`build:*` encadena: `build:config` (escribe `resources/build-config.json`) → `build:web` (Next standalone) →
+`prepare:frontend` (arma `resources/frontend`) → `tsc` → `electron-builder`. No hay JRE ni JAR.
 
 Los artefactos se generan en `release/`:
 - **macOS**: `omero-pos.dmg`
 - **Windows**: `omero-pos-setup.exe`
 
+CI: el workflow `installer.yml` se dispara con tags `v*.*.*` y requiere la **variable de repositorio**
+`OMERO_DEFAULT_BACKEND_URL`.
+
 > **Nota**: Los builds son sin firma de código (unsigned). Son aptos para distribución interna directa. Para distribución pública se requiere Apple notarization y Windows Authenticode — ver sección de code signing más abajo.
+
+## ☁️ Modo web en Railway
+
+Servicio nuevo con **Root Directory = `web/`** (usa `web/Dockerfile` y `web/railway.toml`). Variables:
+
+| Variable | Valor |
+|---|---|
+| `OMERO_RUNTIME` | `web` |
+| `BACKEND_URL` | Origen del `omero-backend` (ej. `https://omero-backend.up.railway.app`) |
+| `PORT` | Lo inyecta Railway |
+
+El healthcheck es `/api/_local/health`. Si falta `OMERO_RUNTIME` o `BACKEND_URL` el proceso termina con error (deploy fallido, no silencioso).
+No se definen `NEXT_PUBLIC_*`. El backend **no** necesita agregar el dominio del POS a `CORS_ALLOWED_ORIGINS`: el proxy no reenvía `Origin`.
+
+En `omero` (admin) definí `NEXT_PUBLIC_POS_URL` con la URL pública de este servicio para que "Abrir POS" apunte a él.
 
 ## 🔧 Variables de entorno
 
-| Variable | Descripción | Default |
-|---|---|---|
-| `OMERO_POS_URL` | URL del servidor Next.js a cargar | `http://localhost:3000/pos` |
-
-Para apuntar a producción:
-
-```bash
-OMERO_POS_URL=https://omero.vercel.app/pos npm run dev
-```
+| Variable | Dónde | Descripción | Default |
+|---|---|---|---|
+| `OMERO_RUNTIME` | Next (`web/`) | `web` \| `desktop`. Obligatoria; Electron la inyecta como `desktop` | — |
+| `BACKEND_URL` | Next y Electron | Origen del omero-backend. En desktop es el *override* del default del build | default de build (desktop) |
+| `PROXY_TIMEOUT_MS` | Next | Tiempo máximo hasta recibir headers del backend | `30000` |
+| `OMERO_DEFAULT_BACKEND_URL` | Build del instalador | Se embebe en `resources/build-config.json` | — (obligatoria) |
+| `OMERO_POS_URL` | Electron (dev) | URL que carga la ventana | `http://localhost:3000/pos` |
+| `BETTERSTACK_TOKEN` | Electron | Logs remotos opcionales (también `resources/betterstack.token`) | — |
 
 ## ⌨️ Configurar shortcodes
 
@@ -132,7 +179,7 @@ Para builds internos sin firmar, los usuarios deberán:
 
 | Repo | Descripción |
 |---|---|
-| [omero](https://github.com/Avesousa/omero) | Frontend Next.js (web + fuente del POS) |
+| [omero](https://github.com/Avesousa/omero) | Admin Next.js (origen del código del POS copiado; `NEXT_PUBLIC_POS_URL` apunta al POS de este repo) |
 | [omero-backend](https://github.com/Avesousa/omero-backend) | API REST Java/Spring Boot |
 
 ---

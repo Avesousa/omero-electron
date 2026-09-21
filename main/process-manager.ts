@@ -1,86 +1,75 @@
-import { spawn, ChildProcess } from 'child_process'
 import { utilityProcess, UtilityProcess } from 'electron'
 import { app } from 'electron'
 import path from 'path'
 import net from 'net'
-import { backendLogger, frontendLogger, electronLogger, makeLineHandler, getBetterStackToken } from './logger'
+import { frontendLogger, makeLineHandler } from './logger'
+import { resolveBackendUrl } from './config'
+import { readBuildConfig } from './build-config'
 
 const IS_PACKAGED = app.isPackaged
 const ROOT = IS_PACKAGED
   ? path.dirname(app.getPath('exe'))
   : path.join(__dirname, '../../')
 
-const JRE_JAVA   = path.join(ROOT, 'resources', 'jre', 'bin', IS_PACKAGED ? 'javaw.exe' : 'java')
-const BACKEND_JAR = path.join(ROOT, 'resources', 'backend', 'omero-backend.jar')
 const FRONTEND_DIR = path.join(ROOT, 'resources', 'frontend')
-const DATA_DIR = path.join(app.getPath('userData'), 'data')
+const FRONTEND_PORT = 3000
+const FRONTEND_HOST = '127.0.0.1'
 
-let backendProcess: ChildProcess | null = null
 let frontendProcess: UtilityProcess | null = null
+let frontendExitCode: number | null = null
 
-export function startBackend(): void {
-  const token = getBetterStackToken()
-  const metricsArgs = token
-    ? [`-DBETTERSTACK_TOKEN=${token}`, '-DBETTERSTACK_METRICS_ENABLED=true']
-    : []
-
-  backendProcess = spawn(JRE_JAVA, [
-    '-Xmx256m',
-    '-XX:TieredStopAtLevel=1',
-    `-DOMERO_DATA_DIR=${DATA_DIR}`,
-    '-Dspring.profiles.active=local',
-    ...metricsArgs,
-    '-jar',
-    BACKEND_JAR,
-  ], {
-    detached: false,
-    windowsHide: true,
-    stdio: 'pipe',
-  })
-
-  backendProcess.stdout?.on('data', makeLineHandler(backendLogger.info))
-  backendProcess.stderr?.on('data', makeLineHandler(backendLogger.error))
-  backendProcess.on('exit', (code) => electronLogger.info(`backend exited with code ${code}`))
-}
-
+/**
+ * Levanta el Next standalone del POS en 127.0.0.1:3000 (modo desktop).
+ * El Next hace de proxy hacia el omero-backend de Railway: BACKEND_URL sale de la variable de
+ * entorno (override) o del default embebido en el build. Lanza si no hay ninguna.
+ */
 export function startFrontend(): void {
+  const backendUrl = resolveBackendUrl(process.env, readBuildConfig())
   const serverJs = path.join(FRONTEND_DIR, 'server.js')
+
+  frontendLogger.info(`starting frontend (runtime=desktop, backend=${backendUrl})`)
+  frontendExitCode = null
   frontendProcess = utilityProcess.fork(serverJs, [], {
     cwd: FRONTEND_DIR,
     env: {
       NODE_ENV: 'production',
-      PORT: '3000',
-      HOSTNAME: '127.0.0.1',
+      PORT: String(FRONTEND_PORT),
+      HOSTNAME: FRONTEND_HOST,
+      OMERO_RUNTIME: 'desktop',
+      BACKEND_URL: backendUrl,
     },
     stdio: 'pipe',
   })
 
   frontendProcess.stdout?.on('data', makeLineHandler(frontendLogger.info))
   frontendProcess.stderr?.on('data', makeLineHandler(frontendLogger.error))
+  frontendProcess.on('exit', (code) => {
+    frontendExitCode = code
+    frontendLogger.info(`frontend exited with code ${code}`)
+  })
 }
 
-export async function waitForBackend(timeoutMs = 60_000): Promise<void> {
+/** Espera a que el Next local responda su health (no depende de la conexión con Railway). */
+export async function waitForFrontend(timeoutMs = 60_000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
+    // Si el Next murió (p. ej. configuración inválida) no tiene sentido seguir esperando.
+    if (frontendExitCode !== null) throw new Error(`El POS local terminó inesperadamente (código ${frontendExitCode})`)
     try {
-      const res = await fetch('http://localhost:8080/api/health')
+      const res = await fetch(`http://${FRONTEND_HOST}:${FRONTEND_PORT}/api/_local/health`)
       if (res.ok) return
     } catch {
       // not ready yet
     }
-    await new Promise(r => setTimeout(r, 1000))
+    await new Promise(r => setTimeout(r, 500))
   }
-  throw new Error('Backend did not start within 60 seconds')
+  throw new Error('El POS local no arrancó en 60 segundos')
 }
 
 export function stopAll(): void {
   if (frontendProcess) {
     frontendProcess.kill()
     frontendProcess = null
-  }
-  if (backendProcess && !backendProcess.killed) {
-    backendProcess.kill('SIGTERM')
-    backendProcess = null
   }
 }
 

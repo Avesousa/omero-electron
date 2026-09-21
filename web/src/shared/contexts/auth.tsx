@@ -1,0 +1,78 @@
+'use client'
+
+import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { postLogin } from '@/shared/services/authService'
+import { setSession, clearSession, getSessionUser } from '@/lib/sessionManager'
+import type { AuthContextValue, AuthState, LoginCredentials } from '@/shared/types/auth'
+
+const AuthContext = createContext<AuthContextValue | null>(null)
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const [state, setState] = useState<AuthState>({
+    user: null,
+    isAuthenticated: false,
+    isLoading: true,
+    error: null,
+  })
+
+  useEffect(() => {
+    try {
+      const user = getSessionUser()
+      setState({ user, isAuthenticated: !!user, isLoading: false, error: null })
+    } catch {
+      clearSession()
+      setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
+    }
+  }, [])
+
+  const login = useCallback(async ({ email, password, redirectTo }: LoginCredentials) => {
+    setState(s => ({ ...s, isLoading: true, error: null }))
+
+    try {
+      const result = await postLogin({ email, password })
+
+      if (!result.success) {
+        setState(s => ({ ...s, isLoading: false, error: result.error || 'Error al iniciar sesión.' }))
+        return
+      }
+
+      const { accessToken: jwt, user } = result.data
+      setSession(jwt, user)
+      setState({ user, isAuthenticated: true, isLoading: false, error: null })
+
+      let destination = '/'
+
+      if (redirectTo && redirectTo.startsWith('/')) {
+        try {
+          const res = await fetch(redirectTo, { method: 'HEAD', redirect: 'manual' })
+          if (res.ok) destination = redirectTo
+        } catch { }
+      }
+
+      router.push(destination)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error al iniciar sesión.'
+      setState(s => ({ ...s, isLoading: false, error: message }))
+    }
+  }, [router])
+
+  const logout = useCallback(() => {
+    clearSession()
+    setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
+    router.push('/login')
+  }, [router])
+
+  return (
+    <AuthContext.Provider value={{ ...state, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
+  return ctx
+}

@@ -1,0 +1,9 @@
+<svg width="160" height="48" viewBox="0 0 160 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Omero wordmark">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@800&amp;display=swap');
+      .wordmark { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-weight: 800; font-size: 38px; fill: #1E40AF; letter-spacing: -1px; }
+    </style>
+  </defs>
+  <text x="0" y="38" class="wordmark">omero</text>
+</svg>

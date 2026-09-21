@@ -1,0 +1,41 @@
+{
+  "name": "omero-pos-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Omero POS — Next.js app (modo web en Railway y modo desktop dentro de Electron)",
+  "scripts": {
+    "dev": "next dev --turbo",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run test:coverage"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.11",
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.469.0",
+    "next": "^16.1.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@vitest/coverage-v8": "^4.1.5",
+    "autoprefixer": "^10.4.21",
+    "jsdom": "^29.1.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5",
+    "vitest": "^4.1.5"
+  }
+}

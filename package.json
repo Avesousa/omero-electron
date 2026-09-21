@@ -1,21 +1,31 @@
 {
   "name": "omero-pos",
   "version": "1.0.0",
-  "description": "Omero POS — Electron desktop wrapper",
+  "description": "Omero POS — Electron desktop wrapper (Next local en localhost:3000, proxy al backend de Railway)",
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "electron .",
+    "dev:web": "npm --prefix web run dev",
     "copy:html": "cp main/splash.html dist/main/splash.html",
-    "build": "tsc && npm run copy:html && electron-builder",
-    "build:win": "tsc && npm run copy:html && electron-builder --win",
-    "build:mac": "tsc && npm run copy:html && electron-builder --mac",
-    "typecheck": "tsc --noEmit"
+    "build:config": "node scripts/write-build-config.mjs",
+    "build:web": "npm --prefix web run build",
+    "prepare:frontend": "node scripts/prepare-frontend.mjs",
+    "prepare:app": "npm run build:config && npm run build:web && npm run prepare:frontend",
+    "build": "npm run prepare:app && tsc && npm run copy:html && electron-builder",
+    "build:win": "npm run prepare:app && tsc && npm run copy:html && electron-builder --win",
+    "build:mac": "npm run prepare:app && tsc && npm run copy:html && electron-builder --mac",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run test:coverage"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@logtail/node": "^0.5.8",
