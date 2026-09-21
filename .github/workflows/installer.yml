@@ -38,6 +38,8 @@ jobs:
       # Variable de repositorio (Settings → Secrets and variables → Actions → Variables):
       # OMERO_DEFAULT_BACKEND_URL = origen del omero-backend de Railway, ej. https://omero-backend.up.railway.app
       # La app instalada la usa por defecto; se puede pisar con la variable de entorno BACKEND_URL.
+      # `build:win` encadena: build:config → fetch:native (binarios de better-sqlite3 con checksum fijado) →
+      # build:web → prepare:frontend → verify:native (carga el binario con el ABI REAL de Electron; falla si no).
       - name: Build installer
         run: npm run build:win
         env:

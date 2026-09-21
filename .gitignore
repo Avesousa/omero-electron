@@ -5,3 +5,4 @@ release/
 resources/betterstack.token
 resources/frontend/
 resources/build-config.json
+resources/native/

@@ -7,6 +7,7 @@
  *     server.js, node_modules/, package.json   ← web/.next/standalone/*
  *     .next/static/                            ← web/.next/static
  *     public/                                  ← web/public
+ *   (y valida resources/native: binarios de better-sqlite3 para el ABI de Electron)
  *
  * Uso: npm --prefix web run build && node scripts/prepare-frontend.mjs
  */
@@ -45,4 +46,26 @@ if (fs.existsSync(publicDir)) {
 }
 
 if (!fs.existsSync(path.join(out, 'server.js'))) fail('resources/frontend/server.js no se generó.')
+
+// ── Caché SQLite (better-sqlite3) ────────────────────────────────────────────
+// Next NO traza este módulo (se carga con createRequire en runtime, ver web/src/lib/catalog/store-registry.ts), así
+// que se copia explícitamente: solo lib/ y package.json (~60 KB). El `.node` NO se copia desde acá: el que trae
+// node_modules es del Node del SISTEMA (ABI equivocado para Electron); en runtime se usa el binario de
+// resources/native elegido por plataforma/arquitectura (OMERO_SQLITE_BINDING).
+const sqliteSrc = path.join(web, 'node_modules', 'better-sqlite3')
+if (!fs.existsSync(path.join(sqliteSrc, 'lib'))) {
+  fail('No se encontró web/node_modules/better-sqlite3. Corré "npm ci" en web/ (es optionalDependency).')
+}
+const sqliteDir = path.join(out, 'node_modules', 'better-sqlite3')
+fs.rmSync(sqliteDir, { recursive: true, force: true })
+fs.mkdirSync(sqliteDir, { recursive: true })
+for (const entry of ['package.json', 'LICENSE']) {
+  if (fs.existsSync(path.join(sqliteSrc, entry))) fs.cpSync(path.join(sqliteSrc, entry), path.join(sqliteDir, entry))
+}
+fs.cpSync(path.join(sqliteSrc, 'lib'), path.join(sqliteDir, 'lib'), { recursive: true })
+
+const nativeDir = path.join(root, 'resources', 'native')
+const required = ['win32-x64', 'darwin-arm64', 'darwin-x64'].map((t) => `better_sqlite3-${t}.node`)
+const missing = required.filter((f) => !fs.existsSync(path.join(nativeDir, f)))
+if (missing.length) fail(`Faltan binarios nativos en resources/native: ${missing.join(', ')}. Corré "npm run fetch:native".`)
 console.log(`[prepare-frontend] OK → ${path.relative(root, out)}`)

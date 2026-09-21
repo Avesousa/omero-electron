@@ -1,6 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PROXY_TIMEOUT_MS, getBackendUrl, getProxyTimeoutMs, getRuntime } from './runtime'
+import {
+  DEFAULT_PROXY_TIMEOUT_MS,
+  DEFAULT_SYNC_INTERVAL_MS,
+  getBackendUrl,
+  getDataDir,
+  getProxyTimeoutMs,
+  getRuntime,
+  getSqliteBinding,
+  getSyncIntervalMs,
+} from './runtime'
 
 describe('getRuntime', () => {
   it.each(['web', 'desktop'] as const)('acepta "%s"', (value) => {
@@ -80,6 +89,45 @@ describe('getProxyTimeoutMs', () => {
 
   it.each(['abc', '0', '-5', '1.5', ''])('cae al default con valor inválido: "%s"', (bad) => {
     expect(getProxyTimeoutMs({ PROXY_TIMEOUT_MS: bad })).toBe(DEFAULT_PROXY_TIMEOUT_MS)
+  })
+})
+
+describe('getDataDir', () => {
+  it('usa OMERO_DATA_DIR si está definida (recortada)', () => {
+    expect(getDataDir({ OMERO_DATA_DIR: '  /datos/cache ', NODE_ENV: 'production' })).toBe('/datos/cache')
+  })
+
+  it('en desarrollo sin definir cae a <cwd>/.data', () => {
+    expect(getDataDir({ NODE_ENV: 'development' })).toBe(`${process.cwd()}/.data`)
+    expect(getDataDir({})).toBe(`${process.cwd()}/.data`)
+  })
+
+  it('en producción sin definir → null (sin caché)', () => {
+    expect(getDataDir({ NODE_ENV: 'production' })).toBeNull()
+    expect(getDataDir({ NODE_ENV: 'production', OMERO_DATA_DIR: '   ' })).toBeNull()
+  })
+})
+
+describe('getSqliteBinding', () => {
+  it('devuelve la ruta o null', () => {
+    expect(getSqliteBinding({ OMERO_SQLITE_BINDING: ' /r/native/x.node ' })).toBe('/r/native/x.node')
+    expect(getSqliteBinding({})).toBeNull()
+    expect(getSqliteBinding({ OMERO_SQLITE_BINDING: '  ' })).toBeNull()
+  })
+})
+
+describe('getSyncIntervalMs', () => {
+  it('default de 5 minutos', () => {
+    expect(getSyncIntervalMs({})).toBe(DEFAULT_SYNC_INTERVAL_MS)
+    expect(DEFAULT_SYNC_INTERVAL_MS).toBe(300_000)
+  })
+
+  it('acepta un entero positivo', () => {
+    expect(getSyncIntervalMs({ CATALOG_SYNC_INTERVAL_MS: '60000' })).toBe(60_000)
+  })
+
+  it.each(['abc', '0', '-1', '1.5', ''])('valor inválido "%s" → default', (bad) => {
+    expect(getSyncIntervalMs({ CATALOG_SYNC_INTERVAL_MS: bad })).toBe(DEFAULT_SYNC_INTERVAL_MS)
   })
 })
 

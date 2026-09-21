@@ -1,0 +1,14 @@
+{
+  "better-sqlite3-v12.11.1-electron-v143-win32-x64.tar.gz": {
+    "archive": "444e397d34802809350005cd1778de213e0b8a7813ac04b22f1124a556a86c3e",
+    "node": "433406ccc725198bfe7e20d5ac3754d08989ee6b64af0c65ca5dbb36a9d9a03e"
+  },
+  "better-sqlite3-v12.11.1-electron-v143-darwin-arm64.tar.gz": {
+    "archive": "892f7319d71005d4de2d76080d9601a0c4e953cf9bed45952af4d0bd5eb201fe",
+    "node": "5192362e8441efa788d58fe02184d0c5e3f8b69840f5100d92169ef02048fa30"
+  },
+  "better-sqlite3-v12.11.1-electron-v143-darwin-x64.tar.gz": {
+    "archive": "850e01acb947e99025365652b4c4a147e378c6cfed464b9450c06b46f41fea14",
+    "node": "26e31e8fa129e870ff54df89017657e211059dbc1e14f1a6d6cc567bbdc0e01b"
+  }
+}

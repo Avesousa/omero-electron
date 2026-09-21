@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   // Build autocontenido: lo usa Electron (resources/frontend) y el Dockerfile de Railway.
   // Next 16.3 (dev) genera AGENTS.md/CLAUDE.md en el proyecto; se desactiva para no ensuciar el repo.
   agentRules: false,
+  // better-sqlite3 (caché SQLite, solo desktop) NO se declara acá: se carga con createRequire en runtime
+  // (catalog/store-registry.ts) para que el build no dependa de que la dependencia opcional esté instalada.
   output: 'standalone',
   // Con dos lockfiles en el repo (raíz y web/) Next podría inferir la raíz del repo y anidar
   // el standalone en `standalone/web/server.js`. Se fija a esta carpeta para que `server.js`

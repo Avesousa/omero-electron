@@ -1,19 +1,37 @@
 import { utilityProcess, UtilityProcess } from 'electron'
 import { app } from 'electron'
+import fs from 'fs'
 import path from 'path'
 import net from 'net'
 import { frontendLogger, makeLineHandler } from './logger'
 import { resolveBackendUrl } from './config'
 import { readBuildConfig } from './build-config'
+import { RESOURCES_DIR } from './paths'
 
 const IS_PACKAGED = app.isPackaged
-const ROOT = IS_PACKAGED
-  ? path.dirname(app.getPath('exe'))
-  : path.join(__dirname, '../../')
-
-const FRONTEND_DIR = path.join(ROOT, 'resources', 'frontend')
+const FRONTEND_DIR = path.join(RESOURCES_DIR, 'frontend')
 const FRONTEND_PORT = 3000
 const FRONTEND_HOST = '127.0.0.1'
+
+/**
+ * Caché SQLite del catálogo (fase 2). Las bases viven en `<userData>/catalog-cache` (distinto de `<userData>/data`,
+ * que usaba la H2 legacy). El binario nativo de better-sqlite3 se elige por plataforma/arquitectura: el DMG
+ * universal y el instalador de Windows llevan uno por combinación en `resources/native`.
+ * Si no está el binario (build sin `fetch:native`) el POS igual funciona, sin caché.
+ */
+function catalogCacheEnv(): Record<string, string> {
+  const dataDir = path.join(app.getPath('userData'), 'catalog-cache')
+  fs.mkdirSync(dataDir, { recursive: true })
+  const env: Record<string, string> = { OMERO_DATA_DIR: dataDir }
+
+  if (IS_PACKAGED) {
+    const binding = path.join(RESOURCES_DIR, 'native', `better_sqlite3-${process.platform}-${process.arch}.node`)
+    if (fs.existsSync(binding)) env.OMERO_SQLITE_BINDING = binding
+    else frontendLogger.warn(`sin binario de SQLite para ${process.platform}-${process.arch}: el POS corre sin caché`)
+  }
+  frontendLogger.info(`catalog cache dir: ${dataDir}${env.OMERO_SQLITE_BINDING ? ' (binding nativo empaquetado)' : ''}`)
+  return env
+}
 
 let frontendProcess: UtilityProcess | null = null
 let frontendExitCode: number | null = null
@@ -37,6 +55,7 @@ export function startFrontend(): void {
       HOSTNAME: FRONTEND_HOST,
       OMERO_RUNTIME: 'desktop',
       BACKEND_URL: backendUrl,
+      ...catalogCacheEnv(),
     },
     stdio: 'pipe',
   })

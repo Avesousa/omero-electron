@@ -6,6 +6,9 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
+# OJO: NO usar --omit=optional. Omite TODAS las optionalDependencies, incluidas las binarias de Tailwind 4
+# (lightningcss-*) y de SWC de Next, y rompe el build. better-sqlite3 (caché SQLite del desktop) es opcional:
+# publica binarios musl y, si su instalación fallara, npm la tolera. El modo web nunca la carga.
 RUN npm ci
 
 # ─── Stage 2: builder ─────────────────────────────────────────────────────────
