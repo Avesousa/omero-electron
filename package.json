@@ -20,9 +20,9 @@
     "check": "npm run typecheck && npm run test:coverage"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.13.6",
     "@vitest/coverage-v8": "^4.1.11",
-    "electron": "^33.0.0",
+    "electron": "^40.10.6",
     "electron-builder": "^25.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.11"
