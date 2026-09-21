@@ -3,3 +3,5 @@ dist/
 release/
 *.js.map
 resources/betterstack.token
+resources/frontend/
+resources/build-config.json

@@ -18,38 +18,30 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
 
-      - name: Create resources directories
-        run: |
-          New-Item -ItemType Directory -Force -Path resources/backend
-          New-Item -ItemType Directory -Force -Path resources/frontend
-          New-Item -ItemType Directory -Force -Path resources/jre
-
-      - name: Download latest backend JAR
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/Avesousa/omero-backend/releases/download/backend-latest/omero-backend.jar" -OutFile "resources/backend/omero-backend.jar"
-
-      - name: Download latest frontend
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/Avesousa/omero/releases/download/frontend-latest/frontend.zip" -OutFile frontend.zip
-          Expand-Archive -Path frontend.zip -DestinationPath resources/frontend -Force
-
-      - name: Download JRE 21 Temurin
-        run: |
-          $jreUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jre_x64_windows_hotspot_21.0.5_11.zip"
-          Invoke-WebRequest -Uri $jreUrl -OutFile jre.zip
-          Expand-Archive -Path jre.zip -DestinationPath jre-tmp -Force
-          Move-Item jre-tmp/jdk-21.0.5+11-jre/* resources/jre/
-
-      - name: Install dependencies
+      # El POS (Next) vive en web/ y se empaqueta dentro del instalador.
+      # Ya no se descargan omero-backend.jar, JRE ni frontend.zip: el backend es el de Railway.
+      - name: Install dependencies (Electron)
         run: npm ci
 
-      - name: Build Electron app
-        run: npm run build
+      - name: Install dependencies (web)
+        run: npm ci --prefix web
 
-      - name: Build NSIS installer
-        run: npx electron-builder --win --config electron-builder.config.ts
+      - name: Quality gates (typecheck + tests)
+        run: |
+          npm run check
+          npm run check --prefix web
+
+      # Variable de repositorio (Settings → Secrets and variables → Actions → Variables):
+      # OMERO_DEFAULT_BACKEND_URL = origen del omero-backend de Railway, ej. https://omero-backend.up.railway.app
+      # La app instalada la usa por defecto; se puede pisar con la variable de entorno BACKEND_URL.
+      - name: Build installer
+        run: npm run build:win
         env:
+          OMERO_DEFAULT_BACKEND_URL: ${{ vars.OMERO_DEFAULT_BACKEND_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer to GitHub Release

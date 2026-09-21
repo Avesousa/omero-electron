@@ -12,28 +12,19 @@ const config: Configuration = {
     'package.json'
   ],
   extraResources: [
-    {
-      from: 'resources/jre',
-      to: 'jre',
-      filter: ['**/*'],
-    },
-    {
-      from: 'resources/backend',
-      to: 'backend',
-      filter: ['*.jar'],
-    },
+    // Next standalone del POS (web/). Se arma con `npm run prepare:frontend`.
     {
       from: 'resources/frontend',
       to: 'frontend',
       filter: ['**/*'],
     },
-    // Optional: bundled Better Stack token for production builds.
-    // Create resources/betterstack.token locally or in CI before building.
-    // This file is .gitignored — never commit the token.
+    // build-config.json: URL del backend por defecto (npm run build:config).
+    // betterstack.token (opcional): token de Better Stack para builds de producción.
+    // Créalo local o en CI antes de compilar. Está en .gitignore — nunca lo commitees.
     {
       from: 'resources',
       to: '.',
-      filter: ['betterstack.token'],
+      filter: ['build-config.json', 'betterstack.token'],
     },
   ],
   win: {

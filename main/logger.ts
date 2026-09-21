@@ -47,7 +47,7 @@ function makeLineHandler(logFn: (msg: string) => void): (d: Buffer) => void {
 
 export { makeLineHandler }
 
-type Source = 'backend' | 'frontend' | 'electron'
+type Source = 'frontend' | 'electron'
 
 function createLogger(source: Source) {
   return {
@@ -66,7 +66,6 @@ function createLogger(source: Source) {
   }
 }
 
-export const backendLogger = createLogger('backend')
 export const frontendLogger = createLogger('frontend')
 export const electronLogger = createLogger('electron')
 

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog } from 'electron'
 import path from 'path'
 import { setupKeyboardFilter } from './keyboard'
 import { POS_URL } from './config'
-import { startBackend, startFrontend, waitForBackend, stopAll, isPortFree } from './process-manager'
+import { startFrontend, waitForFrontend, stopAll, isPortFree } from './process-manager'
 import { initLogger, electronLogger, flushLogs } from './logger'
 
 import { autoUpdater } from 'electron-updater'
@@ -85,34 +85,38 @@ app.on('ready', async () => {
   electronLogger.info('app starting')
   createSplashWindow()
 
-  const [port8080Free, port3000Free] = await Promise.all([
-    isPortFree(8080),
-    isPortFree(3000),
-  ])
-
-  if (!port8080Free || !port3000Free) {
-    const port = !port8080Free ? 8080 : 3000
-    electronLogger.error(`port ${port} already in use — aborting startup`)
+  if (!(await isPortFree(3000))) {
+    electronLogger.error('port 3000 already in use — aborting startup')
     dialog.showErrorBox(
       'Puerto en uso',
-      `El puerto ${port} ya está en uso. Cerrá la aplicación que lo está usando e intentá de nuevo.`
+      'El puerto 3000 ya está en uso. Cerrá la aplicación que lo está usando e intentá de nuevo.'
     )
     app.quit()
     return
   }
 
-  startBackend()
-  startFrontend()
+  try {
+    startFrontend()
+  } catch (err) {
+    // Sin URL de backend (ni BACKEND_URL ni build-config.json): no tiene sentido seguir.
+    electronLogger.error(`cannot start frontend: ${err}`)
+    dialog.showErrorBox(
+      'Configuración incompleta',
+      'No se encontró la URL del servidor de Omero. Reinstalá la aplicación o contactá a soporte.'
+    )
+    app.quit()
+    return
+  }
 
   try {
-    await waitForBackend()
-    electronLogger.info('backend ready — creating main window')
+    await waitForFrontend()
+    electronLogger.info('frontend ready — creating main window')
     createMainWindow()
   } catch (err) {
-    electronLogger.error(`backend failed to start: ${err}`)
+    electronLogger.error(`frontend failed to start: ${err}`)
     dialog.showErrorBox(
       'Error al iniciar',
-      'No se pudo iniciar el servidor de Omero POS. Revisá los logs para más información.'
+      'No se pudo iniciar Omero POS. Revisá los logs para más información.'
     )
     app.quit()
   }
