@@ -14,6 +14,7 @@ import { DELETE as deleteCache } from '../../app/api/%5Flocal/cache/route'
 import { GET as getConnectivity } from '../../app/api/%5Flocal/connectivity/route'
 import { handleApiRequest } from '../data-layer'
 import { closeAllCatalogStores, getCatalogStore } from './store-registry'
+import { closeAllOutboxStores } from '../outbox/outbox-registry'
 import { getSyncer } from './syncer'
 
 const TENANT_A = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
@@ -101,6 +102,7 @@ afterEach(() => {
   getSyncer().forget(TENANT_A)
   getSyncer().forget(TENANT_B)
   closeAllCatalogStores()
+  closeAllOutboxStores() // handleApiRequest() también abre el outbox en desktop (POST /api/sales|expenses)
   fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
