@@ -6,15 +6,37 @@ import { startFrontend, waitForFrontend, stopAll, isPortFree } from './process-m
 import { initLogger, electronLogger, flushLogs } from './logger'
 
 import { autoUpdater } from 'electron-updater'
+
+// Modo "solo avisar": SIN firma de código no instalamos updates en silencio (Gatekeeper/SmartScreen
+// bloquearían el instalador nuevo igual que el actual). Solo consultamos el feed de GitHub Releases
+// (app-update.yml embebido por electron-builder, ver electron-builder.config.ts) y avisamos al
+// renderer para que el cajero se baje el instalador nuevo a mano. Reactivar autoDownload +
+// quitAndInstall() el día que haya certificado.
 autoUpdater.logger = null
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = false
 
-autoUpdater.on('update-available', () => {
-  electronLogger.info('auto-updater: update available — stub, not yet active')
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 h — la caja suele quedar abierta todo el día
+
+autoUpdater.on('update-available', (info) => {
+  electronLogger.info(`auto-updater: update available (${info.version})`)
+  mainWindow?.webContents.send('omero:update-available', {
+    version: info.version,
+    url: `https://github.com/Avesousa/omero-electron/releases/tag/v${info.version}`
+  })
 })
 
-autoUpdater.on('update-downloaded', () => {
-  electronLogger.info('auto-updater: update downloaded — stub, not yet active')
+autoUpdater.on('error', (err) => {
+  // Sin conexión / rate limit de GitHub / etc.: nunca debe interrumpir el POS.
+  electronLogger.warn(`auto-updater: check failed — ${err}`)
 })
+
+function checkForUpdatesSafely(): void {
+  if (!app.isPackaged) return
+  autoUpdater.checkForUpdates().catch((err) => {
+    electronLogger.warn(`auto-updater: checkForUpdates threw — ${err}`)
+  })
+}
 
 let splashWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
@@ -112,6 +134,8 @@ app.on('ready', async () => {
     await waitForFrontend()
     electronLogger.info('frontend ready — creating main window')
     createMainWindow()
+    checkForUpdatesSafely()
+    setInterval(checkForUpdatesSafely, UPDATE_CHECK_INTERVAL_MS)
   } catch (err) {
     electronLogger.error(`frontend failed to start: ${err}`)
     dialog.showErrorBox(
