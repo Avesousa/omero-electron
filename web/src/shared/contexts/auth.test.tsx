@@ -6,6 +6,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 const wipeLocalCatalogCache = vi.fn()
 const pendingOutboxCount = vi.fn(async () => 0)
+const deviceLogout = vi.fn()
+vi.mock('@/lib/deviceSession', () => ({ deviceLogout: () => deviceLogout(), fetchDeviceInfo: async () => ({ desktop: false, hasDevice: false, sessionActive: false }), renewSession: vi.fn(), reasonFor: () => null }))
 vi.mock('@/lib/localCache', () => ({
   wipeLocalCatalogCache: () => wipeLocalCatalogCache(),
   pendingOutboxCount: () => pendingOutboxCount(),
@@ -36,6 +38,7 @@ beforeEach(() => {
   push.mockClear()
   clearSession.mockClear()
   wipeLocalCatalogCache.mockClear()
+  deviceLogout.mockClear()
   pendingOutboxCount.mockReset()
   pendingOutboxCount.mockResolvedValue(0)
 })
@@ -69,6 +72,7 @@ describe('AuthProvider.logout con ventas/gastos sin subir (outbox)', () => {
     await click()
     expect(confirm).toHaveBeenCalledWith('aviso 3')
     expect(wipeLocalCatalogCache).toHaveBeenCalledTimes(1)
+    expect(deviceLogout).toHaveBeenCalledTimes(1) // la caja cierra sesión (conserva el secreto para subir lo pendiente)
     expect(clearSession).toHaveBeenCalled()
     expect(push).toHaveBeenCalledWith('/login')
   })
@@ -78,6 +82,7 @@ describe('AuthProvider.logout con ventas/gastos sin subir (outbox)', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     await click()
     expect(wipeLocalCatalogCache).not.toHaveBeenCalled()
+    expect(deviceLogout).not.toHaveBeenCalled()
     expect(clearSession).not.toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'salir' })).toBeInTheDocument()

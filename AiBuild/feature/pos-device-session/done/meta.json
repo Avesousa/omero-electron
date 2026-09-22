@@ -1,0 +1,514 @@
+{
+  "project": "omero-electron",
+  "feature": "pos-device-session",
+  "ticket_id": null,
+  "raw_input": "fase 4 — sesión de dispositivo del POS de semanas, revocable",
+  "type": "feature",
+  "branch": "feature/pos-device-session",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "finished",
+  "created_at": "2026-09-21T19:00:00Z",
+  "updated_at": "2026-09-22T00:49:52Z",
+  "finished_at": "2026-09-22T01:15:00Z",
+  "commits": {
+    "omero-backend": "a13c2a6",
+    "omero-electron": "90a19d2",
+    "omero": "05be4d5"
+  },
+  "git": true,
+  "repos": [
+    "omero-backend",
+    "omero-electron",
+    "omero"
+  ],
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "done",
+    "build": "done",
+    "finish": "done"
+  },
+  "open_questions": [],
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 0,
+      "repo": "backend",
+      "description": "Migración V18 `devices`, entidad, repositorio y `code` en ApiResponse",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [],
+      "done_when": "V18 aplica sobre la base sembrada; `./mvnw test` sigue verde; `ApiResponse` serializa `code` solo cuando existe.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) db/migration/V18__devices.sql, model/Device.java, repository/DeviceRepository.java, service/DeviceLookup.java, dto/ApiResponse.java, exception/*"
+      ],
+      "started_at": "2026-09-21T23:57:08Z",
+      "completed_at": "2026-09-22T00:04:34Z",
+      "files_modified": [
+        "omero-backend/V18__devices.sql",
+        "omero-backend/Device",
+        "omero-backend/DeviceRepository",
+        "omero-backend/DeviceLookup",
+        "omero-backend/ApiResponse"
+      ]
+    },
+    {
+      "id": "T002",
+      "phase": 1,
+      "repo": "backend",
+      "description": "JWT con `scope`/`deviceId` y `DeviceScopeFilter` (lista blanca)",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T003"
+      ],
+      "done_when": "Con un JWT `pos` de ADMIN, rutas fuera de la lista dan 403; `sync` solo permite `/api/sync/batch` y `/api/auth/device/**`; tokens sin scope no cambian (suite existente verde).",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) security/JwtService.java, security/JwtFilter.java, security/DeviceScopeFilter.java, security/SecurityConfig.java"
+      ],
+      "started_at": "2026-09-22T00:04:34Z",
+      "completed_at": "2026-09-22T00:07:34Z",
+      "files_modified": [
+        "omero-backend/JwtService",
+        "omero-backend/JwtFilter",
+        "omero-backend/DeviceScopeFilter",
+        "omero-backend/SecurityConfig"
+      ]
+    },
+    {
+      "id": "T003",
+      "phase": 1,
+      "repo": "backend",
+      "description": "`DeviceAuthService` + endpoints públicos (login con device, refresh, sync-token, logout)",
+      "status": "done",
+      "depends_on": [
+        "T001",
+        "T002"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Los cuatro flujos cumplen las reglas de estado de la tech-spec (verificado en T005); el login sin `device` es idéntico al actual.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) service/DeviceAuthService.java, service/DeviceTxService.java, controller/AuthController.java, dto/auth/*, service/AuthService.java, security/RateLimiterInterceptor.java"
+      ],
+      "completed_at": "2026-09-22T00:07:35Z",
+      "files_modified": [
+        "omero-backend/DeviceAuthService",
+        "omero-backend/DeviceTxService",
+        "omero-backend/DeviceSessionController",
+        "omero-backend/AuthService"
+      ]
+    },
+    {
+      "id": "T004",
+      "phase": 2,
+      "repo": "backend",
+      "description": "Administración de cajas (ADMIN): listar, renombrar, revocar",
+      "status": "done",
+      "depends_on": [
+        "T003"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Los tres endpoints responden el contrato y respetan rol y tenant (verificado en T005).",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) controller/DeviceController.java, service/DeviceAdminService.java, dto/device/*"
+      ],
+      "completed_at": "2026-09-22T00:07:35Z",
+      "files_modified": [
+        "omero-backend/DeviceController",
+        "omero-backend/DeviceAdminService"
+      ]
+    },
+    {
+      "id": "T005",
+      "phase": 3,
+      "repo": "backend",
+      "description": "Tests de integración del backend (Testcontainers)",
+      "status": "done",
+      "depends_on": [
+        "T003",
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T012"
+      ],
+      "done_when": "`./mvnw test` pasa incluyendo las clases nuevas.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-backend) src/test/java/com/omero/integration/DeviceSessionControllerTest.java, DeviceScopeFilterTest.java, DeviceAdminControllerTest.java"
+      ],
+      "started_at": "2026-09-22T00:07:35Z",
+      "completed_at": "2026-09-22T00:17:49Z",
+      "files_modified": [
+        "omero-backend/DeviceSessionControllerTest",
+        "omero-backend/DeviceScopeFilterTest",
+        "omero-backend/FlywayMigrationTest",
+        "omero-backend/OrphanItemHardeningTest",
+        "omero-backend/AuthService"
+      ]
+    },
+    {
+      "id": "T006",
+      "phase": 1,
+      "repo": "electron",
+      "description": "`device-store` con safeStorage e integración en `process-manager`",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001"
+      ],
+      "done_when": "Round-trip cifrado/descifrado, corrupto y sin cifrado cubiertos en unit; el Next recibe el env al arrancar.",
+      "complexity": "M",
+      "files_affected": [
+        "main/device-store.ts, main/device-store.test.ts, main/process-manager.ts"
+      ],
+      "started_at": "2026-09-22T00:17:49Z",
+      "completed_at": "2026-09-22T00:20:33Z",
+      "files_modified": [
+        "main/device-store.ts",
+        "main/device-store.test.ts",
+        "main/process-manager.ts",
+        "vitest.config.ts"
+      ]
+    },
+    {
+      "id": "T007",
+      "phase": 3,
+      "repo": "electron",
+      "description": "Verificación real de `safeStorage` con Electron",
+      "status": "done",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T005"
+      ],
+      "done_when": "El script pasa en macOS con el Electron real del proyecto y detecta un secreto en claro (probado con un caso negativo).",
+      "complexity": "S",
+      "files_affected": [
+        "scripts/verify-safestorage.cjs, package.json"
+      ],
+      "completed_at": "2026-09-22T00:20:33Z",
+      "files_modified": [
+        "scripts/verify-safestorage.cjs",
+        "package.json"
+      ]
+    },
+    {
+      "id": "T008",
+      "phase": 1,
+      "repo": "pos",
+      "description": "Estado de caja, puente IPC y cliente del backend (`lib/device`)",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T006"
+      ],
+      "done_when": "Estado y cliente cubiertos por unit con backend falso; el puente notifica cada cambio.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-electron) web/src/lib/device/device-state.ts, device-bridge.ts, device-client.ts"
+      ],
+      "started_at": "2026-09-22T00:20:33Z",
+      "completed_at": "2026-09-22T00:23:05Z",
+      "files_modified": [
+        "web/src/lib/device/device-state.ts",
+        "web/src/lib/device/device-client.ts",
+        "web/src/lib/device/device-state.test.ts",
+        "web/src/lib/device/device-client.test.ts",
+        "web/vitest.config.mts"
+      ]
+    },
+    {
+      "id": "T009",
+      "phase": 2,
+      "repo": "pos",
+      "description": "Intercepción del login y endpoints locales de sesión",
+      "status": "done",
+      "depends_on": [
+        "T008"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "El renderer nunca ve el secreto; refresh y logout locales funcionan contra un backend falso.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-electron) web/src/lib/device/session-proxy.ts, web/src/lib/data-layer.ts, web/src/app/api/%5Flocal/session/route.ts, web/src/app/api/%5Flocal/session/refresh/route.ts"
+      ],
+      "started_at": "2026-09-22T00:23:05Z",
+      "completed_at": "2026-09-22T00:25:08Z",
+      "files_modified": [
+        "web/src/lib/device/device-session.ts",
+        "web/src/lib/device/session-proxy.ts",
+        "web/src/lib/device/session-api.ts",
+        "web/src/lib/device/device-wiring.ts",
+        "web/src/lib/data-layer.ts",
+        "web/src/app/api/_local/session routes"
+      ]
+    },
+    {
+      "id": "T010",
+      "phase": 2,
+      "repo": "pos",
+      "description": "`token-provider` e integración con sender y syncer",
+      "status": "done",
+      "depends_on": [
+        "T008",
+        "T009"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Con un backend falso, el outbox sube con el JWT vencido renovando solo, y con la caja revocada sube con `sync-token` (verificado en T012/T013).",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-electron) web/src/lib/device/token-provider.ts, web/src/lib/outbox/outbox-sender.ts, web/src/lib/catalog/syncer.ts"
+      ],
+      "started_at": "2026-09-22T00:25:08Z",
+      "completed_at": "2026-09-22T00:26:20Z",
+      "files_modified": [
+        "web/src/lib/device/token-provider.ts",
+        "web/src/lib/outbox/outbox-sender.ts",
+        "web/src/lib/catalog/syncer.ts",
+        "web/src/lib/device/device-wiring.ts",
+        "web/src/lib/outbox/outbox-runtime.ts"
+      ]
+    },
+    {
+      "id": "T011",
+      "phase": 3,
+      "repo": "pos",
+      "description": "Renderer: renovación silenciosa, `/login` y logout",
+      "status": "done",
+      "depends_on": [
+        "T009"
+      ],
+      "can_parallelize_with": [
+        "T010"
+      ],
+      "done_when": "Con el JWT vencido, abrir el POS renueva sin pedir credenciales; con caja revocada muestra el mensaje y no deja operar.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-electron) web/src/shared/contexts/auth.tsx, web/src/app/login/components/LoginForm.tsx, web/src/lib/useSessionRenewal.ts, web/src/lib/sessionManager.ts"
+      ],
+      "started_at": "2026-09-22T00:26:20Z",
+      "completed_at": "2026-09-22T00:30:45Z",
+      "files_modified": [
+        "web/src/lib/deviceSession.ts",
+        "web/src/lib/useSessionRenewal.ts",
+        "web/src/lib/sessionManager.ts",
+        "web/src/shared/contexts/auth.tsx",
+        "web/src/app/login/components/LoginForm.tsx",
+        "web/src/lib/outbox/outbox-sender.ts"
+      ]
+    },
+    {
+      "id": "T012",
+      "phase": 4,
+      "repo": "pos",
+      "description": "Tests unit del POS (`lib/device`, sender, syncer)",
+      "status": "done",
+      "depends_on": [
+        "T010"
+      ],
+      "can_parallelize_with": [
+        "T005"
+      ],
+      "done_when": "`npm --prefix web run check` pasa con los umbrales (incluir `lib/device/**` en la cobertura).",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-electron) web/src/lib/device/*.test.ts, web/src/lib/outbox/outbox-sender.test.ts, web/src/lib/catalog/syncer.test.ts, web/vitest.config.mts"
+      ],
+      "started_at": "2026-09-22T00:30:46Z",
+      "completed_at": "2026-09-22T00:34:53Z",
+      "files_modified": [
+        "web/src/lib/device/device-session.test.ts",
+        "web/src/lib/device/token-provider.test.ts",
+        "web/src/lib/device/session-proxy.test.ts",
+        "web/src/lib/device/session-api.test.ts",
+        "web/src/lib/catalog/syncer.test.ts",
+        "web/src/lib/outbox/outbox-sender.test.ts"
+      ]
+    },
+    {
+      "id": "T013",
+      "phase": 4,
+      "repo": "pos",
+      "description": "Test de integración del POS + contrato de allowlist",
+      "status": "done",
+      "depends_on": [
+        "T010",
+        "T011"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "La clase pasa 3 veces seguidas; el test de contrato pasa y detecta una ruta nueva no incluida.",
+      "complexity": "L",
+      "files_affected": [
+        "(omero-electron) web/src/lib/device/device.integration.test.ts, web/src/lib/device/allowlist.contract.test.ts"
+      ],
+      "started_at": "2026-09-22T00:34:53Z",
+      "completed_at": "2026-09-22T00:37:26Z",
+      "files_modified": [
+        "web/src/lib/device/device.integration.test.ts",
+        "web/src/lib/device/allowlist.contract.test.ts"
+      ]
+    },
+    {
+      "id": "T014",
+      "phase": 4,
+      "repo": "pos",
+      "description": "Tests de UI del renderer",
+      "status": "done",
+      "depends_on": [
+        "T011"
+      ],
+      "can_parallelize_with": [
+        "T013"
+      ],
+      "done_when": "`npm --prefix web test` pasa.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-electron) web/src/lib/useSessionRenewal.test.ts, web/src/app/login/components/LoginForm.test.tsx, web/src/shared/contexts/auth.test.tsx"
+      ],
+      "started_at": "2026-09-22T00:37:27Z",
+      "completed_at": "2026-09-22T00:39:48Z",
+      "files_modified": [
+        "web/src/lib/deviceSession.test.ts",
+        "web/src/lib/useSessionRenewal.test.ts",
+        "web/src/app/login/components/LoginForm.test.tsx",
+        "web/src/shared/contexts/auth.test.tsx"
+      ]
+    },
+    {
+      "id": "T015",
+      "phase": 2,
+      "repo": "admin",
+      "description": "Pantalla `/admin/devices` (cajas)",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T008"
+      ],
+      "done_when": "El admin lista, renombra y revoca contra el backend (o un mock) sin errores de consola.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero) src/app/admin/devices/page.tsx, src/app/admin/devices/components/*, src/lib/devicesApi.ts, src/shared/types/devices.ts, src/app/components/nav/navConfig.ts"
+      ],
+      "started_at": "2026-09-22T00:39:48Z",
+      "completed_at": "2026-09-22T00:41:29Z",
+      "files_modified": [
+        "omero/src/app/admin/devices",
+        "omero/src/lib/devicesApi.ts",
+        "omero/src/shared/types/devices.ts",
+        "omero/src/app/components/nav/navConfig.ts"
+      ]
+    },
+    {
+      "id": "T016",
+      "phase": 4,
+      "repo": "admin",
+      "description": "Tests del admin",
+      "status": "done",
+      "depends_on": [
+        "T015"
+      ],
+      "can_parallelize_with": [
+        "T014"
+      ],
+      "done_when": "`yarn test` y `tsc --noEmit` pasan en omero (archivos nuevos al 100 %).",
+      "complexity": "M",
+      "files_affected": [
+        "(omero) src/app/admin/devices/*.test.tsx, src/lib/__tests__/devicesApi.test.ts"
+      ],
+      "started_at": "2026-09-22T00:41:29Z",
+      "completed_at": "2026-09-22T00:42:51Z",
+      "files_modified": [
+        "omero/src/app/admin/devices/page.test.tsx",
+        "omero/src/lib/__tests__/devicesApi.test.ts",
+        "omero/src/app/components/nav/navConfig.test.ts"
+      ]
+    },
+    {
+      "id": "T017",
+      "phase": 5,
+      "repo": "e2e",
+      "description": "Smoke end-to-end local con los 3 repos",
+      "status": "done",
+      "depends_on": [
+        "T005",
+        "T013",
+        "T015"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Los checks pasan y quedan con fecha en manual-checklist.md.",
+      "complexity": "L",
+      "files_affected": [
+        "AiBuild/feature/pos-device-session/WIP/manual-checklist.md, (scratchpad) e2e-device.py"
+      ],
+      "started_at": "2026-09-22T00:42:51Z",
+      "completed_at": "2026-09-22T00:49:51Z",
+      "files_modified": [
+        "AiBuild/feature/pos-device-session/WIP/manual-checklist.md"
+      ]
+    },
+    {
+      "id": "T018",
+      "phase": 5,
+      "repo": "e2e",
+      "description": "Documentación de los tres repos y tech-spec",
+      "status": "done",
+      "depends_on": [
+        "T011",
+        "T015"
+      ],
+      "can_parallelize_with": [
+        "T019"
+      ],
+      "done_when": "Un desarrollador nuevo entiende el flujo completo; la spec refleja lo construido.",
+      "complexity": "M",
+      "files_affected": [
+        "(omero-backend) CLAUDE.md, (omero-electron) CLAUDE.md, (omero) CLAUDE.md, technical-spec.md"
+      ],
+      "started_at": "2026-09-22T00:49:52Z",
+      "completed_at": "2026-09-22T00:49:52Z",
+      "files_modified": [
+        "omero-backend/CLAUDE.md",
+        "omero-electron/CLAUDE.md",
+        "omero/CLAUDE.md",
+        "technical-spec.md"
+      ]
+    },
+    {
+      "id": "T019",
+      "phase": 5,
+      "repo": "e2e",
+      "description": "Checklist manual, deuda técnica y preparación de los 3 PRs",
+      "status": "done",
+      "depends_on": [
+        "T017"
+      ],
+      "can_parallelize_with": [
+        "T018"
+      ],
+      "done_when": "Checklist y deuda documentados; los tres PRs con descripción y test plan.",
+      "complexity": "S",
+      "files_affected": [
+        "AiBuild/feature/pos-device-session/WIP/manual-checklist.md"
+      ],
+      "completed_at": "2026-09-22T00:49:52Z",
+      "files_modified": [
+        "AiBuild/feature/pos-device-session/WIP/manual-checklist.md"
+      ]
+    }
+  ],
+  "build_completed_at": "2026-09-22T00:49:52Z"
+}

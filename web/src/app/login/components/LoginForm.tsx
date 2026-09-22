@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useEffect, useState, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { fetchDeviceInfo, loginReasonMessage, reasonFor, renewSession } from '@/lib/deviceSession'
 import { useAuth } from '@/shared'
 import {
   sanitizeEmail,
@@ -17,7 +18,35 @@ import styles from './LoginForm.module.css'
 export function LoginForm() {
   const { login, isLoading, error } = useAuth()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const redirectTo = searchParams.get('redirectTo') ?? undefined
+  const reason = searchParams.get('reason')
+  const [renewing, setRenewing] = useState(false)
+  const [renewMessage, setRenewMessage] = useState<string | null>(loginReasonMessage(reason))
+
+  // Desktop con caja registrada: si la sesión venció (el middleware nos trajo acá), se intenta renovar en silencio con la
+  // caja antes de pedir credenciales. Una caja revocada/vencida o un logout explícito muestran el motivo.
+  useEffect(() => {
+    if (reason) return // ya sabemos por qué volvió (revocada / vencida): no insistir
+    let cancelled = false
+    void (async () => {
+      const info = await fetchDeviceInfo()
+      if (cancelled || !info.desktop || !info.hasDevice || !info.sessionActive) return
+      setRenewing(true)
+      const r = await renewSession()
+      if (cancelled) return
+      if (r.ok) {
+        router.replace(redirectTo && redirectTo.startsWith('/') ? redirectTo : '/')
+        return
+      }
+      setRenewing(false)
+      const why = reasonFor(r.code)
+      if (why) setRenewMessage(loginReasonMessage(why))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [reason, redirectTo, router])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -77,6 +106,16 @@ export function LoginForm() {
           <h1 className={styles.title}>Bienvenido de vuelta</h1>
           <p className={styles.subtitle}>Ingresá tus credenciales para acceder</p>
         </div>
+
+        {renewing && (
+          <div className={styles.subtitle} role="status" data-testid="renewing-session">Renovando sesión…</div>
+        )}
+
+        {renewMessage && !renewing && !error && (
+          <div className={styles.authError} role="status" aria-live="polite" data-testid="login-reason">
+            {renewMessage}
+          </div>
+        )}
 
         {error && (
           <div className={styles.authError} role="alert" aria-live="assertive" id="login-auth-error">

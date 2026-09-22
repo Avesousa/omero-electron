@@ -30,6 +30,7 @@ let store: OutboxStore
 let fetchFn: ReturnType<typeof vi.fn>
 let auth: string | null
 let forget: ReturnType<typeof vi.fn>
+let invalidate: ReturnType<typeof vi.fn>
 let sender: OutboxSender
 
 const flush = async () => {
@@ -43,6 +44,7 @@ beforeEach(() => {
   store = OutboxStore.open({ dataDir: dir, tenantId: TENANT, Database, log: vi.fn() })
   fetchFn = vi.fn()
   auth = jwt()
+  invalidate = vi.fn()
   forget = vi.fn(() => {
     auth = null
   })
@@ -50,6 +52,7 @@ beforeEach(() => {
     fetchFn: fetchFn as unknown as typeof fetch,
     getStore: (t) => (t === TENANT ? store : null),
     getAuthorization: () => auth,
+    invalidateAuthorization: invalidate as unknown as (t: string) => void,
     forgetAuthorization: forget as unknown as (t: string) => void,
     backendUrl: () => 'https://backend.test',
     now: () => Date.now(),
@@ -247,6 +250,47 @@ describe('reintentos con backoff', () => {
     expect(sender.state(TENANT).failures).toBe(0)
   })
 
+  it('"volvió la conexión" mientras el envío en curso falla: reintenta ya, sin esperar el backoff de 30 s', async () => {
+    const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    let fail!: () => void
+    fetchFn.mockImplementationOnce(() => new Promise<Response>((_r, rej) => (fail = () => rej(new TypeError('down')))))
+    sender.kick(TENANT)
+    await flush()
+    sender.handleSyncerEvent({ type: 'online' }) // llega con el envío todavía en vuelo
+    fetchFn.mockResolvedValueOnce(ok([created(a.clientId)]))
+    fail()
+    await flush()
+    expect(store.getByClientId(a.clientId)?.status).toBe('SENT')
+    expect(sender.state(TENANT)).toMatchObject({ backend: 'ok', failures: 0, nextAttemptAt: null })
+  })
+
+  it('sin red para renovar el token (authorize unavailable) es un fallo de transporte con backoff, no "unauthorized"', async () => {
+    store.enqueue({ type: 'SALE', payload: saleJson() })
+    const s2 = new OutboxSender({
+      fetchFn: fetchFn as unknown as typeof fetch, getStore: () => store, authorize: async () => ({ ok: false, reason: 'unavailable' }),
+      backendUrl: () => 'https://backend.test', now: () => Date.now(), log: vi.fn(),
+    })
+    s2.kick(TENANT)
+    await flush()
+    expect(s2.state(TENANT)).toMatchObject({ backend: 'offline', failures: 1 })
+    expect(fetchFn).not.toHaveBeenCalled()
+    s2.stop()
+  })
+
+  it('con el token de solo subida (kind sync) envía normalmente', async () => {
+    const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    const s2 = new OutboxSender({
+      fetchFn: fetchFn as unknown as typeof fetch, getStore: () => store,
+      authorize: async () => ({ ok: true, authorization: jwt(), kind: 'sync' }),
+      backendUrl: () => 'https://backend.test', now: () => Date.now(), log: vi.fn(),
+    })
+    fetchFn.mockResolvedValueOnce(ok([created(a.clientId)]))
+    s2.kick(TENANT)
+    await flush()
+    expect(store.getByClientId(a.clientId)?.status).toBe('SENT')
+    s2.stop()
+  })
+
   it('un solo lote a la vez por tenant', async () => {
     store.enqueue({ type: 'SALE', payload: saleJson() })
     let release!: () => void
@@ -262,21 +306,45 @@ describe('reintentos con backoff', () => {
 })
 
 describe('autenticación', () => {
-  it('401 → detiene, olvida el token y deja lo pendiente intacto', async () => {
+  it('401 → renueva y reintenta UNA vez; si vuelve el 401 → detiene, olvida el token y deja lo pendiente intacto', async () => {
     const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
-    fetchFn.mockResolvedValueOnce(status(401))
+    fetchFn.mockResolvedValue(status(401))
     sender.kick(TENANT)
     await flush()
+    expect(fetchFn).toHaveBeenCalledTimes(2) // el intento y UN reintento tras invalidar
+    expect(invalidate).toHaveBeenCalledWith(TENANT)
     expect(forget).toHaveBeenCalledWith(TENANT)
     expect(sender.state(TENANT)).toMatchObject({ backend: 'unauthorized', nextAttemptAt: null })
     expect(store.getByClientId(a.clientId)?.status).toBe('PENDING')
     await vi.advanceTimersByTimeAsync(3_600_000)
-    expect(fetchFn).toHaveBeenCalledTimes(1) // no reintenta solo
+    expect(fetchFn).toHaveBeenCalledTimes(2) // no reintenta solo
+  })
+
+  it('un 401 por token vencido se resuelve renovando: el reintento sube la venta', async () => {
+    const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    fetchFn.mockResolvedValueOnce(status(401)).mockResolvedValueOnce(ok([created(a.clientId)]))
+    sender.kick(TENANT)
+    await flush()
+    expect(store.getByClientId(a.clientId)?.status).toBe('SENT')
+    expect(forget).not.toHaveBeenCalled()
+    expect(sender.state(TENANT).backend).toBe('ok')
+  })
+
+  it('el reintento por 401 se rehabilita tras un éxito (otro vencimiento más adelante también se renueva)', async () => {
+    const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    fetchFn.mockResolvedValueOnce(status(401)).mockResolvedValueOnce(ok([created(a.clientId)]))
+    sender.kick(TENANT)
+    await flush()
+    const b = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    fetchFn.mockResolvedValueOnce(status(401)).mockResolvedValueOnce(ok([created(b.clientId)]))
+    sender.kick(TENANT)
+    await flush()
+    expect(store.getByClientId(b.clientId)?.status).toBe('SENT')
   })
 
   it('403 también', async () => {
     store.enqueue({ type: 'SALE', payload: saleJson() })
-    fetchFn.mockResolvedValueOnce(status(403))
+    fetchFn.mockResolvedValue(status(403))
     sender.kick(TENANT)
     await flush()
     expect(sender.state(TENANT).backend).toBe('unauthorized')

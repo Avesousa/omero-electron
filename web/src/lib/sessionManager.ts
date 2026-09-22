@@ -91,6 +91,17 @@ export function getAuthToken(): string | null {
   }
 }
 
+/** `exp` (segundos epoch) del JWT guardado, aunque ya haya vencido; null si no hay sesión. Sirve para agendar la renovación. */
+export function getSessionExpiry(): number | null {
+  try {
+    hydrateFromCookies()
+    const jwt = sessionStorage.getItem(TOKEN_KEY)
+    return jwt ? (decodeJwtExp(jwt)?.exp ?? null) : null
+  } catch {
+    return null
+  }
+}
+
 /** Authorization header for the current session, or an empty object when there is none. */
 export function authHeaders(): Record<string, string> {
   const jwt = getAuthToken()
