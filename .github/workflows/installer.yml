@@ -7,7 +7,10 @@ on:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    # windows-latest trae una Visual Studio tan nueva que node-gyp 9.4.1 (el que trae npm en Node 20)
+    # todavía no reconoce ("gyp ERR! find VS unknown version 'undefined'") — rompe la compilación
+    # desde código fuente de better-sqlite3. windows-2022 tiene el toolchain que node-gyp sí soporta.
+    runs-on: windows-2022
     permissions:
       contents: write
     outputs:
