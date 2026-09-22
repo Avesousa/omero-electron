@@ -49,6 +49,15 @@ jobs:
       - name: Install dependencies (web)
         run: npm ci --prefix web
 
+      # better-sqlite3 es optionalDependency en web/ (para no romper el build de Docker sin ella).
+      # `npm ci` intenta bajar el binario prebuilt para el ABI de Node del runner; si no hay uno
+      # publicado para esta combinación de SO/arch/Node, npm lo salta EN SILENCIO (sin fallar la
+      # instalación) y los tests que necesitan SQLite real truenan con "Cannot find module". Forzamos
+      # la compilación desde código fuente (windows-latest trae MSVC Build Tools + Python) para que
+      # el módulo exista sí o sí antes de correr los tests.
+      - name: Rebuild better-sqlite3 (Node ABI del runner)
+        run: npm rebuild better-sqlite3 --prefix web
+
       - name: Quality gates (typecheck + tests)
         run: |
           npm run check
@@ -99,6 +108,11 @@ jobs:
 
       - name: Install dependencies (web)
         run: npm ci --prefix web
+
+      # Mismo motivo que en el job de Windows: fuerza la compilación de better-sqlite3 desde código
+      # fuente para no depender de que exista un binario prebuilt publicado para este runner.
+      - name: Rebuild better-sqlite3 (Node ABI del runner)
+        run: npm rebuild better-sqlite3 --prefix web
 
       - name: Quality gates (typecheck + tests)
         run: |
