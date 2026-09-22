@@ -60,7 +60,12 @@ const config: Configuration = {
       }
     ],
     artifactName: 'omero-pos.dmg',
-    category: 'public.app-category.business'
+    category: 'public.app-category.business',
+    // El DMG universal (x64+arm64) falla si encuentra un binario nativo idéntico en ambos árboles sin
+    // una regla explícita — pasa con sharp (usa next/image, ver OmeroLogo.tsx): trae .node y .dylib
+    // (libvips) solo para x64, así que salen iguales en las dos pasadas. Se permiten ambas extensiones
+    // (incluye better-sqlite3 también) para que el merge no falle por esto.
+    x64ArchFiles: '**/*.{node,dylib}'
   },
   dmg: {
     title: 'Omero POS',
