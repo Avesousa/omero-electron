@@ -34,8 +34,9 @@ import {
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
 import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
-import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag } from './hooks'
+import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag, useUpdateAvailable } from './hooks'
 import { ConnectionStatus } from './components/ConnectionStatus'
+import { UpdateBanner } from './components/UpdateBanner'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
@@ -104,6 +105,7 @@ export default function POSPage() {
     fetchProducts
   } = useProducts()
   const connection = useConnectionStatus()
+  const updateAvailable = useUpdateAvailable()
   // Cola vieja de localStorage: se migra una vez (desktop → outbox SQLite; web → se sube y se borra).
   const { legacyPending } = useOfflineQueue(connection.runtime)
   // Outbox SQLite (solo desktop): ventas/gastos guardados en esta caja y su estado de subida.
@@ -793,6 +795,8 @@ export default function POSPage() {
               syncBlock={syncBlock}
               onOpenList={() => setShowOutboxList(true)}
             />
+            {/* Desktop: aviso de versión nueva (autoUpdater en modo "solo avisar", sin firma de código). */}
+            <UpdateBanner update={updateAvailable} />
             {connection.runtime === 'web' && (
               <>
               {pendingCount > 0 && (

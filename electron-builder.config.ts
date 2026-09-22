@@ -66,8 +66,16 @@ const config: Configuration = {
     title: 'Omero POS',
     icon: 'assets/icon.icns'
   },
-  // No auto-publish — manual distribution only (unsigned builds for internal use)
-  publish: null
+  // Provider del feed para electron-updater: SOLO sirve para que `autoUpdater.checkForUpdates()`
+  // sepa dónde mirar (queda embebido como app-update.yml dentro del paquete) y para generar
+  // latest.yml/latest-mac.yml junto al instalador. No dispara publicación automática: los scripts
+  // `build:win`/`build:mac` corren con `--publish never`, así que `electron-builder` NUNCA sube nada
+  // a GitHub por su cuenta — el único paso que publica es el Release manual/CI (softprops/action-gh-release).
+  publish: {
+    provider: 'github',
+    owner: 'Avesousa',
+    repo: 'omero-electron'
+  }
 }
 
 export default config

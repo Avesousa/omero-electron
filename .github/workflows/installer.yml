@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build Installers
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - 'v*.*.*'
 
 jobs:
-  build-installer:
+  build-windows:
     runs-on: windows-latest
     permissions:
       contents: write
@@ -46,7 +46,57 @@ jobs:
           OMERO_DEFAULT_BACKEND_URL: ${{ vars.OMERO_DEFAULT_BACKEND_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # latest.yml + .blockmap: metadata que electron-updater necesita para detectar la versión nueva
+      # (autoUpdater en modo "solo avisar", ver main/main.ts). Sin esto el chequeo de updates no encuentra nada.
       - name: Upload installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/omero-pos-setup.exe
+          files: |
+            release/omero-pos-setup.exe
+            release/latest.yml
+            release/*.blockmap
+
+  build-macos:
+    needs: build-windows # evita que ambos jobs intenten crear el Release del tag al mismo tiempo
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies (Electron)
+        run: npm ci
+
+      - name: Install dependencies (web)
+        run: npm ci --prefix web
+
+      - name: Quality gates (typecheck + tests)
+        run: |
+          npm run check
+          npm run check --prefix web
+
+      # Mismo `OMERO_DEFAULT_BACKEND_URL` que el build de Windows. `build:mac` genera un DMG
+      # universal (Intel + Apple Silicon) sin firmar — ver README/CLAUDE.md sobre Gatekeeper.
+      - name: Build installer
+        run: npm run build:mac
+        env:
+          OMERO_DEFAULT_BACKEND_URL: ${{ vars.OMERO_DEFAULT_BACKEND_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # latest-mac.yml + .blockmap: mismo motivo que en el job de Windows (autoUpdater).
+      - name: Upload installer to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/omero-pos.dmg
+            release/latest-mac.yml
+            release/*.blockmap
