@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { postLogin } from '@/shared/services/authService'
 import { setSession, clearSession, getSessionUser } from '@/lib/sessionManager'
 import { logoutWarning, pendingOutboxCount, wipeLocalCatalogCache } from '@/lib/localCache'
+import { deviceLogout } from '@/lib/deviceSession'
+import { useSessionRenewal } from '@/lib/useSessionRenewal'
 import type { AuthContextValue, AuthState, LoginCredentials } from '@/shared/types/auth'
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -27,6 +29,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
     }
   }, [])
+
+  // Desktop con caja registrada: el JWT de 1 h se renueva solo. Si ya no se puede (revocada/vencida) se vuelve al login.
+  useSessionRenewal({
+    authenticated: state.isAuthenticated,
+    onSessionLost: (reason) => {
+      clearSession()
+      setState({ user: null, isAuthenticated: false, isLoading: false, error: null })
+      router.push(`/login?reason=${reason}`)
+    },
+  })
 
   const login = useCallback(async ({ email, password, redirectTo }: LoginCredentials) => {
     setState(s => ({ ...s, isLoading: true, error: null }))
@@ -65,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // volver a iniciar sesión con conexión).
       const pending = await pendingOutboxCount()
       if (pending > 0 && typeof window !== 'undefined' && !window.confirm(logoutWarning(pending))) return
+      deviceLogout() // desktop: la caja sigue registrada (sube lo pendiente) pero renovar exigirá un nuevo login
       wipeLocalCatalogCache() // desktop: borra la caché SQLite del tenant (antes de limpiar el token). Solo logout explícito.
       clearSession()
       setState({ user: null, isAuthenticated: false, isLoading: false, error: null })

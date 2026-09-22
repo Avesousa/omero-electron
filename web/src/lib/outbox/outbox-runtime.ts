@@ -1,4 +1,5 @@
 import { getSyncer } from '../catalog/syncer'
+import { wireDevice } from '../device/device-wiring'
 import { getSender } from './outbox-sender'
 
 /**
@@ -9,6 +10,7 @@ import { getSender } from './outbox-sender'
  */
 export function rememberSession(tenantId: string, authorization: string): void {
   try {
+    wireDevice() // la caja renueva el JWT sola (syncer y sender)
     getSender()
   } catch (err) {
     console.warn(`[outbox] no se pudo iniciar el envío: ${(err as Error).message}`)

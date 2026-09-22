@@ -7,6 +7,9 @@ import { frontendLogger, makeLineHandler } from './logger'
 import { resolveBackendUrl } from './config'
 import { readBuildConfig } from './build-config'
 import { RESOURCES_DIR } from './paths'
+import os from 'os'
+import { DeviceStore, sanitize } from './device-store'
+import { safeStorage } from 'electron'
 
 const IS_PACKAGED = app.isPackaged
 const FRONTEND_DIR = path.join(RESOURCES_DIR, 'frontend')
@@ -33,6 +36,56 @@ function catalogCacheEnv(): Record<string, string> {
   return env
 }
 
+/**
+ * Identidad y sesión larga de la caja (fase 4). El secreto se guarda con `safeStorage` (solo existe en este proceso):
+ * al arrancar se descifra y se pasa al Next por env; el Next avisa por IPC cada vez que el secreto rota.
+ */
+let deviceStore: DeviceStore | null = null
+let pendingSecrets: unknown = null
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+const PERSIST_DEBOUNCE_MS = 200
+
+function getDeviceStore(): DeviceStore {
+  return (deviceStore ??= new DeviceStore({
+    dir: path.join(app.getPath('userData'), 'device'),
+    safeStorage,
+    log: (m) => frontendLogger.warn(m),
+  }))
+}
+
+function deviceEnv(): Record<string, string> {
+  const store = getDeviceStore()
+  const persistent = store.persistent
+  if (!persistent) frontendLogger.warn('safeStorage no disponible: la sesión larga de la caja vive solo en memoria (sin persistir)')
+  return {
+    OMERO_DEVICE_ID: store.deviceId,
+    OMERO_DEVICE_NAME: os.hostname(),
+    OMERO_DEVICE_PLATFORM: process.platform,
+    OMERO_APP_VERSION: app.getVersion(),
+    OMERO_DEVICE_PERSIST: persistent ? '1' : '0',
+    OMERO_DEVICE_SECRETS: JSON.stringify(persistent ? store.load() : {}),
+  }
+}
+
+function flushSecrets(): void {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = null
+  if (pendingSecrets === null) return
+  const secrets = sanitize(pendingSecrets)
+  pendingSecrets = null
+  getDeviceStore().save(secrets)
+}
+
+/** El Next avisa que los secretos cambiaron (login, rotación, logout): se persisten con un pequeño debounce. */
+function onFrontendMessage(message: unknown): void {
+  if (message === null || typeof message !== 'object') return
+  const { type, secrets } = message as { type?: unknown; secrets?: unknown }
+  if (type !== 'omero:device-secrets') return
+  pendingSecrets = secrets
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(flushSecrets, PERSIST_DEBOUNCE_MS)
+}
+
 let frontendProcess: UtilityProcess | null = null
 let frontendExitCode: number | null = null
 
@@ -56,10 +109,12 @@ export function startFrontend(): void {
       OMERO_RUNTIME: 'desktop',
       BACKEND_URL: backendUrl,
       ...catalogCacheEnv(),
+      ...deviceEnv(),
     },
     stdio: 'pipe',
   })
 
+  frontendProcess.on('message', onFrontendMessage)
   frontendProcess.stdout?.on('data', makeLineHandler(frontendLogger.info))
   frontendProcess.stderr?.on('data', makeLineHandler(frontendLogger.error))
   frontendProcess.on('exit', (code) => {
@@ -86,6 +141,7 @@ export async function waitForFrontend(timeoutMs = 60_000): Promise<void> {
 }
 
 export function stopAll(): void {
+  flushSecrets() // no perder una rotación que todavía está en el debounce
   if (frontendProcess) {
     frontendProcess.kill()
     frontendProcess = null

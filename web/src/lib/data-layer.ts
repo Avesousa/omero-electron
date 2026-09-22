@@ -2,12 +2,14 @@ import { proxyToBackend } from './backend-proxy'
 import { proxyWithCatalog } from './catalog/catalog-proxy'
 import { getRuntime } from './runtime'
 import { handleOutboxRequest, matchOutboxRoute } from './outbox/outbox-proxy'
+import { handleLogin, isLoginRoute } from './device/session-proxy'
 
 /**
  * Capa de datos de `/api/*`. Único punto de entrada del route handler catch-all.
  *
  *   web     → proxy directo al backend (sin caché ni SQLite; el módulo nativo NUNCA se carga)
- *   desktop → lecturas de catálogo con SQLite (`catalog-proxy`); `POST /api/sales` y `POST /api/expenses` al outbox
+ *   desktop → `POST /api/auth/login` registra la caja (`session-proxy`); lecturas de catálogo con SQLite (`catalog-proxy`);
+ *             `POST /api/sales` y `POST /api/expenses` al outbox
  *             SQLite (`outbox-proxy`, se suben en segundo plano); el resto, proxy directo
  *
  * Punto de extensión: cualquier nueva ruta con comportamiento offline se agrega acá, sin tocar el route handler ni
@@ -23,7 +25,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
   }
   if (runtime !== 'desktop') return proxyToBackend(request)
 
-  const outboxType = matchOutboxRoute(request.method, new URL(request.url).pathname)
+  const pathname = new URL(request.url).pathname
+  if (isLoginRoute(request.method, pathname)) return handleLogin(request) // registra la caja (sesión larga)
+
+  const outboxType = matchOutboxRoute(request.method, pathname)
   if (outboxType) {
     const queued = await handleOutboxRequest(request, outboxType)
     if (queued) return queued

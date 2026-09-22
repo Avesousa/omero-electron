@@ -47,6 +47,7 @@ export class CatalogSyncer {
   private running = false
   private lastOnline: boolean | null = null
   private readonly listeners = new Set<(event: SyncerEvent) => void>()
+  private renewer: ((tenantId: string) => Promise<boolean>) | null = null
   private readonly deps: Required<SyncerDeps>
 
   constructor(deps: SyncerDeps = {}) {
@@ -71,6 +72,23 @@ export class CatalogSyncer {
     const recovered = value && this.lastOnline !== true
     this.lastOnline = value
     if (recovered) this.emit({ type: 'online' })
+  }
+
+  /**
+   * Renovador de sesión (la caja renueva el JWT con su secreto de dispositivo). Si está, un token vencido o rechazado
+   * se renueva en lugar de olvidarse. Devuelve si logró un token nuevo (que el renovador deja en `remember`).
+   */
+  setRenewer(renewer: ((tenantId: string) => Promise<boolean>) | null): void {
+    this.renewer = renewer
+  }
+
+  private async tryRenew(tenantId: string): Promise<boolean> {
+    if (!this.renewer) return false
+    try {
+      return await this.renewer(tenantId)
+    } catch {
+      return false
+    }
   }
 
   /** Suscribe a los eventos del syncer. Devuelve la función para desuscribirse. */
@@ -158,14 +176,21 @@ export class CatalogSyncer {
     this.running = true
     let anyFailed = false
     try {
-      for (const [tenantId, entry] of [...this.tokens]) {
+      for (const [tenantId, initial] of [...this.tokens]) {
+        let entry = initial
         if (entry.exp !== null && entry.exp * 1000 <= this.deps.now()) {
-          this.forget(tenantId) // vencido: se espera una nueva request autenticada
-          continue
+          // vencido: la caja lo renueva sola; sin caja se espera una nueva request autenticada
+          const renewed = (await this.tryRenew(tenantId)) ? this.tokens.get(tenantId) : undefined
+          if (!renewed || (renewed.exp !== null && renewed.exp * 1000 <= this.deps.now())) {
+            this.forget(tenantId)
+            continue
+          }
+          entry = renewed
         }
         const result = await this.syncTenant(tenantId, entry.authorization)
-        if (result === 'unauthorized') this.forget(tenantId)
-        else if (result === 'failed') anyFailed = true
+        if (result === 'unauthorized') {
+          if (!(await this.tryRenew(tenantId))) this.forget(tenantId) // rechazado: renovar una vez o olvidar
+        } else if (result === 'failed') anyFailed = true
       }
     } catch (err) {
       anyFailed = true

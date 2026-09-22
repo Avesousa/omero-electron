@@ -19,7 +19,8 @@
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run test:coverage",
     "fetch:native": "node scripts/fetch-native.mjs",
-    "verify:native": "node scripts/verify-native.mjs"
+    "verify:native": "node scripts/verify-native.mjs",
+    "verify:safestorage": "tsc && electron scripts/verify-safestorage.cjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

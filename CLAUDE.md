@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   En ambos, `/api/*` se reenvía al `omero-backend` de Railway con un **proxy en runtime** (`BACKEND_URL`).
 - **`main/`** — wrapper de Electron (frameless, teclado numérico). Ya **no** incluye Java/JRE/JAR: solo levanta el Next local.
 
-Si `omero` (admin) cae, el POS sigue funcionando. En **desktop** el Next mantiene una **caché SQLite de solo lectura del catálogo** (productos y promociones, una base por tenant) que sirve las lecturas cuando el backend no responde (fase 2). En **desktop** las ventas y gastos se guardan primero en un **outbox SQLite** y se suben en segundo plano (fase 3). Fase futura (no implementada): sesión larga de dispositivo (ver `AiBuild/.../functional-spec.md`).
+Si `omero` (admin) cae, el POS sigue funcionando. En **desktop** el Next mantiene una **caché SQLite de solo lectura del catálogo** (productos y promociones, una base por tenant) que sirve las lecturas cuando el backend no responde (fase 2). En **desktop** las ventas y gastos se guardan primero en un **outbox SQLite** y se suben en segundo plano (fase 3). En **desktop** la caja tiene una **sesión de dispositivo** de 14 días deslizante, renovable en silencio, revocable desde el admin y limitada al POS (fase 4).
 
 ## Commands
 
@@ -61,6 +61,7 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 ├── src/lib/backend-proxy.ts  proxyToBackend(request)
 ├── src/lib/data-layer.ts     handleApiRequest(): web → proxy directo; desktop → outbox (POST /api/sales|expenses) o proxyWithCatalog
 ├── src/lib/outbox/           outbox de ventas/gastos (ver sección abajo)
+├── src/lib/device/           sesión de la caja: estado, cliente, token-provider (ver sección abajo)
 ├── src/lib/catalog/          caché SQLite del catálogo (ver sección abajo)
 ├── src/instrumentation*.ts   valida entorno al arrancar (process.exit(1) si es inválido)
 └── Dockerfile, railway.toml  modo web
@@ -96,8 +97,7 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
   expiración **no** borra la caché.
 - **Degradación:** modo web, sin `OMERO_DATA_DIR` (producción), módulo nativo ausente/ABI equivocado o directorio sin permisos → pass-through
   sin error (la caché jamás rompe una request).
-- **Limitación aceptada:** el JWT dura 1 h y no se renueva: sin conexión el POS abierto sigue operando, pero un reinicio pasada la hora pide
-  login (lo resuelve la fase 4).
+- **Limitación (resuelta en la fase 4):** el JWT dura 1 h; con caja registrada se renueva solo (ver "Sesión de dispositivo"). Sin caja (web, backend viejo) sigue pidiendo login.
 
 ### Outbox de ventas y gastos (fase 3, solo desktop)
 
@@ -113,6 +113,19 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 - **UI**: `ConnectionStatus` (chips "N pendientes sin sync" / "N para revisar", "Sesión vencida: iniciá sesión…"), `OutboxListModal` (lista y "Entendido" para rechazos), `useOutboxStatus` (5 s con pendientes / 20 s en reposo). Cerrar sesión con pendientes pregunta antes (no los borra). `useSales` hace **un solo intento** (sin reintentos ni `localStorage`); `useOfflineQueue` solo **migra** la cola vieja (desktop → import al outbox; web → la sube una vez).
 - **Limitación conocida**: el JWT dura 1 h y no se renueva; pasada la hora hay que iniciar sesión para subir lo pendiente (fase 4: sesión de dispositivo de semanas, revocable).
 - Tests: unit por módulo + `outbox.integration.test.ts` (backend HTTP falso + SQLite real: envío, `DUPLICATE`, mixto, red caída, 401 y reanudación, 404, reinicio, aislamiento de tenants, cola vieja, web y degradación). `npm --prefix web run check` (umbral 85 % también en `lib/outbox/**`).
+
+### Sesión de dispositivo de la caja (fase 4, solo desktop)
+
+`main/device-store.ts` (Electron) + `web/src/lib/device/` (Next local) + `web/src/lib/{deviceSession,useSessionRenewal}.ts` (renderer). Resuelve el JWT de 1 h: la caja se registra al hacer login y renueva sola su sesión.
+
+- **Identidad y secreto** (Electron main): `device-id` (UUID plano, no secreto) y `device-session.bin` (secretos por tenant **cifrados con `safeStorage`**: Keychain/DPAPI) en `<userData>/device/`. `safeStorage` solo existe en el main, así que `process-manager` descifra al arrancar y pasa al Next por env `OMERO_DEVICE_ID/NAME/PLATFORM/SECRETS/PERSIST` y `OMERO_APP_VERSION`; el Next avisa cada cambio por IPC (`parentPort` → `omero:device-secrets`) y el main lo persiste (debounce, escritura atómica). Sin cifrado del SO (o Linux `basic_text`) **no se persiste**: la sesión larga vive solo en memoria. Archivo ilegible → se aparta a `.corrupt-<ts>`, nunca se borra.
+- **Login** (`session-proxy`): `POST /api/auth/login` se intercepta en desktop, agrega `device{…}`, guarda el `deviceSecret` y lo **quita de la respuesta** (el renderer nunca ve el secreto; solo recibe el JWT de 1 h). Sin identidad de caja (web / dev sin Electron) o con un backend viejo → comportamiento de siempre.
+- **Renovación** (`device-session`, un refresh en vuelo por tenant porque el secreto **rota** en cada uno): `POST /api/_local/session/refresh` (sin Authorization; el tenant sale de una pista o de la última sesión) → 200 `{accessToken,expiresIn,user}` | 401 `LOGIN_REQUIRED|DEVICE_EXPIRED|NO_DEVICE` | 403 `DEVICE_REVOKED` | 503 `UNAVAILABLE`. `GET/DELETE /api/_local/session` (estado de la caja y logout: conserva el secreto para subir lo pendiente, renovar exige un nuevo login). **Sin guardia local** (decisión): riesgo aceptado, mitigación futura = nonce por arranque.
+- **Outbox** (`token-provider`): `authorize(tenant)` = JWT `pos` vigente (>2 min) → `refresh` → (revocada / vencida / sin sesión) **`sync-token`** (JWT `scope=sync`, solo `/api/sync/batch`, ventana de 30 d) → `unauthorized` (el outbox no se toca). El sender reintenta **una vez** ante un 401/403 renovando; el `syncer` renueva en vez de olvidar un token vencido (solo con tokens `pos`). Un "volvió la conexión" durante un envío que falla reintenta ya (`forceAgain`). `device-wiring` cablea sesión ↔ syncer sin ciclos de imports (`rememberSession` lo invoca).
+- **Renderer**: `useSessionRenewal` agenda la renovación a `exp − 5 min` (y al recuperar red / volver a la pestaña); `LoginForm` renueva en silencio al montar (el middleware nos manda a `/login` apenas vence el JWT) y muestra el motivo (`?reason=device-revoked|device-expired|login-required`); `logout` llama `DELETE /api/_local/session`. Web: nada cambia.
+- **Alcance**: el backend impone la lista blanca del POS (`scope=pos`). `web/src/lib/device/allowlist.contract.test.ts` **extrae las rutas `/api/...` que el POS llama y falla si alguna no está en la lista**: si el POS agrega una llamada nueva, agregarla también en `DeviceScopeFilter` del backend.
+- Comandos: `npm run verify:safestorage` (compila y corre `safeStorage` **real** con Electron: cifra/descifra, comprueba que el archivo no tiene el secreto en claro; requiere sesión gráfica).
+- Tests: `main/device-store.test.ts` (100 %), unit de `lib/device/**` (≥ 99 %), `device.integration.test.ts` (backend HTTP falso: activación, renovación con JWT vencido, rotación y reinicio, revocada → sync-token, ventana cerrada, logout, aislamiento de tenants, web/backend viejo), renderer (`useSessionRenewal`, `LoginForm`, `deviceSession`, logout).
 
 ### Empaquetado del módulo nativo
 
@@ -142,6 +155,8 @@ Hay **tres ABIs distintos**: Node del sistema (dev), Node 20 de Docker/CI y **El
 | `OMERO_DATA_DIR` | Next (desktop) | Carpeta de las bases SQLite. Electron: `<userData>/catalog-cache`. Dev sin definir → `web/.data`; producción sin definir → sin caché |
 | `OMERO_SQLITE_BINDING` | Next (desktop) | Ruta al `.node` de Electron; sin definir se usa el binding por defecto (dev con Node del sistema) |
 | `CATALOG_SYNC_INTERVAL_MS` | Next (desktop) | Refresco de la caché (default 300000) |
+| `OMERO_DEVICE_ID/NAME/PLATFORM`, `OMERO_APP_VERSION` | Next (desktop) | Identidad de la caja; los inyecta Electron (sin `OMERO_DEVICE_ID` válido no hay sesión de dispositivo) |
+| `OMERO_DEVICE_SECRETS`, `OMERO_DEVICE_PERSIST` | Next (desktop) | Secretos descifrados por Electron (JSON por tenant) y si se pueden persistir (`1`/`0`); **no definir a mano en producción** |
 | `OMERO_POS_URL` | Electron dev | URL de la ventana |
 | `BETTERSTACK_TOKEN` | Electron | Logs remotos opcionales |
 
@@ -178,7 +193,7 @@ No definir `NEXT_PUBLIC_API_URL` en el POS (mismo origen + proxy).
 
 - **Migración de datos H2 → Railway** de las instalaciones actuales (rama `master`, con Java+H2) antes de actualizarlas.
 - Eliminar `/pos` de `omero` tras validar este POS.
-- Fase 4: sesión de dispositivo larga (token de semanas, revocable). Idea futura: tabla de sobreventas (hoy el stock se limita a 0 y no queda registro de lo vendido de más).
+- Idea futura: tabla de sobreventas (hoy el stock se limita a 0 y no queda registro de lo vendido de más).
 - Node 20 (Docker/CI del POS web) está fuera de soporte; el desktop corre en Node 24. Base SQLite sin cifrar (SQLCipher fuera de alcance).
 
 ## SDD Features

@@ -395,3 +395,70 @@ describe('eventos y token para el outbox', () => {
     s.stop()
   })
 })
+
+describe('renovador de sesión (caja de dispositivo)', () => {
+  it('un token vencido se renueva en lugar de olvidarse y el catálogo se sigue refrescando', async () => {
+    const fetchFn = makeFetch({ health: 200, products: 200 })
+    const s = syncer(fetchFn)
+    const short = jwt(Math.floor(T0.getTime() / 1000) + 60)
+    s.remember(TENANT, short)
+    s.setRenewer(async (tenantId) => {
+      s.remember(tenantId, validAuth()) // el renovador deja el JWT nuevo (como hace la sesión de la caja)
+      return true
+    })
+    vi.setSystemTime(new Date(T0.getTime() + 120_000))
+    await s.syncAll()
+    expect(s.hasTenant(TENANT)).toBe(true)
+    expect(store.replaceProducts).toHaveBeenCalled()
+    s.stop()
+  })
+
+  it('si el renovador no logra un token nuevo, lo olvida como antes', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    s.remember(TENANT, jwt(Math.floor(T0.getTime() / 1000) + 60))
+    s.setRenewer(async () => false)
+    vi.setSystemTime(new Date(T0.getTime() + 120_000))
+    await s.syncAll()
+    expect(s.hasTenant(TENANT)).toBe(false)
+    s.stop()
+  })
+
+  it('un renovador que lanza no rompe al syncer', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    s.remember(TENANT, jwt(Math.floor(T0.getTime() / 1000) + 60))
+    s.setRenewer(async () => {
+      throw new Error('boom')
+    })
+    vi.setSystemTime(new Date(T0.getTime() + 120_000))
+    await expect(s.syncAll()).resolves.toBeUndefined()
+    expect(s.hasTenant(TENANT)).toBe(false)
+    s.stop()
+  })
+
+  it('un 401 al refrescar el catálogo intenta renovar una vez (y no olvida si lo logra)', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 401 }))
+    s.remember(TENANT, validAuth())
+    const renewer = vi.fn(async () => true)
+    s.setRenewer(renewer)
+    await s.syncAll()
+    expect(renewer).toHaveBeenCalledWith(TENANT)
+    expect(s.hasTenant(TENANT)).toBe(true)
+    renewer.mockResolvedValue(false)
+    await s.syncAll()
+    expect(s.hasTenant(TENANT)).toBe(false)
+    s.stop()
+  })
+
+  it('un token renovado que igual llega vencido se olvida', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    s.remember(TENANT, jwt(Math.floor(T0.getTime() / 1000) + 60))
+    s.setRenewer(async (t) => {
+      s.remember(t, jwt(Math.floor(T0.getTime() / 1000) + 10)) // ya vencido
+      return true
+    })
+    vi.setSystemTime(new Date(T0.getTime() + 120_000))
+    await s.syncAll()
+    expect(s.hasTenant(TENANT)).toBe(false)
+    s.stop()
+  })
+})

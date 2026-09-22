@@ -1,6 +1,7 @@
 import { getBackendUrl } from '../runtime'
 import { getSyncer, type SyncerEvent } from '../catalog/syncer'
 import { tenantFromAuthHeader, tokenExpiry } from '../catalog/tenant'
+import { getTokenProvider, type Authorized } from '../device/token-provider'
 import { getOutboxStore } from './outbox-registry'
 import type { OutboxRow } from './types'
 import type { OutboxStore } from './outbox-store'
@@ -33,7 +34,12 @@ export interface SenderState {
 export interface SenderDeps {
   fetchFn?: typeof fetch
   getStore?: (tenantId: string) => OutboxStore | null
+  /** Test/compat: token síncrono del syncer. En producción se usa `authorize` (renueva con la sesión de la caja). */
   getAuthorization?: (tenantId: string) => string | null
+  /** Devuelve un Authorization válido (renovando si hace falta) o por qué no. */
+  authorize?: (tenantId: string) => Promise<Authorized>
+  /** El backend rechazó el token: olvidar lo cacheado. */
+  invalidateAuthorization?: (tenantId: string) => void
   forgetAuthorization?: (tenantId: string) => void
   backendUrl?: () => string
   now?: () => number
@@ -50,6 +56,10 @@ interface TenantQueue {
   nextAttemptAt: number | null
   batchSize: number
   lastPurge: number
+  /** Se pidió un envío FORZADO (conexión recuperada / token nuevo) mientras corría uno: si ese falla, se reintenta ya. */
+  forceAgain: boolean
+  /** Ya se reintentó UNA vez tras un 401/403 renovando la sesión (se limpia con el primer éxito). */
+  authRetried: boolean
 }
 
 /** Espera antes del reintento número `failures` (1 = primer fallo). */
@@ -77,6 +87,15 @@ export class OutboxSender {
       fetchFn: deps.fetchFn ?? fetch,
       getStore: deps.getStore ?? ((tenantId) => getOutboxStore(tenantId)),
       getAuthorization: deps.getAuthorization ?? ((tenantId) => getSyncer().getAuthorization(tenantId)),
+      authorize:
+        deps.authorize ??
+        (deps.getAuthorization
+          ? async (tenantId) => {
+              const a = deps.getAuthorization!(tenantId)
+              return a ? { ok: true, authorization: a, kind: 'pos' } : { ok: false, reason: 'unauthorized' }
+            }
+          : (tenantId) => getTokenProvider().authorize(tenantId)),
+      invalidateAuthorization: deps.invalidateAuthorization ?? ((tenantId) => getTokenProvider().invalidate(tenantId)),
       forgetAuthorization: deps.forgetAuthorization ?? ((tenantId) => getSyncer().forget(tenantId)),
       backendUrl: deps.backendUrl ?? getBackendUrl,
       now: deps.now ?? Date.now,
@@ -96,6 +115,8 @@ export class OutboxSender {
         nextAttemptAt: null,
         batchSize: BATCH_SIZE,
         lastPurge: 0,
+        authRetried: false,
+        forceAgain: false,
       }
       this.queues.set(tenantId, q)
     }
@@ -126,6 +147,7 @@ export class OutboxSender {
     if (q.backend === 'unauthorized' && !options.force) return
     if (q.running) {
       q.again = true
+      if (options.force) q.forceAgain = true // el envío en curso puede fallar justo antes de que volviera la conexión
       return
     }
     void this.run(tenantId)
@@ -166,9 +188,18 @@ export class OutboxSender {
     try {
       let outcome: SendOutcome
       do {
-        q.again = false
-        outcome = await this.sendOne(tenantId, q)
-      } while (outcome === 'progress' || (outcome === 'idle' && q.again))
+        do {
+          q.again = false
+          outcome = await this.sendOne(tenantId, q)
+        } while (outcome === 'progress' || (outcome === 'idle' && q.again))
+        if (outcome === 'failed' && q.forceAgain) {
+          // Llegó un "volvió la conexión" mientras este envío fallaba: reintentar ya, sin esperar el backoff.
+          q.forceAgain = false
+          q.failures = 0
+          if (q.backend === 'offline' || q.backend === 'unsupported') q.backend = 'ok'
+          outcome = 'progress'
+        }
+      } while (outcome === 'progress')
       if (outcome === 'failed') this.scheduleRetry(tenantId, q)
     } catch (err) {
       this.deps.log(`error inesperado: ${(err as Error).message}`)
@@ -197,7 +228,9 @@ export class OutboxSender {
       return 'idle'
     }
 
-    const authorization = this.deps.getAuthorization(tenantId)
+    const auth = await this.deps.authorize(tenantId)
+    if (!auth.ok && auth.reason === 'unavailable') return this.transportFailure(q, 'offline') // sin red para renovar: backoff
+    const authorization = auth.ok ? auth.authorization : null
     if (!authorization || tenantFromAuthHeader(authorization) !== tenantId || this.expired(authorization)) {
       this.deps.forgetAuthorization(tenantId)
       q.backend = 'unauthorized'
@@ -224,6 +257,13 @@ export class OutboxSender {
     }
 
     if (res.status === 401 || res.status === 403) {
+      if (!q.authRetried) {
+        // Puede ser un JWT vencido/rechazado: se renueva con la sesión de la caja y se reintenta UNA vez.
+        q.authRetried = true
+        this.deps.invalidateAuthorization(tenantId)
+        return 'progress'
+      }
+      q.authRetried = false
       this.deps.forgetAuthorization(tenantId)
       q.backend = 'unauthorized'
       return 'stopped'
@@ -266,6 +306,7 @@ export class OutboxSender {
     }
 
     // Se resolvió algo sin fallos del servidor → seguir de inmediato si quedan pendientes.
+    if (processed > 0) q.authRetried = false
     if (internalErrors === 0 && processed > 0) {
       q.failures = 0
       q.backend = 'ok'
