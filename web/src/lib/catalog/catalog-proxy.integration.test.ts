@@ -101,7 +101,7 @@ afterEach(() => {
   getSyncer().forget(TENANT_A)
   getSyncer().forget(TENANT_B)
   closeAllCatalogStores()
-  fs.rmSync(dataDir, { recursive: true, force: true })
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
 })

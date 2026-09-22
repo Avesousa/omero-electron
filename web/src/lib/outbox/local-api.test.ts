@@ -40,7 +40,7 @@ afterEach(() => {
   closeAllOutboxStores()
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
-  fs.rmSync(dir, { recursive: true, force: true })
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 describe('GET /api/_local/outbox', () => {

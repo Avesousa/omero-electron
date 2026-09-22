@@ -1,4 +1,5 @@
 // @vitest-environment node
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PROXY_TIMEOUT_MS,
@@ -98,8 +99,9 @@ describe('getDataDir', () => {
   })
 
   it('en desarrollo sin definir cae a <cwd>/.data', () => {
-    expect(getDataDir({ NODE_ENV: 'development' })).toBe(`${process.cwd()}/.data`)
-    expect(getDataDir({})).toBe(`${process.cwd()}/.data`)
+    const expected = path.join(process.cwd(), '.data')
+    expect(getDataDir({ NODE_ENV: 'development' })).toBe(expected)
+    expect(getDataDir({})).toBe(expected)
   })
 
   it('en producción sin definir → null (sin caché)', () => {

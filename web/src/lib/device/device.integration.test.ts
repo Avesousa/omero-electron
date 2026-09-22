@@ -162,7 +162,7 @@ afterEach(() => {
   delete (process as unknown as { parentPort?: unknown }).parentPort
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
-  fs.rmSync(dataDir, { recursive: true, force: true })
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 const post = (p: string, body: unknown, auth?: string) =>

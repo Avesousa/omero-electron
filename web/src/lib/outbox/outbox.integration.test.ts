@@ -107,7 +107,7 @@ afterEach(() => {
   closeAllCatalogStores()
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
-  fs.rmSync(dataDir, { recursive: true, force: true })
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 const saleBody = (code = '001', qty = 1) => ({
