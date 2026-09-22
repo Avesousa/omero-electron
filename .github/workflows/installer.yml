@@ -58,7 +58,16 @@ jobs:
       # instalado, no falla `npm ci`) y los tests que necesitan SQLite real truenan con "Cannot find
       # module". `npm rebuild` no alcanza: si el paquete nunca se instaló no hay nada que recompilar
       # (termina en <2s sin hacer nada). Hay que instalarlo de nuevo a mano, forzando build-from-source
-      # (windows-latest trae MSVC Build Tools + Python) para no depender de un binario prebuilt.
+      # para no depender de un binario prebuilt.
+      #
+      # node-gyp (el que usa el "install" de better-sqlite3 para compilar) todavía depende del módulo
+      # `distutils` de Python, que Python 3.12 eliminó de la librería estándar — el runner trae 3.12 por
+      # defecto y la build falla con "ModuleNotFoundError: No module named 'distutils'". Se fija Python
+      # 3.11 (última versión con distutils) solo para este paso.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install better-sqlite3 (build from source, Node ABI del runner)
         run: npm install better-sqlite3@12.11.1 --prefix web --no-save --build-from-source --foreground-scripts
 
@@ -114,7 +123,12 @@ jobs:
         run: npm ci --prefix web
 
       # Mismo motivo que en el job de Windows: fuerza la instalación de better-sqlite3 desde código
-      # fuente para no depender de que exista un binario prebuilt publicado para este runner.
+      # fuente para no depender de que exista un binario prebuilt publicado para este runner, y fija
+      # Python 3.11 porque node-gyp todavía necesita `distutils` (Python 3.12 lo eliminó).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install better-sqlite3 (build from source, Node ABI del runner)
         run: npm install better-sqlite3@12.11.1 --prefix web --no-save --build-from-source --foreground-scripts
 
