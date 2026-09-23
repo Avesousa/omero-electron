@@ -4,7 +4,7 @@ import { DeviceClient } from './device-client'
 
 const ok = (data: unknown) => new Response(JSON.stringify({ success: true, data }), { status: 200 })
 const err = (status: number, code?: string, error = 'x') => new Response(JSON.stringify({ success: false, error, ...(code ? { code } : {}) }), { status })
-const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'ADMIN', tenantId: 't' }
+const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'omero-admin', tenantId: 't', permissions: ['VENTAS_VER', 'PRODUCTOS_VER'] }
 
 const client = (fetchFn: unknown) => new DeviceClient({ fetchFn: fetchFn as typeof fetch, backendUrl: () => 'https://b.test' })
 
@@ -18,6 +18,12 @@ describe('DeviceClient', () => {
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({ deviceSecret: 'S1' })
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
+  })
+
+  it('refresh: los permisos efectivos viajan intactos dentro de user', async () => {
+    const f = vi.fn(async () => ok({ accessToken: 'JWT', expiresIn: 3600, deviceSecret: 'S2', deviceExpiresAt: 'x', user }))
+    const r = await client(f).refresh('S1')
+    expect(r.ok && r.user.permissions).toEqual(['VENTAS_VER', 'PRODUCTOS_VER'])
   })
 
   it('syncToken y logout', async () => {

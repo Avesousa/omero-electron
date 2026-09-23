@@ -14,8 +14,11 @@ export interface DeviceUser {
   id: string
   name: string | null
   email: string
+  /** Nombre del rol asignado (ej. "omero-admin"), no un enum fijo — ver shared/permissions.ts. */
   role: string
   tenantId: string
+  /** Permisos efectivos al momento de esta rotación — no se actualizan hasta la próxima (ver device-session.ts). */
+  permissions: string[]
 }
 
 export interface RefreshOk {

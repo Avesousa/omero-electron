@@ -2,8 +2,11 @@ export interface User {
   id: string
   name: string
   email: string
+  /** Nombre del rol asignado (ej. "omero-admin"), no un enum fijo — ver shared/permissions.ts. */
   role: string
   tenantId: string
+  /** Permisos efectivos al momento del login/rotación — no se actualizan hasta la próxima. */
+  permissions: string[]
 }
 
 export interface LoginData{

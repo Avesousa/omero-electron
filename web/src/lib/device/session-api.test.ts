@@ -11,7 +11,7 @@ import { getSyncer } from '../catalog/syncer'
 const T = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const T2 = '11111111-2222-3333-4444-555555555555'
 const ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'ADMIN', tenantId: T }
+const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'omero-admin', tenantId: T, permissions: ['VENTAS_VER'] }
 const ok = (data: unknown) => new Response(JSON.stringify({ success: true, data }), { status: 200 })
 const err = (status: number, code: string) => new Response(JSON.stringify({ success: false, error: code, code }), { status })
 const bearer = (tenant: string) => {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deviceLogout, dropSession, fetchDeviceInfo, loginReasonMessage, reasonFor, renewSession } from './deviceSession'
 import * as session from './sessionManager'
 
-const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'ADMIN', tenantId: 't' }
+const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'omero-admin', tenantId: 't', permissions: ['VENTAS_VER'] }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
 
 let fetchMock: ReturnType<typeof vi.fn>
