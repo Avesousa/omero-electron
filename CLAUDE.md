@@ -276,3 +276,42 @@ OMERO_DEFAULT_BACKEND_URL=https://<backend> npm run prepare:app   # arma resourc
 - [ ] Migración H2 → Railway de instalaciones actuales; eliminar `/pos` de `omero`; `middleware` → `proxy` de Next 16.
 
 **Archivo de specs:** `AiBuild/feature/pos-sqlite-catalog-cache/done/`
+
+### roles-permisos-fundacion (added 2026-09-22, branch: feature/roles-permisos-fundacion)
+
+#### What it does
+Mismo catálogo de permisos que `omero`/`omero-backend`, disponible en el contexto de auth del POS de
+escritorio. Contrato completo en `omero-backend` (ver su CLAUDE.md, sección "Sistema de permisos
+granulares"). No gatea ninguna acción del POS todavía — no existe ninguna hoy — queda la
+infraestructura lista para cuando se decida cuál requiere permiso (spec futuro).
+
+#### Key files
+- `web/src/shared/permissions.ts` — copia idéntica de `omero/src/shared/permissions.ts` (mismo
+  backend, mismo catálogo), con su propio `permissions.contract.test.ts`.
+- `web/src/shared/hooks/useHasPermission.ts` — sobre `useAuth().user.permissions`.
+- `web/src/lib/device/device-client.ts` (`DeviceUser`) y `web/src/shared/types/auth.ts` (`User`) —
+  suman `permissions: string[]`.
+
+#### Technical decisions
+- **Los permisos SÍ se actualizan en cada rotación silenciosa de la sesión de caja** (no recién al
+  relogin del cajero, a diferencia de la web): `DeviceTxService.refresh` en el backend ya devolvía
+  `user` fresco en cada rotación antes de este spec — se le sumó `permissions` con el mismo criterio.
+  Con una sesión de 14 días, esperar al relogin para propagar una revocación sería demasiado lento.
+- Catálogo duplicado a mano (no compartido vía paquete) — mismo criterio que el resto del POS
+  ("copiado desde `omero`, no compartido hasta el rediseño", ver `web/README.md`).
+
+#### How it works
+`session-api.ts` (`/api/_local/session/refresh`) y `device-session.ts` pasan `user` (con
+`permissions`) tal cual lo devuelve `omero-backend` — no hay mapeo campo por campo, es un passthrough
+genérico. `deviceSession.ts` (renderer) lo guarda con `setSession()` igual que el resto de la sesión.
+
+#### Useful commands
+```bash
+npm --prefix web run check     # typecheck + tests con cobertura
+```
+
+#### TODOs / Technical debt
+- [ ] Definir qué acciones del POS empiezan a requerir permiso (anular venta, descuento, precio
+  libre) cuando exista la UI de gestión de roles (`roles-permisos-autogestion`, spec futuro).
+
+**Archivo de specs:** `omero-backend/AiBuild/feature/roles-permisos-fundacion/done/`

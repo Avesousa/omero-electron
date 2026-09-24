@@ -6,7 +6,7 @@ import type { DeviceClient, DeviceFailure } from './device-client'
 
 const T = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'ADMIN', tenantId: T }
+const user = { id: 'u', name: 'Ana', email: 'a@x.com', role: 'omero-admin', tenantId: T, permissions: ['VENTAS_VER'] }
 const failure = (code: string, status = 401): DeviceFailure => ({ ok: false, code, status, message: code })
 
 function make(over: { secrets?: Record<string, unknown>; client?: Partial<Record<'refresh' | 'syncToken' | 'logout', unknown>>; persist?: string } = {}) {
@@ -35,6 +35,13 @@ describe('refresh', () => {
     expect(state.get(T)).toEqual({ secret: 'S2', sessionActive: true })
     expect(notify).toHaveBeenCalledWith({ type: 'omero:device-secrets', secrets: { [T]: { secret: 'S2', sessionActive: true } } })
     expect(sink.remember).toHaveBeenCalledWith(T, 'Bearer JWT2')
+  })
+
+  it('los permisos efectivos del usuario viajan en cada rotación (no se congelan hasta el relogin del cajero)', async () => {
+    const refreshedUser = { ...user, permissions: ['VENTAS_VER', 'DISPOSITIVOS_VER'] }
+    const { session } = make({ client: { refresh: vi.fn(async () => ({ ok: true, accessToken: 'JWT2', expiresIn: 3600, deviceSecret: 'S2', deviceExpiresAt: 'x', user: refreshedUser })) } })
+    const r = await session.refresh(T)
+    expect(r.ok && r.user.permissions).toEqual(['VENTAS_VER', 'DISPOSITIVOS_VER'])
   })
 
   it('un solo refresh en vuelo por tenant (el secreto rota: dos concurrentes se pisarían)', async () => {

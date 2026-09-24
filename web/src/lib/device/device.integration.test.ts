@@ -81,7 +81,7 @@ const server = http.createServer((req, res) => {
         success: true,
         data: {
           accessToken: jwt(tenant, 30), // JWT de login de vida corta: el test lo hace vencer enseguida
-          refreshToken: 'web-refresh', user: { id: 'u1', email: body.email, tenantId: tenant, role: 'ADMIN' },
+          refreshToken: 'web-refresh', user: { id: 'u1', email: body.email, tenantId: tenant, role: 'omero-admin', permissions: ['VENTAS_VER'] },
           ...(body.device ? { deviceSecret: newSecret(tenant) } : {}),
         },
       })
@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
       if (op === 'refresh') {
         if (backend.revoked) return json(403, { success: false, error: 'revocada', code: 'DEVICE_REVOKED' })
         if (backend.logoutSession) return json(401, { success: false, error: 'login', code: 'LOGIN_REQUIRED' })
-        return json(200, { success: true, data: { accessToken: jwt(tenant, 3600, 'pos'), expiresIn: 3600, deviceSecret: newSecret(tenant), deviceExpiresAt: 'x', user: { id: 'u1', name: 'Ana', email: 'a@x.com', role: 'ADMIN', tenantId: tenant } } })
+        return json(200, { success: true, data: { accessToken: jwt(tenant, 3600, 'pos'), expiresIn: 3600, deviceSecret: newSecret(tenant), deviceExpiresAt: 'x', user: { id: 'u1', name: 'Ana', email: 'a@x.com', role: 'omero-admin', tenantId: tenant, permissions: ['VENTAS_VER'] } } })
       }
       if (op === 'sync-token') {
         if (backend.windowClosed) return json(403, { success: false, error: 'cerrada', code: 'SYNC_WINDOW_CLOSED' })
