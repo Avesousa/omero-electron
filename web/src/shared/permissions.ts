@@ -58,6 +58,8 @@ export const PERMISSIONS = [
   { code: 'USUARIOS_VER', module: 'Usuarios', scope: 'screen', platformOnly: false },
   { code: 'USUARIOS_GESTIONAR', module: 'Usuarios', scope: 'action', platformOnly: false },
   { code: 'ROLES_GESTIONAR', module: 'Roles', scope: 'action', platformOnly: false },
+  { code: 'SUSCRIPCION_VER', module: 'Suscripción', scope: 'screen', platformOnly: false },
+  { code: 'SUSCRIPCION_GESTIONAR', module: 'Suscripción', scope: 'action', platformOnly: false },
   { code: 'NEGOCIOS_CROSS_TENANT_VER', module: 'Plataforma', scope: 'screen', platformOnly: true },
   { code: 'PRODUCTOS_CROSS_TENANT', module: 'Plataforma', scope: 'screen', platformOnly: true },
   { code: 'VENTAS_CROSS_TENANT', module: 'Plataforma', scope: 'screen', platformOnly: true },
