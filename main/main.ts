@@ -1,8 +1,12 @@
 import { app, BrowserWindow, dialog } from 'electron'
 import path from 'path'
 import { setupKeyboardFilter } from './keyboard'
-import { POS_URL } from './config'
-import { startFrontend, waitForFrontend, stopAll, isPortFree } from './process-manager'
+import os from 'os'
+import { buildPosUrl } from './config'
+import {
+  startFrontend, waitForFrontend, stopAll, resolveConfiguredBackendUrl, FrontendExitedError,
+} from './process-manager'
+import { findFreePort, PREFERRED_PORT } from './ports'
 import { initLogger, electronLogger, flushLogs } from './logger'
 
 import { autoUpdater } from 'electron-updater'
@@ -40,6 +44,62 @@ function checkForUpdatesSafely(): void {
 
 let splashWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
+/** Puerto en el que quedó el Next local (normalmente 3000; si no está libre se usa otro, sin avisar al cajero). */
+let frontendPort = PREFERRED_PORT
+
+// Una sola instancia: antes lo garantizaba (de rebote) el error de "puerto en uso"; con el fallback de
+// puertos dos cajas abiertas compartirían las bases SQLite y subirían el outbox por duplicado.
+const isPrimaryInstance = !app.isPackaged || app.requestSingleInstanceLock()
+if (isPrimaryInstance) {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  })
+}
+
+const FLUSH_LOGS_TIMEOUT_MS = 2000
+const MAX_START_ATTEMPTS = 4
+
+/**
+ * Falla de arranque: cierra la app DE VERDAD. El splash (alwaysOnTop) tapaba el diálogo de error y la
+ * caja parecía colgada en "Iniciando…"; ahora se cierra antes, y `app.exit` no espera a nadie.
+ * El mensaje es para el cajero (sin detalles técnicos): el detalle queda en el log para soporte.
+ */
+async function failStartup(title: string, message: string): Promise<void> {
+  stopAll()
+  await Promise.race([flushLogs(), new Promise((r) => setTimeout(r, FLUSH_LOGS_TIMEOUT_MS))]).catch(() => undefined)
+  splashWindow?.destroy()
+  splashWindow = null
+  dialog.showErrorBox(title, message)
+  app.exit(1)
+}
+
+/**
+ * Levanta el Next local en un puerto libre. Si el Next muere antes de responder (p. ej. Windows no le
+ * deja abrir el puerto aunque el sondeo dijo que estaba libre) se reintenta en el siguiente puerto.
+ * Un timeout NO se reintenta: el proceso sigue vivo y otro intento solo alargaría la espera.
+ */
+async function startFrontendWithFallback(backendUrl: string): Promise<number> {
+  const failedPorts = new Set<number>()
+  for (let attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
+    const port = await findFreePort({ skip: failedPorts })
+    if (port === null) throw new Error('no hay ningún puerto local disponible (loopback)')
+    if (port !== PREFERRED_PORT) electronLogger.warn(`puerto ${PREFERRED_PORT} no disponible, usando ${port}`)
+
+    startFrontend(port, backendUrl)
+    try {
+      await waitForFrontend(port)
+      return port
+    } catch (err) {
+      if (!(err instanceof FrontendExitedError)) throw err
+      stopAll()
+      failedPorts.add(port)
+      electronLogger.warn(`intento ${attempt}/${MAX_START_ATTEMPTS} en el puerto ${port} falló: ${err.message}`)
+    }
+  }
+  throw new Error(`el POS local no pudo arrancar tras ${MAX_START_ATTEMPTS} intentos (puertos ${[...failedPorts].join(', ')})`)
+}
 
 function createSplashWindow(): void {
   splashWindow = new BrowserWindow({
@@ -72,7 +132,7 @@ function createMainWindow(): void {
     },
   })
 
-  mainWindow.loadURL(POS_URL)
+  mainWindow.loadURL(buildPosUrl(frontendPort))
 
   setupKeyboardFilter(mainWindow)
 
@@ -95,6 +155,10 @@ function createMainWindow(): void {
 }
 
 app.on('ready', async () => {
+  if (!isPrimaryInstance) {
+    app.exit(0)
+    return
+  }
   initLogger()
 
   // In development (not packaged), skip process management and open directly
@@ -104,45 +168,36 @@ app.on('ready', async () => {
     return
   }
 
-  electronLogger.info('app starting')
+  electronLogger.info(
+    `app starting (v${app.getVersion()}, ${process.platform}-${process.arch}, os ${os.release()}, electron ${process.versions.electron})`
+  )
   createSplashWindow()
 
-  if (!(await isPortFree(3000))) {
-    electronLogger.error('port 3000 already in use — aborting startup')
-    dialog.showErrorBox(
-      'Puerto en uso',
-      'El puerto 3000 ya está en uso. Cerrá la aplicación que lo está usando e intentá de nuevo.'
-    )
-    app.quit()
-    return
-  }
-
+  let backendUrl: string
   try {
-    startFrontend()
+    backendUrl = resolveConfiguredBackendUrl()
   } catch (err) {
     // Sin URL de backend (ni BACKEND_URL ni build-config.json): no tiene sentido seguir.
     electronLogger.error(`cannot start frontend: ${err}`)
-    dialog.showErrorBox(
+    await failStartup(
       'Configuración incompleta',
       'No se encontró la URL del servidor de Omero. Reinstalá la aplicación o contactá a soporte.'
     )
-    app.quit()
     return
   }
 
   try {
-    await waitForFrontend()
-    electronLogger.info('frontend ready — creating main window')
+    frontendPort = await startFrontendWithFallback(backendUrl)
+    electronLogger.info(`frontend ready on port ${frontendPort} — creating main window`)
     createMainWindow()
     checkForUpdatesSafely()
     setInterval(checkForUpdatesSafely, UPDATE_CHECK_INTERVAL_MS)
   } catch (err) {
     electronLogger.error(`frontend failed to start: ${err}`)
-    dialog.showErrorBox(
-      'Error al iniciar',
-      'No se pudo iniciar Omero POS. Revisá los logs para más información.'
+    await failStartup(
+      'No se pudo iniciar Omero POS',
+      'Cerrá el programa y volvé a abrirlo. Si el problema continúa, contactá a soporte.'
     )
-    app.quit()
   }
 })
 

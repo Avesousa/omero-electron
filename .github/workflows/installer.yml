@@ -76,6 +76,21 @@ jobs:
           npm run check
           npm run check --prefix web
 
+      # Logs remotos (Better Stack): la app lee resources/betterstack.token (ver main/logger.ts) y
+      # electron-builder lo empaqueta (extraResources). Secret del repo: BETTERSTACK_TOKEN. Sin secret
+      # (p. ej. un fork) el paso no hace nada y el instalador queda solo con log local.
+      - name: Embed Better Stack token
+        shell: bash
+        run: |
+          if [ -n "$BETTERSTACK_TOKEN" ]; then
+            mkdir -p resources
+            printf '%s' "$BETTERSTACK_TOKEN" > resources/betterstack.token
+          else
+            echo "BETTERSTACK_TOKEN no definido: instalador sin logs remotos"
+          fi
+        env:
+          BETTERSTACK_TOKEN: ${{ secrets.BETTERSTACK_TOKEN }}
+
       # Variables de repositorio (Settings → Secrets and variables → Actions → Variables):
       # OMERO_BACKEND_URL_PRODUCTION / OMERO_BACKEND_URL_BETA = origen del omero-backend de Railway
       # para cada canal. La app instalada usa la que corresponda por defecto; se puede pisar con la
@@ -136,6 +151,21 @@ jobs:
         run: |
           npm run check
           npm run check --prefix web
+
+      # Logs remotos (Better Stack): la app lee resources/betterstack.token (ver main/logger.ts) y
+      # electron-builder lo empaqueta (extraResources). Secret del repo: BETTERSTACK_TOKEN. Sin secret
+      # (p. ej. un fork) el paso no hace nada y el instalador queda solo con log local.
+      - name: Embed Better Stack token
+        shell: bash
+        run: |
+          if [ -n "$BETTERSTACK_TOKEN" ]; then
+            mkdir -p resources
+            printf '%s' "$BETTERSTACK_TOKEN" > resources/betterstack.token
+          else
+            echo "BETTERSTACK_TOKEN no definido: instalador sin logs remotos"
+          fi
+        env:
+          BETTERSTACK_TOKEN: ${{ secrets.BETTERSTACK_TOKEN }}
 
       # Mismo canal que decidió build-windows (needs.build-windows.outputs), así los dos
       # instaladores del mismo tag quedan siempre en el mismo Release y con la misma URL de backend.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveBackendUrl } from './config'
+import { buildPosUrl, resolveBackendUrl } from './config'
 
 describe('resolveBackendUrl', () => {
   it('usa BACKEND_URL del entorno (override) por sobre el default del build', () => {
@@ -55,5 +55,16 @@ describe('resolveBackendUrl', () => {
 
   it('el error del build-config indica su fuente', () => {
     expect(() => resolveBackendUrl({}, { defaultBackendUrl: 'ftp://x.com' })).toThrow(/build-config/)
+  })
+})
+
+describe('buildPosUrl', () => {
+  it('arma la URL con el puerto en el que quedó el Next local', () => {
+    expect(buildPosUrl(3000, {})).toBe('http://localhost:3000/pos')
+    expect(buildPosUrl(3004, {})).toBe('http://localhost:3004/pos')
+  })
+
+  it('OMERO_POS_URL (dev) tiene prioridad sobre el puerto', () => {
+    expect(buildPosUrl(3000, { OMERO_POS_URL: 'http://localhost:3001/pos' })).toBe('http://localhost:3001/pos')
   })
 })

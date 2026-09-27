@@ -41,11 +41,12 @@ npm run prepare:app       # build:config + fetch:native + build:web + prepare:fr
 
 ```
 main/                         Electron (CommonJS, tsc → dist/main)
-├── main.ts                   splash → isPortFree(3000) → startFrontend → waitForFrontend → ventana
+├── main.ts                   instancia única → splash → findFreePort (3000, 3001…, SO) → startFrontend → waitForFrontend (reintenta en otro puerto si el Next muere) → ventana; falla → failStartup (cierra con app.exit)
 ├── process-manager.ts        utilityProcess.fork(resources/frontend/server.js); espera /api/_local/health;
 │                             inyecta OMERO_DATA_DIR (<userData>/catalog-cache) y OMERO_SQLITE_BINDING (resources/native/…)
 ├── paths.ts                  RESOURCES_DIR (process.resourcesPath empaquetado: correcto en Windows y macOS)
-├── config.ts                 POS_URL, resolveBackendUrl(env, buildConfig) — pura, 100 % testeada
+├── config.ts                 buildPosUrl(port), resolveBackendUrl(env, buildConfig) — puras, 100 % testeadas
+├── ports.ts                  findFreePort/probeListen: sondea en 127.0.0.1 (mismo host que el Next) — pura, 100 % testeada
 ├── build-config.ts           lee resources/build-config.json (default del backend embebido)
 ├── keyboard.ts               bloquea F1 a nivel Electron (el resto lo filtra el renderer)
 ├── preload.ts                contextBridge: electronAPI.isElectron / .platform
@@ -142,7 +143,7 @@ Hay **tres ABIs distintos**: Node del sistema (dev), Node 20 de Docker/CI y **El
 
 **Dev** (`npm run dev`): Electron carga `OMERO_POS_URL` (default `http://localhost:3000/pos`) y **no** administra procesos; hay que levantar `npm run dev:web` aparte (`web/.env.local` desde `web/.env.example`). `./dev.sh up` levanta el Next de `omero` también en :3000: usar `PORT=3001` para el POS de este repo.
 
-**Packaged**: splash → verifica puerto 3000 libre (si no, diálogo y salida) → `startFrontend()` con `OMERO_RUNTIME=desktop` y `BACKEND_URL` (env override > `resources/build-config.json`) → `waitForFrontend()` (falla rápido si el Next muere) → ventana. Si no hay URL de backend: diálogo "Configuración incompleta".
+**Packaged**: splash → elige puerto libre (3000 preferido; si no, otro, **sin diálogo**) → `startFrontend(port)` con `OMERO_RUNTIME=desktop` y `BACKEND_URL` (env override > `resources/build-config.json`) → `waitForFrontend(port)` (falla rápido si el Next muere y reintenta en otro puerto, hasta 4 veces) → ventana en ese puerto. Cualquier falla definitiva: diálogo simple para el cajero (sin mencionar logs), splash cerrado y `app.exit(1)`; el detalle queda en `main.log`. Si no hay URL de backend: diálogo "Configuración incompleta".
 
 ## Environment Variables
 
@@ -188,6 +189,7 @@ No definir `NEXT_PUBLIC_API_URL` en el POS (mismo origen + proxy).
 - **Auto-updater** de Electron sigue inactivo (`publish: null`); requiere code signing.
 - Solo F1 se bloquea en Electron; el resto del filtrado está en el renderer (`useKeyboard.electron.ts`).
 - Windows: `javaw.exe`/JRE ya no existen; no debe aparecer ningún proceso `java`.
+- **Puerto y errores de arranque:** el usuario final no es técnico; nada de puertos/logs en los diálogos. `listen UNKNOWN 127.0.0.1:3000` se vio en Windows aunque el sondeo del main decía libre → por eso el reintento en otro puerto. El splash es `alwaysOnTop` y tapaba el diálogo de error (parecía colgado): `failStartup` lo destruye antes. Hay `requestSingleInstanceLock` (antes el "puerto en uso" hacía de guardia). Logs: `%APPDATA%\omero-pos\logs\main.log` (ver README, "Soporte y logs").
 
 ## Pendientes registrados
 
