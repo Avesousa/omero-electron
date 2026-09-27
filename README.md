@@ -206,7 +206,7 @@ Pedir el `main.log` y buscar qué pasó después de `app starting` (incluye vers
 
 ### Logs remotos (opcional)
 
-Si hay un token de Better Stack (`BETTERSTACK_TOKEN` o `resources/betterstack.token`) los logs también se envían a la nube, que es la forma de dar soporte sin pedirle nada al cliente. **Hoy el CI no genera ese archivo**, así que los instaladores publicados solo tienen log local.
+Si hay un token de Better Stack (`BETTERSTACK_TOKEN` o `resources/betterstack.token`) los logs también se envían a la nube, que es la forma de dar soporte sin pedirle nada al cliente. El CI (`installer.yml`, paso "Embed Better Stack token") lo genera desde el secret de repo `BETTERSTACK_TOKEN` y lo empaqueta en el instalador; sin ese secret el instalador queda solo con log local. El token es de solo ingesta pero viaja dentro del instalador: no reutilizar uno con permisos de lectura.
 
 ## 🔄 Auto-updater
 
