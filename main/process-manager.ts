@@ -2,19 +2,17 @@ import { utilityProcess, UtilityProcess } from 'electron'
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import net from 'net'
 import { frontendLogger, makeLineHandler } from './logger'
 import { resolveBackendUrl } from './config'
 import { readBuildConfig } from './build-config'
 import { RESOURCES_DIR } from './paths'
+import { LOOPBACK_HOST } from './ports'
 import os from 'os'
 import { DeviceStore, sanitize } from './device-store'
 import { safeStorage } from 'electron'
 
 const IS_PACKAGED = app.isPackaged
 const FRONTEND_DIR = path.join(RESOURCES_DIR, 'frontend')
-const FRONTEND_PORT = 3000
-const FRONTEND_HOST = '127.0.0.1'
 
 /**
  * Caché SQLite del catálogo (fase 2). Las bases viven en `<userData>/catalog-cache` (distinto de `<userData>/data`,
@@ -89,23 +87,34 @@ function onFrontendMessage(message: unknown): void {
 let frontendProcess: UtilityProcess | null = null
 let frontendExitCode: number | null = null
 
+/** El Next local terminó antes de responder (p. ej. no pudo abrir el puerto): vale la pena reintentar en otro. */
+export class FrontendExitedError extends Error {
+  constructor(readonly code: number | null) {
+    super(`El POS local terminó inesperadamente (código ${code})`)
+    this.name = 'FrontendExitedError'
+  }
+}
+
+/** URL del backend de Railway (env BACKEND_URL > build-config). Lanza si no hay ninguna. */
+export function resolveConfiguredBackendUrl(): string {
+  return resolveBackendUrl(process.env, readBuildConfig())
+}
+
 /**
- * Levanta el Next standalone del POS en 127.0.0.1:3000 (modo desktop).
- * El Next hace de proxy hacia el omero-backend de Railway: BACKEND_URL sale de la variable de
- * entorno (override) o del default embebido en el build. Lanza si no hay ninguna.
+ * Levanta el Next standalone del POS en 127.0.0.1:<port> (modo desktop).
+ * El Next hace de proxy hacia el omero-backend de Railway.
  */
-export function startFrontend(): void {
-  const backendUrl = resolveBackendUrl(process.env, readBuildConfig())
+export function startFrontend(port: number, backendUrl: string): void {
   const serverJs = path.join(FRONTEND_DIR, 'server.js')
 
-  frontendLogger.info(`starting frontend (runtime=desktop, backend=${backendUrl})`)
+  frontendLogger.info(`starting frontend (runtime=desktop, port=${port}, backend=${backendUrl})`)
   frontendExitCode = null
-  frontendProcess = utilityProcess.fork(serverJs, [], {
+  const proc = utilityProcess.fork(serverJs, [], {
     cwd: FRONTEND_DIR,
     env: {
       NODE_ENV: 'production',
-      PORT: String(FRONTEND_PORT),
-      HOSTNAME: FRONTEND_HOST,
+      PORT: String(port),
+      HOSTNAME: LOOPBACK_HOST,
       OMERO_RUNTIME: 'desktop',
       BACKEND_URL: backendUrl,
       ...catalogCacheEnv(),
@@ -113,24 +122,26 @@ export function startFrontend(): void {
     },
     stdio: 'pipe',
   })
+  frontendProcess = proc
 
-  frontendProcess.on('message', onFrontendMessage)
-  frontendProcess.stdout?.on('data', makeLineHandler(frontendLogger.info))
-  frontendProcess.stderr?.on('data', makeLineHandler(frontendLogger.error))
-  frontendProcess.on('exit', (code) => {
-    frontendExitCode = code
+  proc.on('message', onFrontendMessage)
+  proc.stdout?.on('data', makeLineHandler(frontendLogger.info))
+  proc.stderr?.on('data', makeLineHandler(frontendLogger.error))
+  proc.on('exit', (code) => {
+    // Un intento anterior (ya reemplazado) no debe pisar el estado del actual.
+    if (frontendProcess === proc) frontendExitCode = code
     frontendLogger.info(`frontend exited with code ${code}`)
   })
 }
 
 /** Espera a que el Next local responda su health (no depende de la conexión con Railway). */
-export async function waitForFrontend(timeoutMs = 60_000): Promise<void> {
+export async function waitForFrontend(port: number, timeoutMs = 60_000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
-    // Si el Next murió (p. ej. configuración inválida) no tiene sentido seguir esperando.
-    if (frontendExitCode !== null) throw new Error(`El POS local terminó inesperadamente (código ${frontendExitCode})`)
+    // Si el Next murió (p. ej. configuración inválida o puerto no disponible) no tiene sentido seguir esperando.
+    if (frontendExitCode !== null) throw new FrontendExitedError(frontendExitCode)
     try {
-      const res = await fetch(`http://${FRONTEND_HOST}:${FRONTEND_PORT}/api/_local/health`)
+      const res = await fetch(`http://${LOOPBACK_HOST}:${port}/api/_local/health`)
       if (res.ok) return
     } catch {
       // not ready yet
@@ -146,13 +157,4 @@ export function stopAll(): void {
     frontendProcess.kill()
     frontendProcess = null
   }
-}
-
-export function isPortFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const server = net.createServer()
-    server.once('error', () => resolve(false))
-    server.once('listening', () => { server.close(); resolve(true) })
-    server.listen(port)
-  })
 }

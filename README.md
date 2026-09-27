@@ -31,7 +31,7 @@ omero-electron/
 ├── main/                         # Electron (CommonJS)
 │   ├── main.ts                   # Ciclo de vida: splash → Next local → ventana
 │   ├── process-manager.ts        # Levanta/espera/detiene el Next (utilityProcess)
-│   ├── config.ts                 # POS_URL, resolveBackendUrl() (BACKEND_URL > default del build)
+│   ├── config.ts                 # buildPosUrl(port), resolveBackendUrl() (BACKEND_URL > default del build)
 │   ├── build-config.ts           # Lee resources/build-config.json
 │   ├── keyboard.ts               # Filtro de teclas via before-input-event
 │   ├── paths.ts                  # RESOURCES_DIR (Windows y macOS)
@@ -166,6 +166,47 @@ const SHORTCODE_KEYS = new Set<string>([
 ```
 
 Los keycodes siguen el estándar de la [KeyboardEvent.code API](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/code).
+
+## 🩺 Soporte y logs (para el equipo, no para el cajero)
+
+Los cajeros no son técnicos: la app **nunca** les habla de logs ni de puertos. Ante una falla de arranque muestra un mensaje simple ("Cerrá el programa y volvé a abrirlo…"), se cierra sola (`app.exit(1)`) y el detalle queda en el log para que lo lea soporte.
+
+Cada caja guarda un log local con `electron-log` (máx. 10 MB por archivo), con el proceso principal (`[electron]`) y el stdout/stderr del Next local (`[frontend]`):
+
+| SO | Ruta del log |
+|---|---|
+| Windows | `%APPDATA%\omero-pos\logs\main.log` (`C:\Users\<usuario>\AppData\Roaming\omero-pos\logs\main.log`) |
+| macOS | `~/Library/Logs/omero-pos/main.log` |
+
+La ruta de macOS está verificada. En Windows el `userData` está confirmado (`…\AppData\Roaming\omero-pos`, se ve en el log de `catalog-cache`) y `electron-log` deja el log en `logs\main.log` dentro de esa carpeta.
+
+Otros datos locales (`<userData>` = `%APPDATA%\omero-pos` / `~/Library/Application Support/omero-pos`):
+- `<userData>/catalog-cache/` — bases SQLite de la caché de catálogo y del outbox (`<tenantId>.sqlite`, `<tenantId>.outbox.sqlite`).
+- `<userData>/device/` — identidad de la caja (`device-id`) y sesión larga cifrada (`device-session.bin`).
+
+### Arranque: puerto y reintentos
+
+El Next local escucha en `127.0.0.1:3000`. Si ese puerto no está libre (ocupado, reservado por Windows/Hyper-V, error del SO) **se usa otro sin avisar al cajero**: `3001…3009` y, como último recurso, uno que asigne el SO (`main/ports.ts`). Si el Next muere antes de responder (el sondeo puede decir "libre" y aun así fallar el `listen`), se reintenta en el siguiente puerto, hasta 4 intentos. Un timeout de 60 s **no** se reintenta. La ventana carga el puerto elegido (`buildPosUrl`). Solo hay una instancia de la app (`requestSingleInstanceLock`): abrir una segunda enfoca la primera.
+
+### Diagnóstico: se queda en "Iniciando…" o falla al abrir
+
+Pedir el `main.log` y buscar qué pasó después de `app starting` (incluye versión de la app, SO y Electron):
+
+| En el log | Causa probable |
+|---|---|
+| `puerto 3000 no disponible, usando N` / `intento k/4 … falló` | Fallback de puerto en acción (normal, no hay que hacer nada). Si aparece siempre en una caja, hay algo reservando el 3000 |
+| `Error: listen UNKNOWN … 127.0.0.1:3000` (errno -4094) | Windows no dejó abrir el puerto (pila de red/Winsock, antivirus, rango reservado). Lo cubre el fallback; si fallan los 4 intentos el problema es el loopback de esa máquina |
+| `WSALookupServiceBegin failed with: 10108` | Ruido de Chromium (notificador de cambios de red) en máquinas con la pila de red rara. **No es la causa** por sí solo; no requiere tocar la red del cliente |
+| `cannot start frontend` / diálogo "Configuración incompleta" | Falta la URL del backend (`BACKEND_URL` o `resources/build-config.json`); reinstalar |
+| `frontend exited with code N` o stderr del Next | El frontend murió: error de módulo/entorno (`[omero-pos] Configuración inválida`) |
+| `[frontend] … Ready in …` pero nunca abre | Health inalcanzable: firewall/antivirus sobre `127.0.0.1` o Defender escaneando el standalone en el primer arranque |
+| Nada después de `starting frontend` | El proceso no llegó a escribir: revisar que existan `resources/frontend/server.js` y el antivirus |
+| `sin binario de SQLite …` | No es fatal: el POS corre sin caché offline |
+| `frontend failed to start: …` | Falla definitiva: se mostró el diálogo simple y la app se cerró |
+
+### Logs remotos (opcional)
+
+Si hay un token de Better Stack (`BETTERSTACK_TOKEN` o `resources/betterstack.token`) los logs también se envían a la nube, que es la forma de dar soporte sin pedirle nada al cliente. **Hoy el CI no genera ese archivo**, así que los instaladores publicados solo tienen log local.
 
 ## 🔄 Auto-updater
 

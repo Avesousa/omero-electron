@@ -1,10 +1,12 @@
 /**
- * URL of the Next.js app to load in the Electron BrowserWindow.
- * In development: point to the local dev server.
- * In production: the local Next standalone server (localhost:3000).
- * Override via OMERO_POS_URL environment variable.
+ * URL del POS que carga la ventana de Electron.
+ * - Dev: `OMERO_POS_URL` (default el dev server en el puerto preferido).
+ * - Empaquetado: el Next local; el puerto es el que se logró abrir (normalmente 3000, ver ports.ts).
+ * Se usa `localhost` (no 127.0.0.1) para no cambiar el origen de las cajas ya instaladas.
  */
-export const POS_URL = process.env.OMERO_POS_URL ?? 'http://localhost:3000/pos'
+export function buildPosUrl(port: number, env: Record<string, string | undefined> = process.env): string {
+  return env.OMERO_POS_URL ?? `http://localhost:${port}/pos`
+}
 
 export interface BuildConfig {
   /** Backend URL embebida en el build del instalador (ver scripts/write-build-config.mjs). */
