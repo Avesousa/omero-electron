@@ -13,6 +13,7 @@ import { GET as getOutbox } from '../../app/api/%5Flocal/outbox/route'
 import { POST as postImport } from '../../app/api/%5Flocal/outbox/import/route'
 import { POST as postDismiss } from '../../app/api/%5Flocal/outbox/[clientId]/dismiss/route'
 import { closeAllOutboxStores, getOutboxStore } from './outbox-registry'
+import { closeAllCatalogStores } from '../catalog/store-registry'
 import { legacyClientId } from './legacy-import'
 
 const TENANT = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
@@ -38,6 +39,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   closeAllOutboxStores()
+  closeAllCatalogStores() // /connectivity abre la base del catálogo; en Windows no se puede borrar abierta
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   fs.rmSync(dir, { recursive: true, force: true })
