@@ -6,8 +6,8 @@ import {
   isSubscriptionInactiveResponse,
   isSubscriptionMarkedInactive,
   markSubscriptionInactive,
-  useSubscriptionMarkedInactive,
 } from './subscriptionGate'
+import { useSubscriptionMarkedInactive } from './useEntitlement'
 import * as session from './sessionManager'
 import { apiFetch } from './apiClient'
 

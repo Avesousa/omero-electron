@@ -1,9 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { authHeaders } from '@/lib/sessionManager'
 import { isAccessBlocked, parseEntitlement, type Entitlement } from '@/lib/entitlement/rule'
-import { clearSubscriptionInactive, useSubscriptionMarkedInactive } from '@/lib/subscriptionGate'
+import { clearSubscriptionInactive, isSubscriptionMarkedInactive, subscribeSubscriptionGate } from '@/lib/subscriptionGate'
+
+/** ¿La compuerta de suscripción está abierta (llegó un 403 SUBSCRIPTION_INACTIVE)? */
+export function useSubscriptionMarkedInactive(): boolean {
+  return useSyncExternalStore(subscribeSubscriptionGate, isSubscriptionMarkedInactive, () => false)
+}
 
 /** Refresco normal del entitlement. */
 export const ENTITLEMENT_REFRESH_MS = 5 * 60_000

@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from 'react'
 import { SUBSCRIPTION_INACTIVE_CODE } from '@/lib/entitlement/rule'
 
 /**
@@ -32,11 +31,9 @@ export function handleSubscriptionResponse(status: number, body: unknown): boole
   return hit
 }
 
-function subscribe(listener: () => void): () => void {
+/** Para `useSubscriptionMarkedInactive` (en useEntitlement.ts): este módulo no importa React porque lo carga también
+ *  el lado servidor (apiClient → authService → layout). */
+export function subscribeSubscriptionGate(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
-}
-
-export function useSubscriptionMarkedInactive(): boolean {
-  return useSyncExternalStore(subscribe, () => inactive, () => false)
 }
