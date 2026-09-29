@@ -1,4 +1,5 @@
 import { authHeaders, clearSession } from '@/lib/sessionManager'
+import { handleSubscriptionResponse } from '@/lib/subscriptionGate'
 
 export async function apiFetch<T = unknown>(
   path: string,
@@ -24,7 +25,10 @@ export async function apiFetch<T = unknown>(
     return { success: false, error: res.ok ? 'Respuesta vacía del servidor.' : `Error ${res.status}` }
   }
   try {
-    return JSON.parse(text)
+    const body = JSON.parse(text)
+    // 403 SUBSCRIPTION_INACTIVE: abre la pantalla bloqueante del POS (no cierra sesión ni revoca la caja).
+    handleSubscriptionResponse(res.status, body)
+    return body
   } catch {
     return { success: false, error: `Respuesta inválida del servidor (${res.status}).` }
   }

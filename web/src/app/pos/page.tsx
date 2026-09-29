@@ -37,6 +37,9 @@ import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMer
 import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag, useUpdateAvailable } from './hooks'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { UpdateBanner } from './components/UpdateBanner'
+import { SubscriptionBlockedScreen } from './components/SubscriptionBlockedScreen'
+import { useEntitlement } from '@/lib/useEntitlement'
+import { useAuth } from '@/shared/contexts/auth'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
@@ -117,6 +120,9 @@ export default function POSPage() {
   const mpOffline = useBusinessFlag('mp_offline', { enabled: connection.runtime === 'desktop', refreshKey: connection.online })
   const mpBlocked = connection.runtime === 'desktop' && !connection.online && !mpOffline
   const { createSale, isProcessing } = useSales()
+  // Suscripción del negocio: sin acceso (o 403 SUBSCRIPTION_INACTIVE) el POS se bloquea, sin tocar sesión ni caja.
+  const { logout } = useAuth()
+  const subscription = useEntitlement({ authenticated: true })
   const {
     expenseState,
     openExpenseModal,
@@ -973,6 +979,8 @@ export default function POSPage() {
 
       {/* Notification */}
       <Notification notification={notification} />
+
+      <SubscriptionBlockedScreen isOpen={subscription.blocked} onRetry={() => void subscription.refresh()} onLogout={logout} />
 
       {/* Loading overlay for processing sales */}
       <Modal isOpen={isProcessing} onClose={() => {}} hideClose closeOnEsc={false} tone="dark" size="xs" accent="primary">

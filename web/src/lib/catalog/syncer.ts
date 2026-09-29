@@ -1,3 +1,4 @@
+import { SUBSCRIPTION_INACTIVE_CODE } from '../entitlement/rule'
 import { getBackendUrl, getSyncIntervalMs } from '../runtime'
 import { checkBackend } from './connectivity'
 import { applyCatalogPayload } from './snapshot'
@@ -230,6 +231,7 @@ export class CatalogSyncer {
           redirect: 'manual',
           signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
         })
+        if (res.status === 403 && (await isSubscriptionInactive(res))) return 'ok' // token válido: no se olvida (el outbox lo necesita)
         if (res.status === 401 || res.status === 403) return 'unauthorized'
         if (!res.ok) {
           if (!optional) failed = true
@@ -241,6 +243,18 @@ export class CatalogSyncer {
       }
     }
     return failed ? 'failed' : 'ok'
+  }
+}
+
+/**
+ * 403 `SUBSCRIPTION_INACTIVE`: el negocio no tiene suscripción activa, pero el token es válido. No es "no autorizado":
+ * olvidarlo dejaría sin credencial al outbox, que sigue subiendo lo pendiente (`/api/sync/batch` siempre se permite).
+ */
+async function isSubscriptionInactive(res: Response): Promise<boolean> {
+  try {
+    return ((await res.clone().json()) as { code?: unknown } | null)?.code === SUBSCRIPTION_INACTIVE_CODE
+  } catch {
+    return false
   }
 }
 

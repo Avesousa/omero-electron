@@ -11,6 +11,8 @@ import { closeAllOutboxStores, getOutboxStore } from './outbox-registry'
 import { handleOutboxRequest, matchOutboxRoute, MAX_BODY_BYTES } from './outbox-proxy'
 import { handleApiRequest } from '../data-layer'
 import { getSyncer } from '../catalog/syncer'
+import { resetEntitlementMemory, writeEntitlement } from '../entitlement/store'
+import type { Entitlement } from '../entitlement/rule'
 
 const TENANT = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const USER = '99999999-aaaa-bbbb-cccc-000000000001'
@@ -43,6 +45,7 @@ beforeEach(() => {
   vi.stubEnv('BACKEND_URL', 'http://127.0.0.1:9')
   vi.stubEnv('OMERO_DATA_DIR', dir)
   kick.mockClear()
+  resetEntitlementMemory()
 })
 afterEach(() => {
   closeAllOutboxStores()
@@ -230,5 +233,48 @@ describe('handleApiRequest (data-layer)', () => {
     const res = await handleApiRequest(new Request('http://localhost:3000/api/sales', { headers: { authorization: token() } }))
     expect(res.status).toBe(200)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('suscripción vencida (bloqueo de venta antes de encolar)', () => {
+  const ent = (over: Partial<Entitlement> = {}): Entitlement => ({
+    status: 'ACTIVE', accessGranted: true, accessUntil: null, trialEndsAt: null, graceUntil: null,
+    planCode: 'PRO', courtesy: false, enforced: true, canManage: false, ...over,
+  })
+  it('sin acceso: la venta se rechaza con 403 SUBSCRIPTION_INACTIVE y NO se encola', async () => {
+    writeEntitlement(TENANT, ent({ accessGranted: false, status: 'EXPIRED' }))
+    const res = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    expect(res!.status).toBe(403)
+    expect(await res!.json()).toEqual({
+      success: false, error: 'La suscripción del negocio venció. Comunicate con el administrador.', code: 'SUBSCRIPTION_INACTIVE',
+    })
+    expect(getOutboxStore(TENANT)!.nextBatch(10)).toEqual([])
+    expect(kick).not.toHaveBeenCalled()
+  })
+
+  it('offline con accessUntil pasado se bloquea; con accessUntil futuro se encola', async () => {
+    writeEntitlement(TENANT, ent({ accessUntil: new Date(Date.now() - 60_000).toISOString() }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(403)
+
+    writeEntitlement(TENANT, ent({ accessUntil: new Date(Date.now() + 3600_000).toISOString() }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+  })
+
+  it('ADMIN_APPROVED, enforced=false y sin caché permiten la venta', async () => {
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201) // sin caché
+    writeEntitlement(TENANT, ent({ status: 'ADMIN_APPROVED', accessGranted: false }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+    writeEntitlement(TENANT, ent({ enforced: false, accessGranted: false }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+  })
+
+  it('lo ya encolado sigue en el outbox y los gastos no se bloquean', async () => {
+    const queued = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    const { clientId } = (await queued!.json()).data
+    writeEntitlement(TENANT, ent({ accessGranted: false }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(403)
+    expect(getOutboxStore(TENANT)!.getByClientId(clientId)!.status).toBe('PENDING')
+    const expense = await handleOutboxRequest(post('/api/expenses', { description: 'Luz', amount: 10 }), 'EXPENSE')
+    expect(expense!.status).toBe(201)
   })
 })

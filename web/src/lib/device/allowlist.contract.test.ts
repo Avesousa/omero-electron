@@ -18,6 +18,7 @@ interface Rule {
 export const POS_ALLOWLIST: Rule[] = [
   { method: 'GET', pattern: '/api/health' },
   { method: 'GET', pattern: '/api/auth/me' },
+  { method: 'GET', pattern: '/api/billing/entitlement' },
   { method: 'GET', pattern: '/api/products' },
   { method: 'GET', pattern: '/api/products/search' },
   { method: 'GET', pattern: '/api/products/*' },
