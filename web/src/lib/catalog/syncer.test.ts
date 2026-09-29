@@ -174,6 +174,28 @@ describe('tokens', () => {
     expect(fetchFn).not.toHaveBeenCalled() // sin tenants no hay timer
   })
 
+  it('403 SUBSCRIPTION_INACTIVE NO olvida el token (el outbox lo necesita) ni dispara la recuperación', async () => {
+    const fetchFn = vi.fn(async (input: string) => {
+      if (String(input).endsWith('/api/health')) return new Response('{}', { status: 200 })
+      return new Response(JSON.stringify({ success: false, code: 'SUBSCRIPTION_INACTIVE' }), { status: 403 })
+    })
+    const s = syncer(fetchFn as never)
+    s.remember(TENANT, validAuth())
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    expect(s.hasTenant(TENANT)).toBe(true)
+    expect(store.replaceProducts).not.toHaveBeenCalled()
+    s.stop()
+  })
+
+  it('403 con cuerpo ilegible sigue siendo "no autorizado"', async () => {
+    const fetchFn = vi.fn(async (input: string) =>
+      String(input).endsWith('/api/health') ? new Response('{}', { status: 200 }) : new Response('<html>', { status: 403 }))
+    const s = syncer(fetchFn as never)
+    s.remember(TENANT, validAuth())
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    expect(s.hasTenant(TENANT)).toBe(false)
+  })
+
   it('forget() de un tenant que no existe no falla', () => {
     const s = syncer(makeFetch({ health: 200, products: 200 }))
     expect(() => s.forget('otro')).not.toThrow()

@@ -128,6 +128,14 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 - Comandos: `npm run verify:safestorage` (compila y corre `safeStorage` **real** con Electron: cifra/descifra, comprueba que el archivo no tiene el secreto en claro; requiere sesión gráfica).
 - Tests: `main/device-store.test.ts` (100 %), unit de `lib/device/**` (≥ 99 %), `device.integration.test.ts` (backend HTTP falso: activación, renovación con JWT vencido, rotación y reinicio, revocada → sync-token, ventana cerrada, logout, aislamiento de tenants, web/backend viejo), renderer (`useSessionRenewal`, `LoginForm`, `deviceSession`, logout).
 
+### Suscripción del negocio / entitlement (solo control de acceso)
+
+`web/src/lib/entitlement/` + `web/src/lib/{useEntitlement,subscriptionGate}.ts` + `app/pos/components/SubscriptionBlockedScreen.tsx`. El acceso lo decide omero-billing → omero-backend; el POS solo lo consulta (`GET /api/billing/entitlement`, permitido al token de caja).
+
+- **Caché persistente** (`store`, desktop): `<OMERO_DATA_DIR>/<tenantId>.entitlement.json` (`{entitlement, fetchedAt}`, escritura atómica, espejo en memoria). `entitlement-proxy` (en `data-layer`) hace read-through: 200 → guarda; 502/503/504 con caché → 200 con `X-Omero-Cache: hit` + `X-Omero-Cache-At`. Se refresca porque el renderer consulta al montar, al volver la conexión/pestaña y cada 5 min (30 s si está bloqueado).
+- **Regla** (`rule.isAccessBlocked`, pura): `enforced && status != ADMIN_APPROVED && (!accessGranted || now > accessUntil)`; sin caché → permite. `outbox-proxy` la aplica a `POST /api/sales` ANTES de encolar (también offline) y responde 403 `SUBSCRIPTION_INACTIVE`; los gastos y lo ya encolado no se tocan.
+- **403 `SUBSCRIPTION_INACTIVE`** (`apiClient` → `subscriptionGate`): pantalla bloqueante; NO cierra sesión ni revoca la caja. El outbox sigue subiendo (`/api/sync/batch` siempre se permite) y el `syncer` no olvida el token ante ese 403. Se desbloquea solo cuando una consulta EN VIVO del entitlement vuelve con acceso.
+
 ### Empaquetado del módulo nativo
 
 Hay **tres ABIs distintos**: Node del sistema (dev), Node 20 de Docker/CI y **Electron 40 = ABI 143**. Un `.node` con ABI equivocado no carga.

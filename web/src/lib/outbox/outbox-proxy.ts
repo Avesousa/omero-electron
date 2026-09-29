@@ -1,4 +1,6 @@
 import { tenantFromAuthHeader, userIdFromAuthHeader } from '../catalog/tenant'
+import { isAccessBlocked, SALE_BLOCKED_MESSAGE, SUBSCRIPTION_INACTIVE_CODE } from '../entitlement/rule'
+import { readEntitlement } from '../entitlement/store'
 import { getOutboxStore } from './outbox-registry'
 import { getSender } from './outbox-sender'
 import { rememberSession } from './outbox-runtime'
@@ -107,6 +109,12 @@ export async function handleOutboxRequest(request: Request, type: OutboxType): P
   const authorization = request.headers.get('authorization')
   const tenantId = tenantFromAuthHeader(authorization)
   if (!tenantId || !authorization) return null
+
+  // Suscripción vencida: la VENTA se bloquea antes de encolarla (también offline, con el último entitlement conocido).
+  // Sin caché todavía → se permite. Los gastos y lo ya encolado siguen su curso: nunca se pierden datos.
+  if (type === 'SALE' && isAccessBlocked(readEntitlement(tenantId)?.entitlement, Date.now())) {
+    return json(403, { success: false, error: SALE_BLOCKED_MESSAGE, code: SUBSCRIPTION_INACTIVE_CODE })
+  }
 
   const store = getOutboxStore(tenantId)
   if (!store) return null
