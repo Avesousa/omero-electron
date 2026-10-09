@@ -4,6 +4,8 @@ import { useState } from 'react'
 import type { Product } from '../../types'
 import { KeyboardGuide } from '../keyboard/KeyboardGuide'
 import { Modal } from '@/app/components/ui/Modal'
+import { formatStock } from '@/lib/quantity'
+import { isMixedProduct, needsWeightEntry, toQuantityProduct, unitPriceOfProduct } from '../../lib/cartLines'
 
 interface ProductsModalProps {
   show: boolean
@@ -106,7 +108,13 @@ export const ProductsModal = ({
                   </div>
                   <div className="text-lg text-green-400 font-bold mb-1">
                     ${(product.price || 0).toLocaleString()}
+                    {needsWeightEntry(product) && <span className="text-sm text-gray-400 font-semibold"> /kg</span>}
                   </div>
+                  {isMixedProduct(product) && (
+                    <div className="text-sm text-green-300 font-semibold mb-1">
+                      ${unitPriceOfProduct(product).toLocaleString()} <span className="text-gray-400">/u</span>
+                    </div>
+                  )}
                   <div className={`text-xs font-semibold ${
                     product.stock > 10 
                       ? 'text-green-400' 
@@ -114,7 +122,7 @@ export const ProductsModal = ({
                         ? 'text-yellow-400' 
                         : 'text-red-400'
                   }`}>
-                    Stock: {product.stock}
+                    Stock: {formatStock(toQuantityProduct(product), product.stock)}
                   </div>
                 </div>
               ))}

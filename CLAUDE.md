@@ -136,6 +136,45 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 - **Regla** (`rule.isAccessBlocked`, pura): `enforced && status != ADMIN_APPROVED && (!accessGranted || now > accessUntil)`; sin caché → permite. `outbox-proxy` la aplica a `POST /api/sales` ANTES de encolar (también offline) y responde 403 `SUBSCRIPTION_INACTIVE`; los gastos y lo ya encolado no se tocan.
 - **403 `SUBSCRIPTION_INACTIVE`** (`apiClient` → `subscriptionGate`): pantalla bloqueante; NO cierra sesión ni revoca la caja. El outbox sigue subiendo (`/api/sync/batch` siempre se permite) y el `syncer` no olvida el token ante ese 403. Se desbloquea solo cuando una consulta EN VIVO del entitlement vuelve con acceso.
 
+### Productos por peso, por unidad + peso y balanza (added 2026-10-06, branch: feat/productos-peso-unidad)
+
+Contrato y decisiones en `omero-backend` (CLAUDE.md, "Productos por peso y por unidad + peso") y
+`omeroShop/AiBuild/feature/productos-peso-unidad/`. **Requiere el backend con V24 desplegado antes**: contra un backend
+anterior una cantidad decimal falla.
+
+- **`web/src/lib/quantity.ts`** — espejo de `QuantityMath` del backend y de `lib/quantity.ts` del admin; los tres corren
+  los mismos casos (`lib/__fixtures__/quantity-cases.json`). Formatos: `UNIT`, `GRAMS` (por peso; stock, costo y precio
+  **por kg**) y `MIXED` (por kg, y además se vende por unidad con `unitWeightKg`). Redondeos: dinero a centavos, kilos a
+  gramos. Un producto sin `saleFormat` (backend anterior, caché vieja) es `UNIT`.
+- **Carrito** (`app/pos/lib/cartLines.ts`, `useCart`): una línea por unidad por producto (se acumula, como siempre) y
+  **una línea por pesada** (`saleUnit: 'KG'`, nunca se acumulan ni entran en promociones). Las unidades de un `MIXED`
+  llevan `stockPerUnit` (kg que descuenta cada una). `fixedTotal` = el importe vino de la etiqueta de la balanza.
+- **Panel de peso** (`app/pos/lib/weightEntry.ts` + `WeightEntryModal`): se abre al ingresar un producto con peso y
+  **no deja agregarlo sin kilos o unidades**. Solo teclado numérico: dígitos, `.`, `⌫`, `*` kg↔g, `/` peso↔unidades
+  (solo `MIXED`), `Enter`/`+` agrega, `Esc` cancela. 100 kg o más pide un segundo Enter. `*` sobre la última pesada
+  del carrito reabre el panel para corregirla. La caja recuerda kg/g y, por producto mixto, la última pestaña
+  (`localStorage`: `pos_weight_grams`, `pos_mixed_tab_<code>`). Mientras está abierto, `handleKeyPress` no deja pasar
+  ninguna tecla al resto del POS.
+- **Stock**: siempre en la unidad base del producto (`stockInCart`): se bloquea si lo cargado más lo que ya está en el
+  carrito supera el stock (misma política que con unidades).
+- **Balanza** (`web/src/lib/scale/`): motor genérico de plantillas EAN-13 (`template.ts`; dígitos = prefijo fijo, `P`
+  PLU, `I` importe, `C` peso) + perfiles por marca (`profiles/systel.ts`, `registry.ts`). **Para sumar una marca: un
+  archivo en `profiles/` y una línea en `registry.ts`.** La configuración sale de las claves `scale_*` del negocio
+  (`useScaleConfig`; el `syncer` las cachea para leer etiquetas sin conexión). Con la balanza activada, un código de
+  13 dígitos que ningún producto tiene como código de barras se interpreta como etiqueta
+  (`app/pos/lib/scaleScan.ts`): busca el producto por `scalePlu` y agrega la pesada sin abrir el panel. Con importe
+  en la etiqueta se cobra **ese importe** y el peso se deduce del precio por kg (solo para el stock).
+- **Venta** (`useSales.buildSalePayload`, `outbox-proxy.parseSale`): cada ítem lleva `saleUnit` y `stockQuantity`
+  (lo que descuenta en la unidad base; lo usa `outbox-store.activeSaleQuantities` para el stock mostrado y el backend
+  lo ignora). Cantidad decimal solo con `saleUnit: 'KG'` y hasta 3 decimales. Un payload sin esos campos (venta ya
+  encolada antes de actualizar) sigue siendo válido.
+- Tests: `lib/quantity.test.ts`, `lib/scale/scale.test.ts`, `app/pos/lib/__tests__/*`, `WeightEntryModal.test.tsx`,
+  `useCart`/`useProducts`/`useScaleConfig`/`useSales`, y `app/pos/__tests__/weightFlow.test.tsx` (la pantalla completa
+  con teclas reales: peso, mixto, etiquetas y el cuerpo de la venta). La cobertura mínima ahora incluye
+  `lib/quantity.ts`, `lib/scale/**` y `app/pos/lib/**`.
+- Pendiente: etiquetas de venta por unidad (`21`) y de sumatoria (`22`) — el POS avisa que no las soporta; confirmar
+  `scale_amount_decimals` con una etiqueta real de cada negocio.
+
 ### Empaquetado del módulo nativo
 
 Hay **tres ABIs distintos**: Node del sistema (dev), Node 20 de Docker/CI y **Electron 40 = ABI 143**. Un `.node` con ABI equivocado no carga.

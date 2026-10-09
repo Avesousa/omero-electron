@@ -64,6 +64,18 @@ describe('adjustStockBody', () => {
     ])
   })
 
+  it('producto por peso: resta kilos y no deja ruido de punto flotante', () => {
+    const store = getOutboxStore(TENANT)!
+    const items = [
+      { productId: '002', quantity: 0.35, unitPrice: 8000, total: 2800, saleUnit: 'KG', stockQuantity: 0.35 },
+      { productId: '003', quantity: 3, unitPrice: 1200, total: 3600, saleUnit: 'UNIT', stockQuantity: 0.75 },
+    ]
+    store.enqueue({ type: 'SALE', payload: JSON.stringify({ items, cashAmount: 0, mpAmount: 0, change: 0 }) })
+    store.enqueue({ type: 'SALE', payload: JSON.stringify({ items: [{ ...items[0], quantity: 0.2, stockQuantity: 0.2 }], cashAmount: 0, mpAmount: 0, change: 0 }) })
+    const out = JSON.parse(adjustStockBody(TENANT, { kind: 'products' }, list([{ code: '002', stock: 5.5 }, { code: '003', stock: 1 }])))
+    expect(out.data.map((p: { stock: number }) => p.stock)).toEqual([4.95, 0.25]) // 5.5 − 0.55 daría 4.949999…
+  })
+
   it('ajusta un producto individual', () => {
     getOutboxStore(TENANT)!.enqueue({ type: 'SALE', payload: sale([['001', 3]]) })
     const out = JSON.parse(adjustStockBody(TENANT, { kind: 'product', code: '001' }, JSON.stringify({ success: true, data: { code: '001', stock: 5 } })))

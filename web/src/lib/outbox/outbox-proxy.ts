@@ -54,6 +54,8 @@ const money = (v: unknown, field: string, fallback?: number): number => {
   return v
 }
 const optString = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null)
+/** Un peso en kg con precisión de gramos (0.35, 1.005); 0.3505 no. */
+const hasAtMostThreeDecimals = (v: number): boolean => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6
 
 export function parseSale(body: Record<string, unknown>): Parsed {
   if (!Array.isArray(body.items) || body.items.length === 0) throw new InvalidRequest('La venta no tiene ítems')
@@ -61,9 +63,22 @@ export function parseSale(body: Record<string, unknown>): Parsed {
     if (!isObj(raw)) throw new InvalidRequest(`Ítem ${i + 1} inválido`)
     const productId = typeof raw.productId === 'string' ? raw.productId.trim() : ''
     if (!productId) throw new InvalidRequest(`Ítem ${i + 1}: falta el código de producto`)
+    // Unidad de la línea: ausente = por unidad (formato anterior). Por peso, la cantidad son kg con hasta 3 decimales.
+    if (raw.saleUnit !== undefined && raw.saleUnit !== null && raw.saleUnit !== 'UNIT' && raw.saleUnit !== 'KG') {
+      throw new InvalidRequest(`Ítem ${i + 1}: unidad inválida`)
+    }
+    const byWeight = raw.saleUnit === 'KG'
     const quantity = raw.quantity
-    if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity <= 0) {
+    if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
       throw new InvalidRequest(`Ítem ${i + 1}: cantidad inválida`)
+    }
+    if (byWeight ? !hasAtMostThreeDecimals(quantity) : !Number.isInteger(quantity)) {
+      throw new InvalidRequest(`Ítem ${i + 1}: cantidad inválida`)
+    }
+    const stockQuantity = raw.stockQuantity
+    if (stockQuantity !== undefined && stockQuantity !== null
+      && (typeof stockQuantity !== 'number' || !Number.isFinite(stockQuantity) || stockQuantity < 0)) {
+      throw new InvalidRequest(`Ítem ${i + 1}: stockQuantity inválido`)
     }
     // Lista blanca: cualquier otro campo (p. ej. un costo) se descarta.
     return {
@@ -74,6 +89,9 @@ export function parseSale(body: Record<string, unknown>): Parsed {
       total: money(raw.total, `Ítem ${i + 1}: total`),
       promotionId: optString(raw.promotionId),
       promotionName: optString(raw.promotionName),
+      // Solo viajan si el POS los mandó: un payload sin ellos es idéntico al del formato anterior.
+      ...(typeof raw.saleUnit === 'string' ? { saleUnit: raw.saleUnit } : {}),
+      ...(typeof stockQuantity === 'number' ? { stockQuantity } : {}),
     }
   })
   const payload = {

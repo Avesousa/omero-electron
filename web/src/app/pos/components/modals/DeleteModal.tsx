@@ -1,4 +1,5 @@
 import type { CartItem } from '../../types'
+import { lineQuantityLabel } from '../../lib/cartLines'
 import { STRINGS } from '../../constants/strings'
 import { KeyboardGuide } from '../keyboard/KeyboardGuide'
 import { Modal } from '@/app/components/ui/Modal'
@@ -80,7 +81,7 @@ export const DeleteModal = ({
               {reverseIndex + 1}
             </div>
             <div className="text-white font-medium text-xs text-center truncate mb-1">{item.name}</div>
-            <div className="text-gray-400 text-xs text-center mb-1">{STRINGS.PRODUCT_QUANTITY} {item.quantity}</div>
+            <div className="text-gray-400 text-xs text-center mb-1">{STRINGS.PRODUCT_QUANTITY} {lineQuantityLabel(item)}</div>
             <div className="text-green-400 font-bold text-xs text-center">${item.total.toLocaleString()}</div>
           </div>
         ))}

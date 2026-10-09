@@ -303,9 +303,11 @@ export class OutboxStore {
         continue
       }
       if (!Array.isArray(items)) continue
-      for (const item of items as { productId?: unknown; quantity?: unknown }[]) {
+      for (const item of items as { productId?: unknown; quantity?: unknown; stockQuantity?: unknown }[]) {
         const code = String(item?.productId ?? '')
-        const qty = Number(item?.quantity)
+        // `stockQuantity` = lo que la línea descuenta en la unidad base del producto (una unidad de un producto por
+        // unidad y peso descuenta su peso en kg). Las ventas encoladas antes de esa versión solo traen `quantity`.
+        const qty = Number(item?.stockQuantity ?? item?.quantity)
         if (!code || code.startsWith('000') || !Number.isFinite(qty) || qty <= 0) continue
         totals.set(code, (totals.get(code) ?? 0) + qty)
       }

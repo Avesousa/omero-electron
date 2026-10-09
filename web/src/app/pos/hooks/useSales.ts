@@ -14,15 +14,25 @@
 import { useState } from 'react'
 import type { CartItem } from '../types'
 import { apiFetch } from '@/lib/apiClient'
+import type { QuantityUnit } from '@/lib/quantity'
+import { isWeightLine, lineStockQuantity } from '../lib/cartLines'
 
 export interface SalePayloadItem {
   productId: string
   productName: string
+  /** Unidades, o kg (hasta 3 decimales) si `saleUnit` es KG. */
   quantity: number
   unitPrice: number
   total: number
   promotionId: string | null
   promotionName: string | null
+  /** Unidad de `quantity` y `unitPrice`. */
+  saleUnit: QuantityUnit
+  /**
+   * Lo que la línea descuenta del stock en la unidad base del producto (kg si lleva peso). Lo usa el POS de
+   * escritorio para mostrar el stock con las ventas todavía sin sincronizar; el backend lo recalcula por su cuenta.
+   */
+  stockQuantity: number
 }
 
 export interface SalePayload {
@@ -65,6 +75,8 @@ export function buildSalePayload(items: CartItem[], cashAmount: number, mpAmount
       total: item.total,
       promotionId: item.promotionId || null,
       promotionName: item.promotionName || null,
+      saleUnit: isWeightLine(item) ? 'KG' : 'UNIT',
+      stockQuantity: lineStockQuantity(item),
     })),
     cashAmount,
     mpAmount,
