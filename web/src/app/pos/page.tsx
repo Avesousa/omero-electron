@@ -48,10 +48,13 @@ import { ConnectionStatus } from './components/ConnectionStatus'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SubscriptionBlockedScreen } from './components/SubscriptionBlockedScreen'
 import { useEntitlement } from '@/lib/useEntitlement'
+import { useTenantTimeZone } from '@/lib/tenantTime'
+import { useMoneyLocale } from '@/lib/money'
 import { useAuth } from '@/shared/contexts/auth'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
+import { formatMoney } from '@/lib/money'
 
 export default function POSPage() {
   // State
@@ -135,6 +138,9 @@ export default function POSPage() {
   const mpBlocked = connection.runtime === 'desktop' && !connection.online && !mpOffline
   // Balanza (config del negocio): si está activada, un código de 13 dígitos puede ser una etiqueta con peso o importe.
   const scaleConfig = useScaleConfig({ refreshKey: connection.online })
+  // Región del negocio (zona horaria de la configuración): define cómo se ven los importes ($ 1.234,50).
+  useTenantTimeZone()
+  useMoneyLocale()
   const { createSale, isProcessing } = useSales()
   // Suscripción del negocio: sin acceso (o 403 SUBSCRIPTION_INACTIVE) el POS se bloquea, sin tocar sesión ni caja.
   const { logout } = useAuth()
@@ -1068,7 +1074,7 @@ export default function POSPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-sm font-semibold text-green-300 mb-1">Pago recibido</div>
-              <div className="text-2xl font-bold">${lastPayment.amount.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{formatMoney(lastPayment.amount)}</div>
               <div className="text-sm text-green-200 mt-1">{lastPayment.method}</div>
             </div>
             <button

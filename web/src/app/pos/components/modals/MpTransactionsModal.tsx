@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/apiClient'
 import { mpPaymentLabel, type MpTransaction } from '@/shared/types/mercadopago'
 import { useTenantTimeZone, formatTimeTz } from '@/lib/tenantTime'
 import { Modal } from '@/app/components/ui/Modal'
+import { formatMoney } from '@/lib/money'
 
 interface Props {
   show: boolean
@@ -13,8 +14,7 @@ interface Props {
   onClose?: () => void
 }
 
-const fmt = (n: number) =>
-  n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })
+const fmt = (n: number) => formatMoney(n)
 
 const fmtTime = (iso: string) => formatTimeTz(iso)
 

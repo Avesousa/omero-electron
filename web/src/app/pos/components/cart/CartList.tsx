@@ -1,6 +1,7 @@
 import type { CartItem as CartItemType } from '../../types'
 import { STRINGS } from '../../constants/strings'
 import { isWeightLine, lineQuantityLabel } from '../../lib/cartLines'
+import { formatMoney } from '@/lib/money'
 
 interface CartListProps {
   cart: CartItemType[]
@@ -51,10 +52,10 @@ export const CartList = ({ cart }: CartListProps) => {
                       <span className="mx-2">|</span>
                       <span className="font-semibold">{lineQuantityLabel(item)}</span>
                       <span className="mx-1">x</span>
-                      <span className="font-mono">${(item.price || 0).toLocaleString()}{byWeight ? ' /kg' : ''}</span>
+                      <span className="font-mono">{formatMoney(item.price || 0)}{byWeight ? ' /kg' : ''}</span>
                       {item.originalPrice && item.originalPrice !== item.price && (
                         <span className="text-gray-500 line-through ml-2">
-                          ${(item.originalPrice || 0).toLocaleString()}
+                          {formatMoney(item.originalPrice || 0)}
                         </span>
                       )}
                     </div>
@@ -67,14 +68,14 @@ export const CartList = ({ cart }: CartListProps) => {
                 </div>
                 <div className="text-right flex-shrink-0 min-w-[140px]">
                   <div className="text-2xl font-bold text-green-400 font-mono">
-                    ${(item.total || 0).toLocaleString()}
+                    {formatMoney(item.total || 0)}
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     ({byWeight ? lineQuantityLabel(item) : `${item.quantity} unid.`})
                   </div>
                   {item.originalPrice && item.originalPrice !== item.price && (
                     <div className="text-xs text-green-300 mt-1 font-semibold">
-                      Ahorro: ${(((item.originalPrice || 0) - (item.price || 0)) * item.quantity).toLocaleString()}
+                      Ahorro: {formatMoney(((item.originalPrice || 0) - (item.price || 0)) * item.quantity)}
                     </div>
                   )}
                 </div>

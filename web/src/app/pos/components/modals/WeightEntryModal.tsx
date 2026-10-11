@@ -4,6 +4,7 @@ import { Modal, ModalButton } from '@/app/components/ui/Modal'
 import { formatKg, formatStock } from '@/lib/quantity'
 import { isMixedProduct, toQuantityProduct, unitPriceOfProduct } from '../../lib/cartLines'
 import { LARGE_WEIGHT_KG, weightEntrySubtotal, weightEntryValue, type WeightEntryState } from '../../lib/weightEntry'
+import { formatMoney } from '@/lib/money'
 
 interface Props {
   /** `null` = cerrado. */
@@ -12,7 +13,7 @@ interface Props {
   onKeyPress: (key: string) => void
 }
 
-const money = (n: number) => `$${n.toLocaleString('es-AR')}`
+const money = (n: number) => formatMoney(n)
 
 /**
  * Panel de peso: se abre al ingresar un producto que se vende por peso. Hay que cargar los kg (o gramos), o las

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { Modal } from '@/app/components/ui/Modal'
+import { formatMoney } from '@/lib/money'
 
 interface BusinessSummary {
   business: string
@@ -43,8 +44,7 @@ interface Props {
   onClose: () => void
 }
 
-const fmt = (n: number) =>
-  n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 })
+const fmt = (n: number) => formatMoney(n)
 
 export function DailySummaryModal({ show, onClose }: Props) {
   const [summary, setSummary] = useState<DailySummary | null>(null)

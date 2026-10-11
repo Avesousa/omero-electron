@@ -9,6 +9,7 @@
  *
  * Todo el cálculo se hace en enteros (gramos y centavos) para no arrastrar errores de punto flotante.
  */
+import { formatDecimal, formatNumber } from './money'
 
 export type SaleFormat = 'UNIT' | 'GRAMS' | 'MIXED'
 export type QuantityUnit = 'UNIT' | 'KG'
@@ -173,10 +174,10 @@ export function quantityProblem(product: QuantityProduct, unit: QuantityUnit, qu
   return null
 }
 
-// ── Formato y parseo (es-AR) ─────────────────────────────────────────────────
+// ── Formato y parseo (separadores de la región del negocio, ver lib/money) ──────
 
-const kgFormatter = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
-const unitFormatter = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })
+const kgFormatter = { format: (n: number) => formatDecimal(n, 3) }
+const unitFormatter = { format: (n: number) => formatNumber(n, 3) }
 
 /** "0,350 kg" */
 export function formatKg(kg: number): string {

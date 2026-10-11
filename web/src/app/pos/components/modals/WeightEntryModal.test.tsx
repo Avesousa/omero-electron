@@ -21,7 +21,7 @@ describe('WeightEntryModal', () => {
     open(openWeightEntry(weightProduct(), KG))
     expect(screen.getByText('Queso cremoso')).toBeInTheDocument()
     expect(screen.getByText('Ingresá el peso en kilos')).toBeInTheDocument()
-    expect(screen.getByText(/\$8\.000 \/kg/)).toBeInTheDocument()
+    expect(screen.getByText(/\$ 8\.000,00 \/kg/)).toBeInTheDocument()
     expect(screen.getByText(/Stock 12,500 kg/)).toBeInTheDocument()
     expect(screen.getByText('$—')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Agregar/ })).toBeDisabled()
@@ -31,7 +31,7 @@ describe('WeightEntryModal', () => {
   it('con peso cargado muestra el importe y habilita agregar', () => {
     const onKeyPress = open({ ...openWeightEntry(weightProduct(), KG), input: '0.35' })
     expect(screen.getByText('0,35')).toBeInTheDocument()
-    expect(screen.getByText('$2.800')).toBeInTheDocument()
+    expect(screen.getByText('$ 2.800,00')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Agregar/ }))
     expect(onKeyPress).toHaveBeenCalledWith('Enter')
     fireEvent.click(screen.getByRole('button', { name: /Cancelar/ }))
@@ -42,12 +42,12 @@ describe('WeightEntryModal', () => {
     open({ ...openWeightEntry(weightProduct(), { gramsMode: true, tab: 'KG' }), input: '350' })
     expect(screen.getByText('Ingresá el peso en gramos')).toBeInTheDocument()
     expect(screen.getByText('= 0,350 kg')).toBeInTheDocument()
-    expect(screen.getByText('$2.800')).toBeInTheDocument()
+    expect(screen.getByText('$ 2.800,00')).toBeInTheDocument()
   })
 
   it('producto por unidad y peso: pestañas, y el botón de la otra pestaña manda /', () => {
     const onKeyPress = open(openWeightEntry(mixedProduct(), KG))
-    expect(screen.getByText(/\$1\.200 \/u/)).toBeInTheDocument()
+    expect(screen.getByText(/\$ 1\.200,00 \/u/)).toBeInTheDocument()
     const byWeight = screen.getByRole('tab', { name: 'Por peso' })
     const byUnit = screen.getByRole('tab', { name: 'Por unidad' })
     expect(byWeight).toHaveAttribute('aria-selected', 'true')
@@ -60,7 +60,7 @@ describe('WeightEntryModal', () => {
   it('en unidades pide la cantidad y cobra el precio por unidad', () => {
     open({ ...openWeightEntry(mixedProduct(), { gramsMode: false, tab: 'UNIT' }), input: '3' })
     expect(screen.getByText('Ingresá la cantidad de unidades')).toBeInTheDocument()
-    expect(screen.getByText('$3.600')).toBeInTheDocument()
+    expect(screen.getByText('$ 3.600,00')).toBeInTheDocument()
     expect(screen.queryByText(/cambia entre kg y gramos/)).not.toBeInTheDocument()
   })
 

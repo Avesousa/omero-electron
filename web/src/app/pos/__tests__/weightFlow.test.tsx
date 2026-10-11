@@ -5,6 +5,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { withCheckDigit } from '@/lib/scale'
+import { formatMoney } from '@/lib/money'
 import * as session from '@/lib/sessionManager'
 
 vi.mock('../hooks/useMercadoPagoEvents', () => ({
@@ -81,7 +82,9 @@ async function openPos() {
 }
 const panel = () => screen.queryByTestId('weight-entry')
 /** Los importes del carrito usan el formato regional del equipo (como en la caja). */
-const $ = (n: number) => `$${n.toLocaleString()}`
+const $ = (n: number) => formatMoney(n)
+/** Para getByText, que normaliza los espacios duros del símbolo. */
+const text$ = (n: number) => $(n).replace(/\u00a0/g, ' ')
 const cartText = () => screen.getByText('CARRITO DE COMPRAS').closest('div')!.parentElement!.textContent ?? ''
 
 describe('POS: productos por peso', () => {
@@ -141,7 +144,7 @@ describe('POS: productos por peso', () => {
     expect(cartText()).toContain('0,300 kg')
     expect(cartText()).toContain('1,200 kg')
     expect(cartText()).toContain('2 productos')
-    expect(screen.getByText($(12000))).toBeInTheDocument() // 2.400 + 9.600
+    expect(screen.getByText(text$(12000))).toBeInTheDocument() // 2.400 + 9.600
   })
 
   it('* sobre la última pesada reabre el panel para corregir el peso', async () => {
@@ -239,7 +242,7 @@ describe('POS: la venta', () => {
     press('0 0 2 + 0 . 3 5 Enter')
     press('0 0 3 + / 2 Enter')
     press(LABEL_QUESO_4200.split('').join(' '))
-    expect(screen.getByText($(10400))).toBeInTheDocument() // 1.000 + 2.800 + 2.400 + 4.200
+    expect(screen.getByText(text$(10400))).toBeInTheDocument() // 1.000 + 2.800 + 2.400 + 4.200
 
     press('Enter 2') // cobrar → efectivo
     press('1 0 4 0 0 Enter')

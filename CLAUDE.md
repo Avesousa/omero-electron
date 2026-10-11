@@ -364,3 +364,14 @@ npm --prefix web run check     # typecheck + tests con cobertura
   libre) cuando exista la UI de gestión de roles (`roles-permisos-autogestion`, spec futuro).
 
 **Archivo de specs:** `omero-backend/AiBuild/feature/roles-permisos-fundacion/done/`
+
+### Formato de importes (lib/money.ts, added 2026-10-11)
+
+Todo importe se muestra con **dos decimales** y los separadores de la región del negocio: `$ 1.234.567,89` en
+Argentina. Usar siempre `formatMoney` (con símbolo), `formatAmount` (sin símbolo) o `formatDecimal`/`formatNumber` de
+`@/lib/money` — nunca `toLocaleString()` sin locale ni `toFixed(2)` para mostrar (dependen del idioma del equipo y en
+una caja con Windows en inglés salía `1,234.5`). La región sale de la zona horaria del negocio (clave `timezone`,
+`localeForTimeZone`) y la moneda de la clave `currency`; la carga `tenantTime` las aplica con
+`setMoneyLocaleFromConfig` y quedan guardadas en el navegador (`omero_money_locale`), así la primera pantalla ya sale
+con el formato correcto. Default: `es-AR` / `ARS`. `lib/quantity` usa los mismos separadores para kilos y unidades.
+Mismo `money.ts` en `omero` y `omero-electron/web`.

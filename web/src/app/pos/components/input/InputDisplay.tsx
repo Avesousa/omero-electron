@@ -2,6 +2,7 @@ import { formatStock } from '@/lib/quantity'
 import { needsWeightEntry, toQuantityProduct, unitPriceOfProduct } from '../../lib/cartLines'
 import type { InputMode, Product } from '../../types'
 import { STRINGS } from '../../constants/strings'
+import { formatMoney } from '@/lib/money'
 
 interface InputDisplayProps {
   mode: InputMode
@@ -92,7 +93,7 @@ export const InputDisplay = ({ mode, currentInput, cashReceived, currentProduct 
               <div className="flex justify-center items-center space-x-6 text-sm">
                 <div className="bg-black border-2 border-blue-500 px-4 py-2 rounded">
                   <span className="text-blue-300">Precio: </span>
-                  <span className="text-white font-bold">${unitPriceOfProduct(currentProduct).toLocaleString()}</span>
+                  <span className="text-white font-bold">{formatMoney(unitPriceOfProduct(currentProduct))}</span>
                 </div>
                 <div className="bg-black border-2 border-green-500 px-4 py-2 rounded">
                   <span className="text-green-300">{STRINGS.PRODUCT_STOCK_AVAILABLE} </span>

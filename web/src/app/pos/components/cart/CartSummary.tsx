@@ -1,4 +1,5 @@
 import { STRINGS } from '../../constants/strings'
+import { formatMoney } from '@/lib/money'
 
 interface CartSummaryProps {
   total: number
@@ -13,7 +14,7 @@ export const CartSummary = ({ total, itemCount, onFinalizeSale }: CartSummaryPro
       <div className="bg-black border-2 border-yellow-500 p-3 text-center">
         <div className="text-sm text-gray-300 mb-1">{STRINGS.CART_TOTAL}</div>
         <div className="text-2xl font-bold text-yellow-400">
-          ${total.toLocaleString()}
+          {formatMoney(total)}
         </div>
         <div className="text-xs text-gray-400 mt-1">
           {itemCount} {STRINGS.CART_ITEMS_COUNT}
