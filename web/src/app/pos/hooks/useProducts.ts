@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Product } from '../types'
 import { apiFetch } from '@/lib/apiClient'
+import { saleFormatOf, unitPriceOf } from '@/lib/quantity'
 
 const CACHE_KEY = 'pos_products_cache'
 const FETCH_TIMEOUT = 2000          // 2s → si tarda más, falla y reintenta
@@ -11,16 +12,25 @@ interface ProductCache {
   timestamp: number
 }
 
-const transformProduct = (p: any): Product => ({
-  id: p.id,
-  name: p.name,
-  code: p.code,
-  barcode: p.barcode,
-  price: p.sellingPrice,
-  stock: p.stock,
-  costPrice: p.costPrice,
-  category: p.category
-})
+export const transformProduct = (p: any): Product => {
+  const saleFormat = saleFormatOf(p)
+  return {
+    id: p.id,
+    name: p.name,
+    code: p.code,
+    barcode: p.barcode,
+    price: p.sellingPrice,
+    stock: p.stock,
+    costPrice: p.costPrice,
+    category: p.category,
+    saleFormat,
+    unitWeightKg: p.unitWeightKg ?? null,
+    // Precio de una unidad de un producto por unidad y peso: lo resuelve el backend (`effectiveUnitPrice`); si la
+    // respuesta viene de un backend anterior se calcula acá con la misma regla.
+    unitPrice: saleFormat === 'MIXED' ? (p.effectiveUnitPrice ?? unitPriceOf(p)) : null,
+    scalePlu: p.scalePlu ?? null,
+  }
+}
 
 const loadCache = (): ProductCache | null => {
   try {
@@ -121,6 +131,10 @@ export const useProducts = () => {
     return products.find(p => p.id === code) ?? null
   }
 
+  /** Producto con ese código de balanza (PLU de la etiqueta). */
+  const findProductByScalePlu = (plu: number): Product | null =>
+    products.find(p => p.scalePlu != null && Number(p.scalePlu) === plu) ?? null
+
   const searchProductByCodePrefix = (prefix: string): Product[] => {
     if (prefix.length < 3) return []
     return products.filter(p =>
@@ -165,6 +179,7 @@ export const useProducts = () => {
     refreshProducts,
     getProductByCode,
     findProductByCode,
+    findProductByScalePlu,
     searchProductByCodePrefix
   }
 }

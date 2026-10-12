@@ -45,6 +45,8 @@ function makeFetch(state: { health: number | 'error'; products: number | 'error'
     if (url.endsWith('/api/products')) return pick(state.products, PRODUCTS)
     if (url.endsWith('/api/promotions')) return pick(state.promotions ?? state.products, PROMOS)
     if (url.endsWith('/api/business/config/mp_offline')) return pick(state.setting ?? state.products, { success: true, data: { key: 'mp_offline', value: 'true' } })
+    const scaleKey = /\/api\/business\/config\/(scale_[a-z_]+)$/.exec(url)?.[1]
+    if (scaleKey) return pick(state.setting ?? state.products, { success: true, data: { key: scaleKey, value: scaleKey === 'scale_enabled' ? 'true' : null } })
     return new Response('nope', { status: 404 })
   })
 }
@@ -89,6 +91,11 @@ describe('sincronización periódica', () => {
       'https://backend.test/api/products',
       'https://backend.test/api/promotions',
       'https://backend.test/api/business/config/mp_offline',
+      'https://backend.test/api/business/config/scale_enabled',
+      'https://backend.test/api/business/config/scale_brand',
+      'https://backend.test/api/business/config/scale_barcode_templates',
+      'https://backend.test/api/business/config/scale_amount_decimals',
+      'https://backend.test/api/business/config/scale_weight_decimals',
     ])
     expect((fetchFn.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: auth })
     expect(store.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data)
@@ -138,7 +145,7 @@ describe('sincronización periódica', () => {
     const b = s.syncAll() // mientras el primero sigue en curso
     release()
     await Promise.all([a, b])
-    expect(fetchFn).toHaveBeenCalledTimes(3) // solo products, promotions y mp_offline del primer sync
+    expect(fetchFn).toHaveBeenCalledTimes(8) // solo el primer sync: products, promotions, mp_offline y las 5 claves de balanza
     s.stop()
   })
 })
@@ -274,6 +281,16 @@ describe('configuración de negocio (mp_offline)', () => {
     s.remember(TENANT, validAuth())
     await vi.advanceTimersByTimeAsync(INTERVAL)
     expect(store.upsertSetting).toHaveBeenCalledWith('mp_offline', JSON.stringify({ key: 'mp_offline', value: 'true' }))
+    s.stop()
+  })
+
+  it('las claves de balanza se cachean igual: sin conexión el POS sigue leyendo etiquetas', async () => {
+    const s = syncer(makeFetch({ health: 200, products: 200 }))
+    s.remember(TENANT, validAuth())
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    expect(store.upsertSetting).toHaveBeenCalledWith('scale_enabled', JSON.stringify({ key: 'scale_enabled', value: 'true' }))
+    expect(store.upsertSetting).toHaveBeenCalledWith('scale_barcode_templates', JSON.stringify({ key: 'scale_barcode_templates', value: null }))
+    expect(store.upsertSetting).toHaveBeenCalledTimes(6)
     s.stop()
   })
 

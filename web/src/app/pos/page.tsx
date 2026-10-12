@@ -17,6 +17,7 @@ import {
   MpTransactionsModal,
   OutboxListModal,
   FreePriceModal,
+  WeightEntryModal,
   Notification,
   KeyboardGuide
 } from './components'
@@ -34,15 +35,26 @@ import {
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
 import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
-import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag, useUpdateAvailable } from './hooks'
+import { formatStock, roundKg } from '@/lib/quantity'
+import { looksLikeScaleBarcode } from '@/lib/scale'
+import { isWeightLine, needsWeightEntry, stockInCart, toQuantityProduct } from './lib/cartLines'
+import { resolveScaleScan } from './lib/scaleScan'
+import {
+  loadWeightPrefs, openWeightEntry, resolveWeightEntry, saveWeightPrefs, weightEntryKey,
+  type WeightEntryState,
+} from './lib/weightEntry'
+import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag, useScaleConfig, useUpdateAvailable } from './hooks'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SubscriptionBlockedScreen } from './components/SubscriptionBlockedScreen'
 import { useEntitlement } from '@/lib/useEntitlement'
+import { useTenantTimeZone } from '@/lib/tenantTime'
+import { useMoneyLocale } from '@/lib/money'
 import { useAuth } from '@/shared/contexts/auth'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
+import { formatMoney } from '@/lib/money'
 
 export default function POSPage() {
   // State
@@ -69,6 +81,8 @@ export default function POSPage() {
   const [showOutboxList, setShowOutboxList] = useState(false)
   const mpListRef = useRef<HTMLDivElement>(null)
   const [showFreePrice, setShowFreePrice] = useState(false)
+  // Panel de peso: abierto mientras el cajero carga los kg (o las unidades) de un producto con peso.
+  const [weightEntry, setWeightEntry] = useState<WeightEntryState | null>(null)
   const [cacheRefreshing, setCacheRefreshing] = useState(false)
   const [cacheRefreshed, setCacheRefreshed] = useState(false)
 
@@ -87,7 +101,9 @@ export default function POSPage() {
     mpConnected: isMpApiConnected,
     lastPaymentTime,
   })
-  const { cart, addToCart, updateCartItemQuantity, removeFromCart, clearCart, total } = useCart(showNotification)
+  const {
+    cart, addToCart, addWeightToCart, updateCartItemQuantity, updateCartItemWeight, removeFromCart, clearCart, total,
+  } = useCart(showNotification)
   const { 
     paymentState, 
     openPaymentModal, 
@@ -103,6 +119,7 @@ export default function POSPage() {
     loading: productsLoading,
     getProductByCode,
     findProductByCode,
+    findProductByScalePlu,
     refreshProducts,
     searchProductByCodePrefix,
     fetchProducts
@@ -119,6 +136,11 @@ export default function POSPage() {
   // `mp_offline` (config del negocio): permite cobrar con MercadoPago sin conexión. Sin ella, el botón se bloquea offline.
   const mpOffline = useBusinessFlag('mp_offline', { enabled: connection.runtime === 'desktop', refreshKey: connection.online })
   const mpBlocked = connection.runtime === 'desktop' && !connection.online && !mpOffline
+  // Balanza (config del negocio): si está activada, un código de 13 dígitos puede ser una etiqueta con peso o importe.
+  const scaleConfig = useScaleConfig({ refreshKey: connection.online })
+  // Región del negocio (zona horaria de la configuración): define cómo se ven los importes ($ 1.234,50).
+  useTenantTimeZone()
+  useMoneyLocale()
   const { createSale, isProcessing } = useSales()
   // Suscripción del negocio: sin acceso (o 403 SUBSCRIPTION_INACTIVE) el POS se bloquea, sin tocar sesión ni caja.
   const { logout } = useAuth()
@@ -130,6 +152,68 @@ export default function POSPage() {
     updateAmount,
     createExpense
   } = useExpenses(showNotification)
+
+  /** Stock de un producto que todavía no está en el carrito, en su unidad base (kg si lleva peso). */
+  const availableStock = (product: Product, exceptLineId?: string) =>
+    roundKg(product.stock - stockInCart(cart, product.code, exceptLineId))
+
+  /** Lo que descuentan `units` unidades: en un producto por unidad y peso, sus kilos. */
+  const stockNeededForUnits = (product: Product, units: number) =>
+    needsWeightEntry(product) ? roundKg(units * (product.unitWeightKg || 0)) : units
+
+  const stockLabel = (product: Product, quantity: number) =>
+    formatStock(toQuantityProduct(product), Math.max(0, quantity))
+
+  /**
+   * Agrega un producto ya encontrado. Si se vende por peso no entra directo: se abre el panel para cargar los kg
+   * (o las unidades); sin eso no hay línea.
+   */
+  const addProductToCart = (product: Product) => {
+    if (needsWeightEntry(product)) {
+      setWeightEntry(openWeightEntry(product, loadWeightPrefs(product)))
+      return
+    }
+    addToCart(product, 1)
+  }
+
+  /** Etiqueta de balanza: devuelve true si el código era una etiqueta (se haya podido cobrar o no). */
+  const tryScaleBarcode = (code: string): boolean => {
+    if (!scaleConfig.enabled || !looksLikeScaleBarcode(code)) return false
+    const scan = resolveScaleScan(code, scaleConfig, findProductByScalePlu, cart)
+    if (scan.kind === 'not-scale') return false
+    if (scan.kind === 'error') showNotification(scan.message, 'error')
+    else addWeightToCart(scan.product, scan.weightKg, scan.labelTotal)
+    return true
+  }
+
+  const confirmWeightEntry = (state: WeightEntryState) => {
+    const product = findProductByCode(state.product.code) ?? state.product
+    const result = resolveWeightEntry(state, availableStock(product, state.editLineId))
+    if (result.kind === 'empty') {
+      showNotification(state.tab === 'KG' ? 'Ingresá el peso para agregar el producto' : 'Ingresá la cantidad de unidades', 'error')
+      return
+    }
+    if (result.kind === 'warn-large') {
+      setWeightEntry({ ...state, largeWeightWarning: true })
+      return
+    }
+    if (result.kind === 'no-stock') {
+      showNotification(`Stock insuficiente. Disponible: ${stockLabel(product, result.available)}`, 'error')
+      return
+    }
+    saveWeightPrefs(state)
+    if (state.editLineId) updateCartItemWeight(state.editLineId, result.quantity)
+    else if (result.unit === 'KG') addWeightToCart(state.product, result.quantity)
+    else addToCart(state.product, result.quantity)
+    setWeightEntry(null)
+  }
+
+  const handleWeightKey = (state: WeightEntryState, key: string) => {
+    const next = weightEntryKey(state, key)
+    if (next === 'cancel') setWeightEntry(null)
+    else if (next === 'confirm') confirmWeightEntry(state)
+    else setWeightEntry(next)
+  }
 
   // Product handling
   const handleAddProduct = async (code?: string) => {
@@ -163,6 +247,11 @@ export default function POSPage() {
       const product = findProductByCode(codeToSearch)
       
       if (!product) {
+        // Antes de ir a la API: ¿es una etiqueta de la balanza (PLU + peso o importe)?
+        if (tryScaleBarcode(codeToSearch)) {
+          setCurrentInput('')
+          return
+        }
         console.log('❌ [BÚSQUEDA] Producto NO encontrado con:', codeToSearch)
         // Intentar buscar en la API como fallback
         console.log('🌐 [BÚSQUEDA] Intentando búsqueda en API...')
@@ -174,7 +263,7 @@ export default function POSPage() {
             setCurrentInput('')
             return
           }
-          addToCart(apiProduct, 1)
+          addProductToCart(apiProduct)
           setCurrentInput('')
           return
         }
@@ -187,7 +276,7 @@ export default function POSPage() {
           p.id?.toString() === codeToSearch
         )
         if (freshProduct && freshProduct.stock > 0) {
-          addToCart(freshProduct, 1)
+          addProductToCart(freshProduct)
         } else if (freshProduct) {
           showNotification('Producto sin stock', 'error')
         } else {
@@ -215,7 +304,7 @@ export default function POSPage() {
           p.id?.toString() === codeToSearch
         )
         if (freshProduct && freshProduct.stock > 0) {
-          addToCart(freshProduct, 1)
+          addProductToCart(freshProduct)
           setCurrentInput('')
           return
         }
@@ -230,8 +319,8 @@ export default function POSPage() {
         total: total
       })
 
-      // Agregar directamente con cantidad 1
-      addToCart(product, 1)
+      // Agregar directamente con cantidad 1 (o abrir el panel de peso si el producto lleva peso)
+      addProductToCart(product)
       
       console.log('✅ [CÓDIGO DE BARRA] Producto agregado exitosamente')
       console.log('📊 [CÓDIGO DE BARRA] Estado del carrito después:', {
@@ -267,7 +356,7 @@ export default function POSPage() {
         if (product.stock > 0) {
           console.log('🛒 [BÚSQUEDA AUTO] Agregando automáticamente al carrito...')
           autoAddedRef.current = true
-          addToCart(product, 1)
+          addProductToCart(product)
           setCurrentInput('')
         } else {
           // Verificar online antes de mostrar error
@@ -279,16 +368,20 @@ export default function POSPage() {
               p.id?.toString() === inputSnapshot
             )
             if (freshProduct && freshProduct.stock > 0) {
-              addToCart(freshProduct, 1)
+              addProductToCart(freshProduct)
             } else {
               showNotification('Producto sin stock', 'error')
             }
           })
         }
+      } else if (matches.length === 0 && tryScaleBarcode(currentInput)) {
+        // Etiqueta de balanza: ningún producto tiene ese código de barras, pero trae el PLU y el peso o el importe.
+        autoAddedRef.current = true
+        setCurrentInput('')
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentInput, mode, products])
+  }, [currentInput, mode, products, scaleConfig])
 
   const handleConfirmFreePrice = (price: number) => {
     const freeProduct = {
@@ -341,15 +434,19 @@ export default function POSPage() {
           newQuantity = previousCartQuantity + quantity
         }
         
-        if (currentProduct.stock < newQuantity) {
-          showNotification(`Stock insuficiente. Disponible: ${currentProduct.stock}`, 'error')
+        // La línea por unidad se reemplaza: lo disponible es el stock menos las pesadas del mismo producto.
+        const unitLineId = cart.find(item => item.code === currentProduct.code && !isWeightLine(item))?.id
+        const available = availableStock(currentProduct, unitLineId)
+        if (available < stockNeededForUnits(currentProduct, newQuantity)) {
+          showNotification(`Stock insuficiente. Disponible: ${stockLabel(currentProduct, available)}`, 'error')
           return
         }
         updateCartItemQuantity(currentProduct.code, newQuantity)
       } else {
         // Modo normal (agregar producto)
-        if (currentProduct.stock < quantity) {
-          showNotification(`Stock insuficiente. Disponible: ${currentProduct.stock}`, 'error')
+        const available = availableStock(currentProduct)
+        if (available < stockNeededForUnits(currentProduct, quantity)) {
+          showNotification(`Stock insuficiente. Disponible: ${stockLabel(currentProduct, available)}`, 'error')
           return
         }
         addToCart(currentProduct, quantity)
@@ -491,6 +588,11 @@ export default function POSPage() {
 
   // Keyboard handling
   const handleKeyPress = (key: string) => {
+    // Panel de peso abierto: todas las teclas son suyas (no se puede seguir sin cargar peso o cantidad, o cancelar).
+    if (weightEntry) {
+      handleWeightKey(weightEntry, key)
+      return
+    }
     if (showOutboxList) {
       if (key === 'Escape' || key === 'Tab') setShowOutboxList(false)
       return
@@ -716,8 +818,14 @@ export default function POSPage() {
         const lastProductCode = cart[cart.length - 1].code
         const lastProduct = findProductByCode(lastProductCode)
         const lastCartItem = cart[cart.length - 1]
-        
-        if (lastProduct) {
+
+        if (lastProduct && isWeightLine(lastCartItem)) {
+          // Una pesada no se multiplica: * reabre el panel para corregir el peso.
+          setWeightEntry(openWeightEntry(lastProduct, loadWeightPrefs(lastProduct), {
+            lineId: lastCartItem.id,
+            weightKg: lastCartItem.quantity,
+          }))
+        } else if (lastProduct) {
           setCurrentProductCode(lastProductCode)
           setCurrentProduct(lastProduct)
           setCurrentCartQuantity(lastCartItem.quantity)
@@ -951,6 +1059,8 @@ export default function POSPage() {
         onDismiss={(clientId) => void outbox.dismiss(clientId)}
       />
 
+      <WeightEntryModal state={weightEntry} onKeyPress={handleKeyPress} />
+
       <FreePriceModal
         show={showFreePrice}
         currentInput={currentInput}
@@ -964,7 +1074,7 @@ export default function POSPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-sm font-semibold text-green-300 mb-1">Pago recibido</div>
-              <div className="text-2xl font-bold">${lastPayment.amount.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{formatMoney(lastPayment.amount)}</div>
               <div className="text-sm text-green-200 mt-1">{lastPayment.method}</div>
             </div>
             <button

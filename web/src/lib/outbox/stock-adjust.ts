@@ -16,7 +16,8 @@ function adjustOne(product: unknown, quantities: Map<string, number>): boolean {
   const p = product as ProductJson
   const qty = quantities.get(String(p.code ?? ''))
   if (!qty || typeof p.stock !== 'number' || !Number.isFinite(p.stock)) return false
-  const next = Math.max(0, p.stock - qty)
+  // A milésimas: el stock de un producto por peso está en kg y la resta en punto flotante deja ruido (5.5 − 0.35).
+  const next = Math.max(0, Math.round((p.stock - qty) * 1000) / 1000)
   if (next === p.stock) return false
   p.stock = next
   return true

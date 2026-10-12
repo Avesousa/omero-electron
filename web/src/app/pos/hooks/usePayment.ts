@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { PaymentState, PaymentMethod } from '../types'
 import { STRINGS } from '../constants/strings'
+import { formatMoney } from '@/lib/money'
 
 export const usePayment = (showNotification?: (message: string, type: 'success' | 'error' | 'info') => void) => {
   const [paymentState, setPaymentState] = useState<PaymentState>({
@@ -144,14 +145,14 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
       } else if (saleCompleted && newChange > 0) { // Overpayment with change
         if (showNotification) {
           const changeMessage = paymentMethod === 'mercadopago'
-            ? `${STRINGS.NOTIF_PAYMENT_SUCCESS_RETURN} $${newChange.toLocaleString()}`
-            : `${STRINGS.NOTIF_PAYMENT_SUCCESS_CHANGE} $${newChange.toLocaleString()}`
+            ? `${STRINGS.NOTIF_PAYMENT_SUCCESS_RETURN} ${formatMoney(newChange)}`
+            : `${STRINGS.NOTIF_PAYMENT_SUCCESS_CHANGE} ${formatMoney(newChange)}`
           showNotification(changeMessage, 'success')
         }
         // Do not call onComplete yet, wait for user to confirm change
       } else { // Partial payment
         if (showNotification) {
-          showNotification(`${STRINGS.NOTIF_SALE_PARTIAL} $${newRemainingAmount.toLocaleString()}`, 'info')
+          showNotification(`${STRINGS.NOTIF_SALE_PARTIAL} ${formatMoney(newRemainingAmount)}`, 'info')
         }
         setPaymentState(prev => ({ ...prev, paymentMethod: null })) // Go back to method selection
       }

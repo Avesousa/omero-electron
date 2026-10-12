@@ -1,6 +1,7 @@
 'use client'
 
 import { Modal, ModalButton } from '@/app/components/ui/Modal'
+import { formatMoney } from '@/lib/money'
 
 interface Props {
   show: boolean
@@ -35,7 +36,7 @@ export function FreePriceModal({ show, currentInput, onConfirm, onClose }: Props
       <div className="text-center py-2">
         <p className="text-gray-400 text-sm mb-4">Ingresá el precio del producto</p>
         <div className="text-5xl font-bold text-white mb-2">
-          ${price > 0 ? price.toLocaleString('es-AR') : '—'}
+          {price > 0 ? formatMoney(price) : '$ —'}
         </div>
         <p className="text-gray-500 text-xs">Usá el teclado numérico para ingresar el monto</p>
       </div>

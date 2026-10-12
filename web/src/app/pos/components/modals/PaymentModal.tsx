@@ -2,6 +2,7 @@ import type { PaymentState } from '../../types'
 import { STRINGS } from '../../constants/strings'
 import { KeyboardGuide } from '../keyboard/KeyboardGuide'
 import { Modal } from '@/app/components/ui/Modal'
+import { formatMoney } from '@/lib/money'
 
 interface PaymentModalProps {
   show: boolean
@@ -54,7 +55,7 @@ export const PaymentModal = ({
             <div className="bg-black border-4 border-yellow-500 p-6">
               <div className="text-xl text-gray-300 mb-2">VUELTO:</div>
               <div className="text-5xl font-bold text-yellow-400">
-                ${change.toLocaleString()}
+                {formatMoney(change)}
               </div>
             </div>
             
@@ -64,22 +65,22 @@ export const PaymentModal = ({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-400">Total venta:</span>
-                  <span className="text-white font-bold ml-2">${total.toLocaleString()}</span>
+                  <span className="text-white font-bold ml-2">{formatMoney(total)}</span>
                 </div>
                 <div>
                   <span className="text-gray-400">Recibido:</span>
-                  <span className="text-white font-bold ml-2">${(total + change).toLocaleString()}</span>
+                  <span className="text-white font-bold ml-2">{formatMoney(total + change)}</span>
                 </div>
                 {cashAmount > 0 && (
                   <div>
                     <span className="text-green-400">Efectivo:</span>
-                    <span className="text-white font-bold ml-2">${cashAmount.toLocaleString()}</span>
+                    <span className="text-white font-bold ml-2">{formatMoney(cashAmount)}</span>
                   </div>
                 )}
                 {mpAmount > 0 && (
                   <div>
                     <span className="text-blue-400">Mercado Pago:</span>
-                    <span className="text-white font-bold ml-2">${mpAmount.toLocaleString()}</span>
+                    <span className="text-white font-bold ml-2">{formatMoney(mpAmount)}</span>
                   </div>
                 )}
               </div>
@@ -120,7 +121,7 @@ export const PaymentModal = ({
                     {remainingAmount > 0 && remainingAmount < total ? STRINGS.PAYMENT_REMAINING : STRINGS.PAYMENT_TOTAL}
                   </div>
                   <div className="text-4xl font-bold text-yellow-400">
-                    ${(remainingAmount > 0 ? remainingAmount : total).toLocaleString()}
+                    {formatMoney(remainingAmount > 0 ? remainingAmount : total)}
                   </div>
                 </div>
                 
@@ -130,13 +131,13 @@ export const PaymentModal = ({
                     {mpAmount > 0 && (
                       <div className="bg-black border-2 border-blue-500 p-3 text-center">
                         <div className="text-sm text-gray-300">{STRINGS.PAYMENT_MERCADOPAGO}</div>
-                        <div className="text-lg font-bold text-blue-400">${mpAmount.toLocaleString()}</div>
+                        <div className="text-lg font-bold text-blue-400">{formatMoney(mpAmount)}</div>
                       </div>
                     )}
                     {cashAmount > 0 && (
                       <div className="bg-black border-2 border-green-500 p-3 text-center">
                         <div className="text-sm text-gray-300">EFECTIVO</div>
-                        <div className="text-lg font-bold text-green-400">${cashAmount.toLocaleString()}</div>
+                        <div className="text-lg font-bold text-green-400">{formatMoney(cashAmount)}</div>
                       </div>
                     )}
                   </div>
@@ -212,11 +213,11 @@ export const PaymentModal = ({
           <div className="text-gray-400 text-sm">
             Total de la venta:&nbsp;
             <span className="text-gray-200 font-semibold">
-              ${total.toLocaleString()}
+              {formatMoney(total)}
             </span>
             {remainingAmount > 0 && remainingAmount < total && (
               <span className={`ml-3 text-${methodColor}-300 font-semibold`}>
-                · Resta: ${remainingAmount.toLocaleString()}
+                · Resta: {formatMoney(remainingAmount)}
               </span>
             )}
           </div>
@@ -240,10 +241,10 @@ export const PaymentModal = ({
               <div className="text-sm text-gray-300 mb-1">{STRINGS.PAYMENT_MADE}</div>
               <div className="flex justify-center gap-6">
                 {mpAmount > 0 && (
-                  <div className="text-sm text-blue-400">MP: ${mpAmount.toLocaleString()}</div>
+                  <div className="text-sm text-blue-400">MP: {formatMoney(mpAmount)}</div>
                 )}
                 {cashAmount > 0 && (
-                  <div className="text-sm text-green-400">Efectivo: ${cashAmount.toLocaleString()}</div>
+                  <div className="text-sm text-green-400">Efectivo: {formatMoney(cashAmount)}</div>
                 )}
               </div>
             </div>
@@ -256,7 +257,7 @@ export const PaymentModal = ({
                 {isMercadoPago ? STRINGS.PAYMENT_RETURN : STRINGS.PAYMENT_CHANGE}
               </div>
               <div className={`text-3xl font-bold text-${isMercadoPago ? 'green' : 'yellow'}-400`}>
-                ${change.toLocaleString()}
+                {formatMoney(change)}
               </div>
             </div>
           )}

@@ -152,6 +152,28 @@ describe('venta → outbox → backend', () => {
     expect(backend.batches[0].items[0]).toMatchObject({ type: 'SALE', clientId: data.clientId })
   })
 
+  it('venta por peso: los kilos, la unidad y el importe llegan al backend tal cual se cobraron', async () => {
+    const body = {
+      items: [
+        { productId: '002', productName: 'Queso', quantity: 0.35, unitPrice: 8000, total: 2800, promotionId: null, promotionName: null, saleUnit: 'KG', stockQuantity: 0.35 },
+        { productId: '003', productName: 'Pan', quantity: 3, unitPrice: 1200, total: 3600, promotionId: null, promotionName: null, saleUnit: 'UNIT', stockQuantity: 0.75 },
+        // etiqueta de balanza: el importe impreso, no peso × precio
+        { productId: '002', productName: 'Queso', quantity: 0.525, unitPrice: 8000, total: 4199.9, promotionId: null, promotionName: null, saleUnit: 'KG', stockQuantity: 0.525 },
+      ],
+      cashAmount: 10599.9, mpAmount: 0, change: 0,
+    }
+    const res = await handleApiRequest(post('/api/sales', body))
+    expect(res.status).toBe(201)
+    const { clientId } = (await res.json()).data
+    await until(() => outboxRow(clientId).status === 'SENT')
+    const sent = backend.batches[0].items[0].sale as unknown as { items: Record<string, unknown>[] }
+    expect(sent.items.map((i) => [i.productId, i.saleUnit, i.quantity, i.unitPrice, i.total])).toEqual([
+      ['002', 'KG', 0.35, 8000, 2800],
+      ['003', 'UNIT', 3, 1200, 3600],
+      ['002', 'KG', 0.525, 8000, 4199.9],
+    ])
+  })
+
   it('un gasto viaja por el mismo camino', async () => {
     const res = await handleApiRequest(post('/api/expenses', { description: 'Bolsas', amount: 20, type: 'GENERAL' }))
     const { clientId } = (await res.json()).data
@@ -239,6 +261,18 @@ describe('reintentos y conexión', () => {
     const res = await handleApiRequest(get('/api/products'))
     const list = (await res.json()).data as { code: string; stock: number }[]
     expect(list.find((p) => p.code === '001')!.stock).toBe(7)
+  })
+
+  it('con el backend caído, el stock de un producto por peso se muestra con los kilos ya vendidos descontados', async () => {
+    backend.mode = 500
+    backend.products = [...backend.products, { id: 2, code: '002', name: 'Queso', stock: 5.5 }, { id: 3, code: '003', name: 'Pan', stock: 1 }]
+    const item = (productId: string, quantity: number, saleUnit: string, stockQuantity: number) =>
+      ({ productId, productName: 'x', quantity, unitPrice: 100, total: 100, promotionId: null, promotionName: null, saleUnit, stockQuantity })
+    await handleApiRequest(post('/api/sales', { items: [item('002', 0.35, 'KG', 0.35), item('003', 3, 'UNIT', 0.75)], cashAmount: 200, mpAmount: 0, change: 0 }))
+    await handleApiRequest(post('/api/sales', { items: [item('002', 0.2, 'KG', 0.2)], cashAmount: 100, mpAmount: 0, change: 0 }))
+    const list = (await (await handleApiRequest(get('/api/products'))).json()).data as { code: string; stock: number }[]
+    expect(list.find((p) => p.code === '002')!.stock).toBe(4.95) // 5,5 − 0,35 − 0,2
+    expect(list.find((p) => p.code === '003')!.stock).toBe(0.25) // 3 unidades de 0,250 kg
   })
 })
 

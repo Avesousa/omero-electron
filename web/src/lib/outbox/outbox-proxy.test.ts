@@ -96,6 +96,34 @@ describe('venta', () => {
     expect(payload).toMatchObject({ cashAmount: 200, mpAmount: 0, change: 0 })
   })
 
+  it('venta por peso: kg con hasta 3 decimales, con su unidad y lo que descuenta de stock', async () => {
+    const body = {
+      ...goodSale,
+      items: [
+        { productId: '002', productName: 'Queso', quantity: 0.35, unitPrice: 8000, total: 2800, saleUnit: 'KG', stockQuantity: 0.35 },
+        { productId: '003', productName: 'Pan', quantity: 3, unitPrice: 1200, total: 3600, saleUnit: 'UNIT', stockQuantity: 0.75, stockPerUnit: 0.25 },
+        { productId: '002', productName: 'Queso', quantity: 1.005, unitPrice: 8000, total: 8040, saleUnit: 'KG' },
+      ],
+    }
+    const res = await handleOutboxRequest(post('/api/sales', body), 'SALE')
+    expect(res!.status).toBe(201)
+    const payload = JSON.parse(getOutboxStore(TENANT)!.getByClientId((await res!.json()).data.clientId)!.payload)
+    expect(payload.items).toEqual([
+      { productId: '002', productName: 'Queso', quantity: 0.35, unitPrice: 8000, total: 2800, promotionId: null, promotionName: null, saleUnit: 'KG', stockQuantity: 0.35 },
+      { productId: '003', productName: 'Pan', quantity: 3, unitPrice: 1200, total: 3600, promotionId: null, promotionName: null, saleUnit: 'UNIT', stockQuantity: 0.75 },
+      { productId: '002', productName: 'Queso', quantity: 1.005, unitPrice: 8000, total: 8040, promotionId: null, promotionName: null, saleUnit: 'KG' },
+    ])
+  })
+
+  it('saleUnit y stockQuantity en null se tratan como ausentes (venta por unidad)', async () => {
+    const body = { ...goodSale, items: [{ ...goodSale.items[0], saleUnit: null, stockQuantity: null }] }
+    const res = await handleOutboxRequest(post('/api/sales', body), 'SALE')
+    expect(res!.status).toBe(201)
+    const payload = JSON.parse(getOutboxStore(TENANT)!.getByClientId((await res!.json()).data.clientId)!.payload)
+    expect(payload.items[0]).not.toHaveProperty('saleUnit')
+    expect(payload.items[0]).not.toHaveProperty('stockQuantity')
+  })
+
   it('cada venta recibe un clientId distinto', async () => {
     const a = (await (await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.json()).data.clientId
     const b = (await (await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.json()).data.clientId
@@ -110,6 +138,13 @@ describe('venta', () => {
     ['sin código', { ...goodSale, items: [{ ...goodSale.items[0], productId: ' ' }] }],
     ['cantidad 0', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 0 }] }],
     ['cantidad decimal', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 1.5 }] }],
+    ['cantidad decimal por unidad', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 1.5, saleUnit: 'UNIT' }] }],
+    ['unidad desconocida', { ...goodSale, items: [{ ...goodSale.items[0], saleUnit: 'LITRO' }] }],
+    ['unidad que no es texto', { ...goodSale, items: [{ ...goodSale.items[0], saleUnit: 5 }] }],
+    ['kg con más de 3 decimales', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 0.3505, saleUnit: 'KG' }] }],
+    ['kg en 0', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 0, saleUnit: 'KG' }] }],
+    ['stockQuantity negativo', { ...goodSale, items: [{ ...goodSale.items[0], stockQuantity: -1 }] }],
+    ['stockQuantity no numérico', { ...goodSale, items: [{ ...goodSale.items[0], stockQuantity: '2' }] }],
     ['precio negativo', { ...goodSale, items: [{ ...goodSale.items[0], unitPrice: -1 }] }],
     ['total ausente', { ...goodSale, items: [{ ...goodSale.items[0], total: undefined }] }],
     ['monto inválido', { ...goodSale, cashAmount: 'a' }],

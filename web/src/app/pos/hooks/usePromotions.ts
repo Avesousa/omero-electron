@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { CartItem } from '../types'
 import { apiFetch } from '@/lib/apiClient'
+import { lineTotal } from '@/lib/quantity'
+import { isWeightLine } from '../lib/cartLines'
 
 interface PromotionProduct {
   productCode: string
@@ -41,8 +43,10 @@ export const usePromotions = () => {
     }
   }
 
-  const detectApplicablePromotions = useCallback((cart: CartItem[]): Promotion[] => {
+  const detectApplicablePromotions = useCallback((fullCart: CartItem[]): Promotion[] => {
     const applicablePromotions: Promotion[] = []
+    // Las promociones se activan por cantidad de unidades: una pesada (línea por kg) no cuenta.
+    const cart = fullCart.filter(item => !isWeightLine(item))
 
     for (const promotion of promotions) {
       if (promotion.status !== 'ACTIVE') continue
@@ -92,8 +96,9 @@ export const usePromotions = () => {
     return applicablePromotions
   }, [promotions])
 
-  const applyPromotions = useCallback((cart: CartItem[]): CartItem[] => {
-    const applicablePromotions = detectApplicablePromotions(cart)
+  const applyPromotions = useCallback((fullCart: CartItem[]): CartItem[] => {
+    const applicablePromotions = detectApplicablePromotions(fullCart)
+    const cart = fullCart.filter(item => !isWeightLine(item))
 
     // productCode → { promotionId, promotionName, promotionalPrice }
     // If a product appears in multiple applicable promos, the first one wins
@@ -117,7 +122,10 @@ export const usePromotions = () => {
       }
     }
 
-    return cart.map(item => {
+    return fullCart.map(item => {
+      // Una pesada queda tal cual: ni precio promocional ni recálculo del importe (puede venir de la etiqueta).
+      if (isWeightLine(item)) return item
+
       const originalPrice = item.originalPrice || item.price
       const promo = promoMap.get(item.code)
 
@@ -126,7 +134,7 @@ export const usePromotions = () => {
           ...item,
           originalPrice,
           price: promo.price,
-          total: promo.price * item.quantity,
+          total: lineTotal(item.quantity, promo.price),
           promotionId: promo.id,
           promotionName: promo.name
         }
@@ -136,7 +144,7 @@ export const usePromotions = () => {
         ...item,
         originalPrice,
         price: originalPrice,
-        total: originalPrice * item.quantity,
+        total: lineTotal(item.quantity, originalPrice),
         promotionId: undefined,
         promotionName: undefined
       }

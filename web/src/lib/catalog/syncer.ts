@@ -4,6 +4,7 @@ import { checkBackend } from './connectivity'
 import { applyCatalogPayload } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { tokenExpiry } from './tenant'
+import { SCALE_CONFIG_KEYS } from '../scale'
 import type { CatalogRoute, CatalogStore } from './types'
 
 /**
@@ -221,6 +222,12 @@ export class CatalogSyncer {
       // Configuración que el POS necesita sin conexión. No crítica: un 404 (backend viejo) o un error no dispara la
       // recuperación; si la red cayó ya lo detectan products/promotions.
       { path: '/api/business/config/mp_offline', route: { kind: 'setting', key: 'mp_offline' }, optional: true },
+      // Balanza: sin estas claves el POS no sabría interpretar una etiqueta estando sin conexión.
+      ...SCALE_CONFIG_KEYS.map(key => ({
+        path: `/api/business/config/${key}`,
+        route: { kind: 'setting', key } as CatalogRoute,
+        optional: true,
+      })),
     ]
 
     let failed = false
