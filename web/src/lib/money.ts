@@ -8,8 +8,8 @@
  * El formato elegido se guarda en el navegador, así desde la primera pantalla se ve igual que la última vez.
  * Mismo archivo en `omero` (admin) y `omero-electron/web` (POS).
  *
- * Sin dependencias de React: lo importan también rutas de API (vía `quantity` → `scale` → `catalog/syncer`),
- * que corren en el servidor. El hook para re-renderizar está en `useMoneyLocale.ts`.
+ * Sin dependencias de React, para que también se pueda importar desde código de servidor (en el POS lo
+ * importan rutas de API). El hook para re-renderizar está en `useMoneyLocale.ts`.
  */
 
 export const DEFAULT_LOCALE = 'es-AR'
