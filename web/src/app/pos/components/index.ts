@@ -13,6 +13,7 @@ export { ExpenseModal } from './modals/ExpenseModal'
 export { ProductsModal } from './modals/ProductsModal'
 export { DailySummaryModal } from './modals/DailySummaryModal'
 export { FreePriceModal } from './modals/FreePriceModal'
+export { WeightEntryModal } from './modals/WeightEntryModal'
 export { MpTransactionsModal } from './modals/MpTransactionsModal'
 
 // Keyboard components

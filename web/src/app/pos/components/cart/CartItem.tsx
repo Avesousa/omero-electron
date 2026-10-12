@@ -1,5 +1,7 @@
 import type { CartItem as CartItemType } from '../../types'
 import { STRINGS } from '../../constants/strings'
+import { isWeightLine, lineQuantityLabel } from '../../lib/cartLines'
+import { formatMoney } from '@/lib/money'
 
 interface CartItemProps {
   item: CartItemType
@@ -15,7 +17,7 @@ export const CartItem = ({ item, index, displayIndex }: CartItemProps) => {
           {displayIndex}
         </div>
         <div className="text-green-400 font-bold text-lg">
-          ${(item.total || 0).toLocaleString()}
+          {formatMoney(item.total || 0)}
         </div>
       </div>
       
@@ -25,10 +27,10 @@ export const CartItem = ({ item, index, displayIndex }: CartItemProps) => {
       
       <div className="flex justify-between items-center text-xs">
         <span className="text-gray-400">
-          {STRINGS.PRODUCT_QUANTITY} {item.quantity}
+          {STRINGS.PRODUCT_QUANTITY} {lineQuantityLabel(item)}
         </span>
         <span className="text-yellow-400">
-          ${(item.price || 0).toLocaleString()} c/u
+          {formatMoney(item.price || 0)} {isWeightLine(item) ? '/kg' : 'c/u'}
         </span>
       </div>
     </div>

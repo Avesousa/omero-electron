@@ -245,6 +245,22 @@ describe('activeSaleQuantities (stock mostrado = backend − pendientes)', () =>
     expect(Object.fromEntries(s.activeSaleQuantities())).toEqual({ '001': 3, '002': 5 })
   })
 
+  it('usa stockQuantity (unidad base del producto) cuando la línea lo trae: kilos, no unidades', () => {
+    const s = open()
+    const items = [
+      { productId: '002', quantity: 0.35, stockQuantity: 0.35 }, // pesada
+      { productId: '003', quantity: 3, stockQuantity: 0.75 }, // 3 unidades de 0,250 kg
+      { productId: '002', quantity: 0.2, stockQuantity: 0.2 },
+      { productId: '001', quantity: 2 }, // venta anterior a esta versión: sin stockQuantity
+      { productId: '004', quantity: 1, stockQuantity: 0 }, // no descuenta nada
+    ]
+    s.enqueue({ type: 'SALE', payload: JSON.stringify({ items, cashAmount: 0, mpAmount: 0, change: 0 }) })
+    const totals = Object.fromEntries(s.activeSaleQuantities())
+    expect(totals['002']).toBeCloseTo(0.55, 9)
+    expect(totals).toMatchObject({ '003': 0.75, '001': 2 })
+    expect(totals).not.toHaveProperty('004')
+  })
+
   it('respuesta EN VIVO (sin since): solo PENDING; el backend ya incluye lo enviado', () => {
     const s = open()
     const sent = s.enqueue({ type: 'SALE', payload: sale([{ productId: '001', quantity: 4 }]) }).row

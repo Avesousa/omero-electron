@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { getAuthToken } from '@/lib/sessionManager'
+import { setMoneyLocaleFromConfig } from '@/lib/money'
 
 /**
  * Zona horaria del tenant (clave `timezone` de /api/business/config).
@@ -77,6 +78,8 @@ async function loadTenantTimeZone(): Promise<void> {
         if (res.success) {
           const tz = res.data.find(e => e.key === 'timezone')?.value
           setTenantTimeZone(tz || DEFAULT_TENANT_TZ, token)
+          // La región del negocio también define cómo se muestran los importes (separadores y moneda).
+          setMoneyLocaleFromConfig(tz || DEFAULT_TENANT_TZ, res.data.find(e => e.key === 'currency')?.value)
         }
       } catch {
         /* se mantiene la zona actual */

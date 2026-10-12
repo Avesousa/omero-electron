@@ -1,0 +1,301 @@
+{
+  "_comment": "Casos compartidos entre el admin y el POS (lib/scale). Las dos copias de lib/scale tienen que pasar exactamente estos casos.",
+  "cases": [
+    {
+      "name": "Systel de fábrica: importe con 2 decimales",
+      "code": "2001230042004",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "amount": 42,
+        "template": "20PPPPIIIIII"
+      }
+    },
+    {
+      "name": "Systel con importe sin decimales",
+      "code": "2001230042004",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 0,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "amount": 4200,
+        "template": "20PPPPIIIIII"
+      }
+    },
+    {
+      "name": "PLU con ceros a la izquierda",
+      "code": "2000071234562",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 0,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 7,
+        "amount": 123456,
+        "template": "20PPPPIIIIII"
+      }
+    },
+    {
+      "name": "Plantilla con peso en gramos",
+      "code": "2000123003504",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPPCCCCC"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "weightKg": 0.35,
+        "template": "20PPPPPCCCCC"
+      }
+    },
+    {
+      "name": "Plantilla con peso en decagramos (2 decimales)",
+      "code": "2000123000350",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPPCCCCC"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 2
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "weightKg": 0.35,
+        "template": "20PPPPPCCCCC"
+      }
+    },
+    {
+      "name": "Varias plantillas: toma la que coincide",
+      "code": "2500123003509",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII",
+          "25PPPPPCCCCC"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "weightKg": 0.35,
+        "template": "25PPPPPCCCCC"
+      }
+    },
+    {
+      "name": "Campos ignorados (sección y balanza)",
+      "code": "2071012304200",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20SBPPPPIIII"
+        ],
+        "amountDecimals": 0,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "amount": 420,
+        "template": "20SBPPPPIIII"
+      }
+    },
+    {
+      "name": "Plantilla en minúsculas y con espacios",
+      "code": "2001230042004",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          " 20ppppiiiiii "
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "amount": 42,
+        "template": "20PPPPIIIIII"
+      }
+    },
+    {
+      "name": "Verificador inválido: no es una etiqueta",
+      "code": "2001230042005",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": null
+    },
+    {
+      "name": "Código de barras comercial (779…)",
+      "code": "7790001000019",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": null
+    },
+    {
+      "name": "Balanza apagada",
+      "code": "2001230042004",
+      "config": {
+        "enabled": false,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": null
+    },
+    {
+      "name": "Systel venta por unidad (21): no soportada",
+      "code": "2101230000018",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "unsupported",
+        "reason": "venta por unidad"
+      }
+    },
+    {
+      "name": "Systel sumatoria (22): no soportada",
+      "code": "2200000042002",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "unsupported",
+        "reason": "sumatoria de artículos"
+      }
+    },
+    {
+      "name": "Prefijo 21 configurado como plantilla: se interpreta",
+      "code": "2101230042001",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII",
+          "21PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "amount": 42,
+        "template": "21PPPPIIIIII"
+      }
+    },
+    {
+      "name": "Menos de 13 dígitos",
+      "code": "20012300420",
+      "config": {
+        "enabled": true,
+        "brand": "SYSTEL",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": null
+    },
+    {
+      "name": "Marca sin perfil: la plantilla funciona igual",
+      "code": "2001230042004",
+      "config": {
+        "enabled": true,
+        "brand": "KRETZ",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": {
+        "kind": "reading",
+        "plu": 123,
+        "amount": 42,
+        "template": "20PPPPIIIIII"
+      }
+    },
+    {
+      "name": "Marca sin perfil: prefijo 21 es un código común",
+      "code": "2101230000018",
+      "config": {
+        "enabled": true,
+        "brand": "KRETZ",
+        "templates": [
+          "20PPPPIIIIII"
+        ],
+        "amountDecimals": 2,
+        "weightDecimals": 3
+      },
+      "expect": null
+    }
+  ]
+}

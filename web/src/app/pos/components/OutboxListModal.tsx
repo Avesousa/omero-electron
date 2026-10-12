@@ -1,5 +1,6 @@
 import { Modal, ModalButton } from '@/app/components/ui/Modal'
 import type { OutboxItemView } from '../hooks/useOutboxStatus'
+import { formatMoney } from '@/lib/money'
 
 const REASON_LABEL: Record<string, string> = {
   PRODUCT_NOT_FOUND: 'Producto no encontrado',
@@ -19,7 +20,7 @@ const STATUS_LABEL: Record<string, { text: string; className: string }> = {
 }
 
 function money(n: number | undefined): string {
-  return typeof n === 'number' ? `$${n.toLocaleString('es-AR')}` : ''
+  return typeof n === 'number' ? formatMoney(n) : ''
 }
 
 function describe(item: OutboxItemView): string {

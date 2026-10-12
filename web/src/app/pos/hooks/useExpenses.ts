@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { apiFetch } from '@/lib/apiClient'
+import { formatMoney } from '@/lib/money'
 
 interface ExpenseState {
   showExpenseModal: boolean
@@ -61,7 +62,7 @@ export const useExpenses = (showNotification?: (message: string, type: 'success'
 
       if (result.success) {
         if (showNotification) {
-          showNotification(`Gasto registrado: $${amountValue.toLocaleString()}`, 'success')
+          showNotification(`Gasto registrado: ${formatMoney(amountValue)}`, 'success')
         }
         closeExpenseModal()
         onComplete()
