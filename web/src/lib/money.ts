@@ -7,8 +7,10 @@
  *
  * El formato elegido se guarda en el navegador, así desde la primera pantalla se ve igual que la última vez.
  * Mismo archivo en `omero` (admin) y `omero-electron/web` (POS).
+ *
+ * Sin dependencias de React: lo importan también rutas de API (vía `quantity` → `scale` → `catalog/syncer`),
+ * que corren en el servidor. El hook para re-renderizar está en `useMoneyLocale.ts`.
  */
-import { useSyncExternalStore } from 'react'
 
 export const DEFAULT_LOCALE = 'es-AR'
 export const DEFAULT_CURRENCY = 'ARS'
@@ -129,12 +131,15 @@ export function formatNumber(n: number | null | undefined, maxDecimals = 3): str
   return new Intl.NumberFormat(current.locale, { maximumFractionDigits: maxDecimals }).format(nz(n))
 }
 
-function subscribe(listener: () => void) {
+/** Avisa cada vez que cambia el formato. Devuelve la función para dejar de escuchar. */
+export function subscribeMoneyLocale(listener: () => void): () => void {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
-/** Re-renderiza el componente cuando cambia el formato (por ejemplo, al cargar la configuración del negocio). */
-export function useMoneyLocale(): MoneyLocale {
-  return useSyncExternalStore(subscribe, getMoneyLocale, () => DEFAULTS)
+/** Formato por defecto (Argentina, pesos): el que se usa al renderizar en el servidor. */
+export function getDefaultMoneyLocale(): MoneyLocale {
+  return DEFAULTS
 }
