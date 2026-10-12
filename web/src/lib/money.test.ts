@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import {
   DEFAULT_CURRENCY, DEFAULT_LOCALE, formatAmount, formatDecimal, formatMoney, formatNumber, getMoneyLocale,
-  localeForTimeZone, setMoneyLocale, setMoneyLocaleFromConfig, useMoneyLocale,
+  localeForTimeZone, setMoneyLocale, setMoneyLocaleFromConfig,
 } from './money'
+import { useMoneyLocale } from './useMoneyLocale'
 
 /** Intl usa espacio duro entre símbolo y número; para comparar, espacio común. */
 const plain = (s: string) => s.replace(/ | /g, ' ')
