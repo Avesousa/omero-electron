@@ -1,8 +1,19 @@
 import { useState, useEffect } from 'react'
+import { apiFetch } from '@/lib/apiClient'
+import { startMpEvents, type TicketResult } from '@/lib/mpEvents'
 import type { NotificationType, PaymentNotification, MPStatusEvent } from '../types'
 
 interface UseMercadoPagoEventsParams {
   showNotification: (message: string, type?: NotificationType) => void
+}
+
+async function fetchTicket(): Promise<TicketResult> {
+  const res = await apiFetch<{ ticket: string; expiresInSeconds: number }>('/api/mercadopago/events/ticket', {
+    method: 'POST',
+  })
+  if (res.success && res.data?.ticket) return { ok: true, ticket: res.data.ticket }
+  const error = res.success ? '' : res.error
+  return { ok: false, forbidden: error === 'Error 403' }
 }
 
 export const useMercadoPagoEvents = ({ showNotification }: UseMercadoPagoEventsParams) => {
@@ -18,39 +29,18 @@ export const useMercadoPagoEvents = ({ showNotification }: UseMercadoPagoEventsP
   }, [lastPayment])
 
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
-    const source = new EventSource(`${backendUrl}/api/mercadopago/events`)
-
-    source.onopen = () => {
-      setSseConnected(true)
-    }
-
-    source.onerror = () => {
-      setSseConnected(false)
-    }
-
-    source.addEventListener('status', (event: MessageEvent) => {
-      try {
-        const data: MPStatusEvent = JSON.parse(event.data)
-        setMpConnected(data.connected)
-      } catch {
-        // malformed event — ignore
-      }
-    })
-
-    source.addEventListener('payment', (event: MessageEvent) => {
-      try {
-        const payment: PaymentNotification = JSON.parse(event.data)
-        setLastPayment(payment)
+    const stop = startMpEvents({
+      backendUrl: process.env.NEXT_PUBLIC_API_URL ?? '',
+      fetchTicket,
+      onOpen: () => setSseConnected(true),
+      onClose: () => setSseConnected(false),
+      onStatus: (data) => setMpConnected((data as MPStatusEvent).connected),
+      onPayment: (data) => {
+        setLastPayment(data as PaymentNotification)
         setLastPaymentTime(Date.now())
-      } catch {
-        // malformed event — ignore
-      }
+      },
     })
-
-    return () => {
-      source.close()
-    }
+    return stop
   }, [showNotification])
 
   return {

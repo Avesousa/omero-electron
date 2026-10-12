@@ -365,6 +365,12 @@ npm --prefix web run check     # typecheck + tests con cobertura
 
 **Archivo de specs:** `omero-backend/AiBuild/feature/roles-permisos-fundacion/done/`
 
+## SSE de Mercado Pago con ticket (perf memoria fase 1)
+
+`web/src/lib/mpEvents.ts` (usado por `useMercadoPagoEvents`) pide un ticket de un solo uso con `POST /api/mercadopago/events/ticket` (pasa por el proxy directo; NO matchea el outbox, que solo captura `POST /api/sales` y `/api/expenses`) y abre `EventSource(.../api/mercadopago/events?ticket=)`. En `onerror` cierra y reconecta con ticket nuevo y backoff exponencial 1→60 s con jitter (reset al abrir). Sin red el ticket falla (502 del proxy) y simplemente se reintenta; 403 espera el backoff máximo.
+
+Ojo: `POST /api/mercadopago/events/ticket` debe estar en la lista blanca del backend (`DeviceScopeFilter.POS`), si no la caja (scope=pos) recibe 403 y el SSE nunca conecta. Espejado en `allowlist.contract.test.ts`.
+
 ### Formato de importes (lib/money.ts, added 2026-10-11)
 
 Todo importe se muestra con **dos decimales** y los separadores de la región del negocio: `$ 1.234.567,89` en

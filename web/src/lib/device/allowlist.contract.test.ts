@@ -27,6 +27,7 @@ export const POS_ALLOWLIST: Rule[] = [
   { method: 'GET', pattern: '/api/business/config/*' },
   { method: 'GET', pattern: '/api/dashboard/daily-summary' },
   { method: 'GET', pattern: '/api/mercadopago/events' },
+  { method: 'POST', pattern: '/api/mercadopago/events/ticket' }, // ticket SSE (backend: agregar a DeviceScopeFilter.POS)
   { method: 'GET', pattern: '/api/mercadopago/transactions' },
   { method: 'POST', pattern: '/api/mercadopago/polling/start' },
   { method: 'POST', pattern: '/api/sales' },

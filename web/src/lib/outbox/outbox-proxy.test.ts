@@ -64,6 +64,7 @@ describe('matchOutboxRoute', () => {
     ['POST', '/api/sales/5', null],
     ['POST', '/api/products', null],
     ['POST', '/api/sales/review', null],
+    ['POST', '/api/mercadopago/events/ticket', null], // el ticket SSE NO va al outbox offline
   ])('%s %s → %s', (m, p, expected) => {
     expect(matchOutboxRoute(m, p)).toBe(expected)
   })
