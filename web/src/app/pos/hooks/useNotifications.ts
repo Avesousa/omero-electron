@@ -1,16 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { Notification, NotificationType } from '../types'
 
 export const useNotifications = () => {
   const [notification, setNotification] = useState<Notification | null>(null)
 
-  const showNotification = (message: string, type: NotificationType = 'info') => {
+  // Estables entre renders: otros hooks las usan como dependencia de efectos
+  const showNotification = useCallback((message: string, type: NotificationType = 'info') => {
     setNotification({ message, type })
-  }
+  }, [])
 
-  const clearNotification = () => {
+  const clearNotification = useCallback(() => {
     setNotification(null)
-  }
+  }, [])
 
   useEffect(() => {
     if (notification) {

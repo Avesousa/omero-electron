@@ -41,7 +41,8 @@ export const useMercadoPagoEvents = ({ showNotification }: UseMercadoPagoEventsP
       },
     })
     return stop
-  }, [showNotification])
+    // Una sola conexión por montaje: re-ejecutar este efecto abre otro stream y deja el anterior colgado en el server
+  }, [])
 
   return {
     isConnected: sseConnected && mpConnected,
