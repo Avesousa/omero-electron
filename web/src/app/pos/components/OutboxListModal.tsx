@@ -13,10 +13,10 @@ export function reasonLabel(code: string): string {
 }
 
 const STATUS_LABEL: Record<string, { text: string; className: string }> = {
-  PENDING: { text: 'Pendiente de subir', className: 'bg-amber-500 text-black' },
-  REVIEW: { text: 'En revisión del administrador', className: 'bg-orange-600 text-white' },
-  FAILED: { text: 'Rechazada', className: 'bg-red-600 text-white' },
-  SENT: { text: 'Enviada', className: 'bg-green-700 text-white' },
+  PENDING: { text: 'Pendiente de subir', className: 'is-warn' },
+  REVIEW: { text: 'En revisión del administrador', className: 'is-warn' },
+  FAILED: { text: 'Rechazada', className: 'is-bad' },
+  SENT: { text: 'Enviada', className: 'is-ok' },
 }
 
 function money(n: number | undefined): string {
@@ -48,7 +48,7 @@ export function OutboxListModal({ isOpen, onClose, items, onDismiss }: Props) {
       isOpen={isOpen}
       onClose={onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="warning"
       size="lg"
       title="Ventas y gastos sin cerrar"
@@ -56,25 +56,25 @@ export function OutboxListModal({ isOpen, onClose, items, onDismiss }: Props) {
       footer={<ModalButton variant="secondary" onClick={onClose}>ESC - CERRAR</ModalButton>}
     >
       {visible.length === 0 ? (
-        <div className="text-center text-gray-400 py-6" data-testid="outbox-empty">No hay nada pendiente.</div>
+        <div className="text-center text-[var(--pos-muted)] py-6" data-testid="outbox-empty">No hay nada pendiente.</div>
       ) : (
         <ul className="space-y-3" data-testid="outbox-list">
           {visible.map(item => {
             const st = STATUS_LABEL[item.status] ?? STATUS_LABEL.PENDING
             const reasons = item.review?.reasons ?? []
             return (
-              <li key={item.clientId} className="o-row p-3 space-y-1" data-testid="outbox-item">
+              <li key={item.clientId} className="pos-card-2 p-3 space-y-1" data-testid="outbox-item">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-300">{new Date(item.createdAt).toLocaleString('es-AR')}</span>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${st.className}`}>{st.text}</span>
+                  <span className="text-sm text-[var(--pos-ink-2)]">{new Date(item.createdAt).toLocaleString('es-AR')}</span>
+                  <span className={`pos-chip !text-xs !px-2 !py-0.5 ${st.className}`}>{st.text}</span>
                 </div>
-                <div className="text-base text-white">{describe(item)}</div>
+                <div className="text-base font-semibold text-[var(--pos-ink)]">{describe(item)}</div>
                 {reasons.length > 0 && (
-                  <div className="text-sm text-orange-300">Motivo: {reasons.map(reasonLabel).join(' · ')}</div>
+                  <div className="text-sm text-[var(--pos-warn)]">Motivo: {reasons.map(reasonLabel).join(' · ')}</div>
                 )}
-                {item.status === 'FAILED' && item.error && <div className="text-sm text-red-300">{item.error}</div>}
+                {item.status === 'FAILED' && item.error && <div className="text-sm text-[var(--pos-danger)]">{item.error}</div>}
                 {item.status === 'PENDING' && item.attempts > 0 && (
-                  <div className="text-xs text-gray-400">Intentos: {item.attempts}</div>
+                  <div className="text-xs text-[var(--pos-muted)]">Intentos: {item.attempts}</div>
                 )}
                 {item.status === 'FAILED' && (
                   <div className="pt-1">

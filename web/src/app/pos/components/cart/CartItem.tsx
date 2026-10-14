@@ -11,25 +11,25 @@ interface CartItemProps {
 
 export const CartItem = ({ item, index, displayIndex }: CartItemProps) => {
   return (
-    <div className="bg-black border border-gray-600 p-4 hover:border-blue-500 transition-colors">
+    <div className="pos-card-2 p-4 hover:border-[var(--pos-primary-2)] transition-colors">
       <div className="flex items-center justify-between mb-2">
-        <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm">
+        <div className="pos-line-idx w-8 h-8 rounded-full font-bold flex items-center justify-center text-sm">
           {displayIndex}
         </div>
-        <div className="text-green-400 font-bold text-lg">
+        <div className="pos-success pos-num font-bold text-lg">
           {formatMoney(item.total || 0)}
         </div>
       </div>
       
-      <div className="text-white font-medium mb-2 text-sm leading-tight">
+      <div className="text-[var(--pos-ink)] font-medium mb-2 text-sm leading-tight">
         {item.name}
       </div>
       
       <div className="flex justify-between items-center text-xs">
-        <span className="text-gray-400">
+        <span className="text-[var(--pos-muted)]">
           {STRINGS.PRODUCT_QUANTITY} {lineQuantityLabel(item)}
         </span>
-        <span className="text-yellow-400">
+        <span className="text-[var(--pos-ink-2)] pos-num">
           {formatMoney(item.price || 0)} {isWeightLine(item) ? '/kg' : 'c/u'}
         </span>
       </div>

@@ -10,80 +10,60 @@ interface CartListProps {
 export const CartList = ({ cart }: CartListProps) => {
   if (cart.length === 0) {
     return (
-      <div className="text-center text-gray-400 py-8">
-        <div className="text-4xl mb-4">🛒</div>
-        <div className="text-lg">{STRINGS.CART_EMPTY}</div>
+      <div className="pos-empty py-8">
+        <div className="pos-empty-icon">🛒</div>
+        <div className="text-lg font-bold pos-ink-2">{STRINGS.CART_EMPTY}</div>
+        <div className="text-sm">Ingresá un código para empezar la venta</div>
       </div>
     )
   }
 
   return (
-    <div>
-      <div className="text-xs text-gray-400 text-center mb-3">
-        📦 {cart.length} productos • Scroll para ver más ↕️
-      </div>
-      <div className="space-y-2 pr-2">
-        {[...cart].reverse().map((item, reverseIndex) => {
-          const displayIndex = reverseIndex + 1
-          const byWeight = isWeightLine(item)
-          return (
-            <div key={item.id} className="bg-gray-800 border-2 border-gray-600 p-4 hover:border-blue-500 transition-colors">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center space-x-4 flex-1 min-w-0">
-                  <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-base flex-shrink-0">
-                    {displayIndex}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="text-white font-bold text-lg truncate">{item.name}</div>
-                      {item.fixedTotal && (
-                        <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded font-semibold flex-shrink-0" title="El importe viene de la etiqueta de la balanza">
-                          ⚖ ETIQUETA
-                        </span>
-                      )}
-                      {item.promotionId && (
-                        <span className="px-2 py-0.5 bg-purple-500 text-white text-xs rounded font-semibold flex-shrink-0">
-                          🎯 PROMO
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-gray-300 text-sm">
-                      <span className="font-mono">#{item.code.startsWith('000') ? '000' : item.code}</span>
-                      <span className="mx-2">|</span>
-                      <span className="font-semibold">{lineQuantityLabel(item)}</span>
-                      <span className="mx-1">x</span>
-                      <span className="font-mono">{formatMoney(item.price || 0)}{byWeight ? ' /kg' : ''}</span>
-                      {item.originalPrice && item.originalPrice !== item.price && (
-                        <span className="text-gray-500 line-through ml-2">
-                          {formatMoney(item.originalPrice || 0)}
-                        </span>
-                      )}
-                    </div>
-                    {item.promotionName && (
-                      <div className="text-purple-400 text-xs mt-1 truncate">
-                        {item.promotionName}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0 min-w-[140px]">
-                  <div className="text-2xl font-bold text-green-400 font-mono">
-                    {formatMoney(item.total || 0)}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    ({byWeight ? lineQuantityLabel(item) : `${item.quantity} unid.`})
-                  </div>
-                  {item.originalPrice && item.originalPrice !== item.price && (
-                    <div className="text-xs text-green-300 mt-1 font-semibold">
-                      Ahorro: {formatMoney(((item.originalPrice || 0) - (item.price || 0)) * item.quantity)}
-                    </div>
-                  )}
-                </div>
+    <div className="space-y-2.5 pr-1">
+      {[...cart].reverse().map((item, reverseIndex) => {
+        const displayIndex = reverseIndex + 1
+        const byWeight = isWeightLine(item)
+        const isNewest = reverseIndex === 0
+        const discounted = item.originalPrice && item.originalPrice !== item.price
+        return (
+          <div
+            // La fila más nueva se remonta al cambiar la cantidad para repetir la animación
+            key={isNewest ? `${item.id}-${item.quantity}` : item.id}
+            className={`pos-line ${isNewest ? 'is-new' : ''}`}
+          >
+            <div className="pos-line-idx">{displayIndex}</div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="font-bold text-[17px] pos-ink truncate">{item.name}</div>
+                {item.fixedTotal && (
+                  <span className="pos-tag is-scale" title="El importe viene de la etiqueta de la balanza">⚖ Etiqueta</span>
+                )}
+                {item.promotionId && <span className="pos-tag is-promo">Promo</span>}
               </div>
+              <div className="text-sm pos-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                <span className="font-mono">#{item.code.startsWith('000') ? '000' : item.code}</span>
+                <span className="pos-line-qty pos-num">{byWeight ? lineQuantityLabel(item) : `${item.quantity} ×`}</span>
+                <span className="pos-num">{formatMoney(item.price || 0)}{byWeight ? ' /kg' : ''}</span>
+                {discounted && (
+                  <span className="line-through">{formatMoney(item.originalPrice || 0)}</span>
+                )}
+              </div>
+              {item.promotionName && (
+                <div className="text-xs mt-1 truncate" style={{ color: '#7C3AED' }}>{item.promotionName}</div>
+              )}
             </div>
-          );
-        })}
-      </div>
+            <div className="text-right flex-shrink-0">
+              <div className="text-xl font-extrabold pos-ink pos-num">{formatMoney(item.total || 0)}</div>
+              <div className="text-xs pos-muted pos-num">({byWeight ? lineQuantityLabel(item) : `${item.quantity} unid.`})</div>
+              {discounted && (
+                <div className="text-xs font-semibold pos-success mt-0.5">
+                  Ahorro: {formatMoney(((item.originalPrice || 0) - (item.price || 0)) * item.quantity)}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
-} 
+}

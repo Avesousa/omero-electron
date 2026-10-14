@@ -66,14 +66,14 @@ export function DailySummaryModal({ show, onClose }: Props) {
       isOpen
       onClose={onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="primary"
       size="md"
       title="Resumen del día"
-      footer={<span className="text-gray-500 text-sm w-full text-center">Esc para cerrar</span>}
+      footer={<span className="pos-muted text-sm w-full text-center"><span className="pos-kbd is-light">Esc</span> para cerrar</span>}
     >
       {loading && (
-        <div className="text-center text-gray-400 py-12 text-xl">Cargando...</div>
+        <div className="text-center pos-muted py-12 text-xl">Cargando...</div>
       )}
 
       {!loading && summary && (() => {
@@ -82,13 +82,13 @@ export function DailySummaryModal({ show, onClose }: Props) {
           b.business.toLowerCase().includes('cigarrillo')
         )
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Stat label="Total ventas" value={fmt(summary.totalAmount)} color="text-green-400" />
-            <Stat label="Total efectivo" value={fmt(summary.totalCash)} color="text-yellow-400" />
-            <Stat label="Total MercadoPago" value={fmt(summary.totalMP)} color="text-cyan-400" />
-            <Stat label="Total gastos" value={fmt(summary.totalExpenses)} color="text-red-400" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Stat label="Total ventas" value={fmt(summary.totalAmount)} color="pos-ink" />
+            <Stat label="Total efectivo" value={fmt(summary.totalCash)} color="pos-success" />
+            <Stat label="Total MercadoPago" value={fmt(summary.totalMP)} color="text-[var(--pos-mp)]" />
+            <Stat label="Total gastos" value={fmt(summary.totalExpenses)} color="pos-danger" />
             {cigarrillo && (
-              <Stat label={`Ventas ${cigarrillo.business}`} value={fmt(cigarrillo.amount)} color="text-purple-400" />
+              <Stat label={`Ventas ${cigarrillo.business}`} value={fmt(cigarrillo.amount)} color="pos-primary" />
             )}
           </div>
         )
@@ -99,9 +99,9 @@ export function DailySummaryModal({ show, onClose }: Props) {
 
 function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="o-row p-4">
-      <div className="text-xs text-gray-400 mb-1">{label}</div>
-      <div className={`text-xl font-bold ${color}`}>{value}</div>
+    <div className="pos-card-2 p-5">
+      <div className="pos-eyebrow mb-2">{label}</div>
+      <div className={`text-3xl font-extrabold pos-num ${color}`}>{value}</div>
     </div>
   )
 }
