@@ -1,16 +1,16 @@
 /**
  * Notification.tsx
  *
- * Renders a transient notification banner in the top-right corner.
+ * Aviso transitorio arriba a la derecha (diseño claro del POS).
  *
- * Supported variants:
- *   - success      — green banner
- *   - error        — red banner
- *   - info         — blue banner
- *   - offline_saved — amber/yellow banner for "purchase saved offline" state
+ * Variantes:
+ *   - success       — verde
+ *   - error         — rojo
+ *   - info          — azul
+ *   - offline_saved — ámbar ("compra guardada sin conexión")
  *
  * Manual test checklist [US1-T012]:
- *   Trigger an offline failure in DevTools → notification with amber background
+ *   Trigger an offline failure in DevTools → notification with amber accent
  *   and message "Compra guardada sin conexion..." appears in top-right corner.
  */
 
@@ -20,23 +20,22 @@ interface NotificationProps {
   notification: NotificationType | null
 }
 
+const VARIANTS = {
+  success: { cls: 'is-success', icon: '✓' },
+  error: { cls: 'is-error', icon: '!' },
+  offline_saved: { cls: 'is-warn', icon: '⏳' },
+  info: { cls: 'is-info', icon: 'i' },
+} as const
+
 export const Notification = ({ notification }: NotificationProps) => {
   if (!notification) return null
-
-  const colorClass =
-    notification.type === 'error'
-      ? 'bg-red-600 border-red-400 text-white'
-      : notification.type === 'success'
-      ? 'bg-green-600 border-green-400 text-white'
-      : notification.type === 'offline_saved'
-      ? 'bg-amber-500 border-amber-300 text-black'
-      : 'bg-blue-600 border-blue-400 text-white'
+  const v = VARIANTS[notification.type as keyof typeof VARIANTS] ?? VARIANTS.info
 
   return (
-    <div
-      className={`fixed top-4 right-4 z-[100] px-6 py-3 rounded-lg border-2 font-bold text-lg animate-pulse ${colorClass}`}
-    >
-      {notification.message}
+    // key: cada aviso nuevo repite la animación de entrada
+    <div key={notification.message} role="status" className={`pos-toast ${v.cls}`}>
+      <span className="ic font-extrabold">{v.icon}</span>
+      <span>{notification.message}</span>
     </div>
   )
 }

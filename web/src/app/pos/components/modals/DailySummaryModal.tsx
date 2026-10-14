@@ -66,7 +66,7 @@ export function DailySummaryModal({ show, onClose }: Props) {
       isOpen
       onClose={onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="primary"
       size="md"
       title="Resumen del día"

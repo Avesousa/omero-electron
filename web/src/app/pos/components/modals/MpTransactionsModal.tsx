@@ -44,7 +44,7 @@ export function MpTransactionsModal({ show, listRef, onClose }: Props) {
       onClose={onClose ?? (() => {})}
       hideClose={!onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="info"
       size="lg"
       title="Transacciones MercadoPago (hoy)"

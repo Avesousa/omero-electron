@@ -19,7 +19,7 @@ export function SubscriptionBlockedScreen({ isOpen, onRetry, onLogout }: Props) 
       onClose={() => {}}
       hideClose
       closeOnEsc={false}
-      tone="dark"
+     
       size="sm"
       accent="danger"
       zIndex={2000}

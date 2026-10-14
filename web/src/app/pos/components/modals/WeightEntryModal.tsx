@@ -34,7 +34,7 @@ export function WeightEntryModal({ state, onKeyPress }: Props) {
       isOpen
       onClose={() => onKeyPress('Escape')}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="info"
       size="md"
       title={editLineId ? `Corregir peso · ${product.name}` : product.name}

@@ -21,7 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es" className={inter.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{
-          __html: `(function(){try{var t=localStorage.getItem('omero-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark')}catch(e){document.documentElement.setAttribute('data-theme','dark')}})()`,
+          // Rediseño claro (2026-10): el tema por defecto pasa a claro. Se usa una clave nueva para que las
+          // cajas que ya tenían guardado 'dark' (el provider lo guardaba siempre) arranquen en claro una vez.
+          __html: `(function(){try{var t=localStorage.getItem('omero-theme-v2');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){document.documentElement.setAttribute('data-theme','light')}})()`,
         }} />
       </head>
       <body className={inter.className}>

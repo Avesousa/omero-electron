@@ -48,7 +48,7 @@ export function OutboxListModal({ isOpen, onClose, items, onDismiss }: Props) {
       isOpen={isOpen}
       onClose={onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="warning"
       size="lg"
       title="Ventas y gastos sin cerrar"

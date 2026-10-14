@@ -28,7 +28,7 @@ export const ExpenseModal = ({
       onClose={onCancel}
       closeOnEsc={false}
       hideClose={isProcessing}
-      tone="dark"
+     
       accent="danger"
       size="lg"
       title="Registrar gasto"

@@ -37,7 +37,7 @@ import {
 import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
 import { formatStock, roundKg } from '@/lib/quantity'
 import { looksLikeScaleBarcode } from '@/lib/scale'
-import { isWeightLine, needsWeightEntry, stockInCart, toQuantityProduct } from './lib/cartLines'
+import { isWeightLine, lineQuantityLabel, needsWeightEntry, stockInCart, toQuantityProduct } from './lib/cartLines'
 import { resolveScaleScan } from './lib/scaleScan'
 import {
   loadWeightPrefs, openWeightEntry, resolveWeightEntry, saveWeightPrefs, weightEntryKey,
@@ -879,25 +879,26 @@ export default function POSPage() {
 
   if (productsLoading) {
     return (
-      <div className="pos-layout min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl mb-4">⏳</div>
-          <div className="text-xl">Cargando productos...</div>
+      <div className="pos-v2 min-h-screen flex items-center justify-center">
+        <div className="pos-card px-10 py-8 text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-4 mx-auto mb-4" style={{ borderColor: 'var(--pos-primary-soft)', borderTopColor: 'var(--pos-primary)' }} />
+          <div className="text-lg font-bold pos-ink">Cargando productos…</div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="pos-layout h-screen bg-black text-white flex flex-col overflow-hidden">
+    <div className="pos-v2 h-screen flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-black border-b-4 flex-shrink-0 px-6 py-3" style={{ borderColor: '#FF6B00' }}>
+      <div className="pos-header flex-shrink-0 px-6 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <OmeroLogo width={100} height={22} />
-            <span className="text-gray-500 text-lg select-none">|</span>
-            <span className="text-lg font-semibold tracking-wide" style={{ color: '#FF6B00' }}>
-              {STRINGS.MAIN_TITLE}
+          <div className="flex items-center gap-4">
+            <OmeroLogo width={112} height={24} />
+            <span className="pos-title-pill">{STRINGS.MAIN_TITLE.charAt(0) + STRINGS.MAIN_TITLE.slice(1).toLowerCase()}</span>
+            <span className={`pos-chip ${mpConnected ? 'is-ok' : 'is-bad'} hidden md:inline-flex`}>
+              <span className="pos-dot" />
+              {mpConnected ? 'Mercado Pago conectado' : 'Mercado Pago sin conexión'}
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -914,7 +915,7 @@ export default function POSPage() {
             {connection.runtime === 'web' && (
               <>
               {pendingCount > 0 && (
-                <span className="bg-amber-500 text-black text-sm font-bold px-3 py-1 rounded-full">
+                <span className="pos-chip is-warn">
                   {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} sin sync
                 </span>
               )}
@@ -930,11 +931,7 @@ export default function POSPage() {
                 }}
                 disabled={cacheRefreshing}
                 title="Actualizar productos"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                style={cacheRefreshed
-                  ? { borderColor: '#22c55e', color: '#22c55e', background: 'rgba(34,197,94,0.1)' }
-                  : { borderColor: '#FF6B00', color: '#FF6B00', background: 'transparent' }
-                }
+                className={`pos-chip ${cacheRefreshed ? 'is-ok' : ''} cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 <span className={cacheRefreshing ? 'animate-spin inline-block' : 'inline-block'}>
                   {cacheRefreshed ? '✓' : '↻'}
@@ -950,25 +947,45 @@ export default function POSPage() {
 
       {/* Main Content */}
       <div className="flex-1 p-6 min-h-0 overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-7xl mx-auto h-full">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.15fr] gap-6 w-full max-w-7xl mx-auto h-full">
           {/* Input Section */}
-          <div className="lg:col-span-1 flex flex-col">
+          <div className="lg:col-span-1 flex flex-col gap-4 min-h-0">
             <InputDisplay 
               mode={mode}
               currentInput={currentInput}
               cashReceived={cashReceived}
               currentProduct={currentProduct}
             />
+
+            {/* Último producto agregado */}
+            {cart.length > 0 && (() => {
+              const last = cart[cart.length - 1]
+              return (
+                <div key={`${last.id}-${last.quantity}`} className="pos-last">
+                  <div className="pos-last-icon">✓</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="pos-eyebrow">Recién agregado</div>
+                    <div className="text-lg font-bold pos-ink truncate">{last.name}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-extrabold pos-primary pos-num">{formatMoney(last.total || 0)}</div>
+                    <div className="text-xs font-semibold pos-muted">{isWeightLine(last) ? lineQuantityLabel(last) : `${last.quantity} u.`}</div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Cart Section */}
           <div className="lg:col-span-1 flex flex-col min-h-0">
-            <div className="bg-black border-4 p-4 flex flex-col h-full" style={{ borderColor: '#FF6B00' }}>
+            <div className="pos-card p-5 flex flex-col h-full" data-testid="pos-cart">
               {/* Cart Header - Fixed at top */}
-              <div className="flex-shrink-0 mb-4">
-                <h2 className="text-xl font-bold text-center" style={{ color: '#FF6B00' }}>
-                  {STRINGS.CART_TITLE}
+              <div className="flex-shrink-0 mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-extrabold pos-ink flex items-center gap-3">
+                  Carrito
+                  {cart.length > 0 && <span className="pos-count pos-num">{cart.length}</span>}
                 </h2>
+                {cart.length > 3 && <span className="text-xs font-semibold pos-muted">Deslizá para ver más</span>}
               </div>
 
               {/* Cart Items - Scrollable area */}
@@ -977,7 +994,7 @@ export default function POSPage() {
               </div>
 
               {/* Cart Summary - Fixed at bottom */}
-              <div className="border-t-4 pt-3 bg-black flex-shrink-0" style={{ borderColor: '#FF6B00' }}>
+              <div className="flex-shrink-0">
                 <CartSummary 
                   total={total}
                   itemCount={cart.length}
@@ -990,8 +1007,8 @@ export default function POSPage() {
       </div>
 
       {/* Keyboard Guide - Fixed at bottom */}
-      <div className="bg-black border-t-2 border-gray-700 flex-shrink-0">
-        <div className="max-w-7xl mx-auto p-4">
+      <div className="pos-header flex-shrink-0" style={{ borderTop: '1px solid var(--pos-line)', borderBottom: 0 }}>
+        <div className="max-w-7xl mx-auto px-4 py-3">
           <KeyboardGuide variant="main" onKeyPress={handleKeyPress} />
         </div>
       </div>
@@ -1070,16 +1087,16 @@ export default function POSPage() {
 
       {/* Persistent MP payment banner */}
       {lastPayment && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-green-700 border-4 border-green-400 text-white px-6 py-4 rounded-xl shadow-2xl max-w-sm">
+        <div className="pos-mp-banner">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm font-semibold text-green-300 mb-1">Pago recibido</div>
-              <div className="text-2xl font-bold">{formatMoney(lastPayment.amount)}</div>
-              <div className="text-sm text-green-200 mt-1">{lastPayment.method}</div>
+              <div className="pos-chip is-mp mb-2"><span className="pos-dot" /> Pago recibido</div>
+              <div className="text-3xl font-extrabold pos-ink pos-num">{formatMoney(lastPayment.amount)}</div>
+              <div className="text-sm pos-muted mt-1">{lastPayment.method}</div>
             </div>
             <button
               onClick={clearLastPayment}
-              className="text-green-300 hover:text-white text-xl font-bold leading-none mt-1"
+              className="pos-muted hover:opacity-70 text-xl font-bold leading-none mt-1"
             >
               ✕
             </button>
@@ -1093,10 +1110,10 @@ export default function POSPage() {
       <SubscriptionBlockedScreen isOpen={subscription.blocked} onRetry={() => void subscription.refresh()} onLogout={logout} />
 
       {/* Loading overlay for processing sales */}
-      <Modal isOpen={isProcessing} onClose={() => {}} hideClose closeOnEsc={false} tone="dark" size="xs" accent="primary">
+      <Modal isOpen={isProcessing} onClose={() => {}} hideClose closeOnEsc={false} size="xs" accent="primary">
         <div className="text-center py-4">
-          <div className="text-4xl mb-4">⏳</div>
-          <div className="text-xl text-blue-400">Procesando venta...</div>
+          <div className="animate-spin rounded-full h-10 w-10 border-4 mx-auto mb-4" style={{ borderColor: 'var(--pos-primary-soft)', borderTopColor: 'var(--pos-primary)' }} />
+          <div className="text-lg font-bold pos-ink">Registrando venta…</div>
         </div>
       </Modal>
     </div>

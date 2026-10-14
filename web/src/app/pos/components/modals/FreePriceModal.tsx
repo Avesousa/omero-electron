@@ -20,7 +20,7 @@ export function FreePriceModal({ show, currentInput, onConfirm, onClose }: Props
       isOpen
       onClose={onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="warning"
       size="sm"
       title="Precio libre"

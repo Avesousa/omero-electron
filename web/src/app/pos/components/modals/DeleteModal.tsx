@@ -28,7 +28,7 @@ export const DeleteModal = ({
 }: DeleteModalProps) => {
   if (!show) return null
 
-  const common = { isOpen: true as const, onClose, closeOnEsc: false, tone: 'dark' as const, accent: 'brand' as const, size: 'full' as const }
+  const common = { isOpen: true as const, onClose, closeOnEsc: false, accent: 'brand' as const, size: 'full' as const }
 
   if (showClearConfirmation) {
     return (

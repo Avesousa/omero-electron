@@ -52,7 +52,7 @@ export const ProductsModal = ({
       isOpen
       onClose={onClose}
       closeOnEsc={false}
-      tone="dark"
+     
       accent="brand"
       size="full"
       title="Productos disponibles"
