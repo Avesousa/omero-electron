@@ -50,34 +50,34 @@ export function MpTransactionsModal({ show, listRef, onClose }: Props) {
       title="Transacciones MercadoPago (hoy)"
       subtitle={`${transactions.length} movimientos`}
       flush
-      footer={<span className="text-gray-500 text-sm w-full text-center">↑ ↓ para desplazar · Esc para cerrar</span>}
+      footer={<span className="pos-muted text-sm w-full text-center"><span className="pos-kbd is-light">↑</span> <span className="pos-kbd is-light">↓</span> para desplazar · <span className="pos-kbd is-light">Esc</span> para cerrar</span>}
     >
       {/* listRef debe ser el contenedor con scroll (el teclado del POS lo desplaza con scrollBy) */}
       <div ref={listRef} className="p-4 sm:p-5 overflow-y-auto max-h-[calc(100dvh-12rem)]">
-        {loading && <div className="text-center text-gray-400 py-12 text-xl">Cargando...</div>}
-        {error && <div className="text-center text-red-400 py-12 text-lg">{error}</div>}
+        {loading && <div className="text-center pos-muted py-12 text-xl">Cargando...</div>}
+        {error && <div className="text-center pos-danger py-12 text-lg">{error}</div>}
         {!loading && !error && transactions.length === 0 && (
-          <div className="text-center text-gray-500 py-12 text-lg">Sin transacciones hoy</div>
+          <div className="text-center pos-muted py-12 text-lg">Sin transacciones hoy</div>
         )}
 
         {!loading && !error && transactions.length > 0 && (
           <div className="space-y-2">
             {transactions.map(t => (
-              <div key={t.id} className="o-row p-3 flex items-center justify-between gap-4">
+              <div key={t.id} className="pos-line justify-between">
                 <div>
-                  <div className="text-xl font-bold text-green-400">{fmt(t.amount)}</div>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xl font-extrabold pos-num pos-ink">{fmt(t.amount)}</div>
+                  <div className="text-xs pos-muted mt-0.5">
                     {fmtTime(t.occurredAt)} · {mpPaymentLabel(t.paymentTypeId)}
                     {t.direction === 'OUTGOING' && ' · Saliente'}
                   </div>
                 </div>
                 {t.saleId !== null ? (
                   <div className="text-right">
-                    <div className="text-green-400 font-bold">Venta #{t.saleId}</div>
-                    {t.saleTotal !== null && <div className="text-xs text-gray-400">{fmt(t.saleTotal)}</div>}
+                    <span className="pos-chip is-ok">Venta #{t.saleId}</span>
+                    {t.saleTotal !== null && <div className="text-xs pos-muted pos-num mt-1">{fmt(t.saleTotal)}</div>}
                   </div>
                 ) : (
-                  <div className="text-yellow-400 font-bold">Sin venta</div>
+                  <span className="pos-chip is-warn">Sin venta</span>
                 )}
               </div>
             ))}

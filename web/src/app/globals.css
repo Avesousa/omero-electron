@@ -220,35 +220,6 @@ input::placeholder, textarea::placeholder {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   POS LAYOUT EXCEPTION — protege la interfaz del cajero de
-   los overrides del design system. El POS es siempre oscuro.
-   ═══════════════════════════════════════════════════════════ */
-.pos-layout,
-.pos-layout * {
-  --c-text: #ffffff;
-}
-.pos-layout .bg-black\/30,
-.pos-layout .bg-black\/20 { background: rgba(0,0,0,.3) !important; }
-.pos-layout .bg-black\/50 { background: rgba(0,0,0,.5) !important; }
-.pos-layout .bg-black\/70 { background: rgba(0,0,0,.7) !important; }
-.pos-layout .bg-black\/80,
-.pos-layout .bg-black\/90 { background: rgba(0,0,0,.8) !important; }
-.pos-layout .bg-gray-800,
-.pos-layout .bg-gray-800\/50 { background: #1f2937 !important; }
-.pos-layout .bg-gray-700  { background: #374151 !important; }
-.pos-layout .bg-gray-900,
-.pos-layout .bg-gray-900\/50 { background: #111827 !important; }
-.pos-layout .bg-gray-600  { background: #4b5563 !important; }
-.pos-layout .text-white   { color: #ffffff !important; }
-.pos-layout .text-gray-400,
-.pos-layout .text-gray-500 { color: #9ca3af !important; }
-.pos-layout .text-gray-300,
-.pos-layout .text-gray-200 { color: #d1d5db !important; }
-.pos-layout .border-gray-700,
-.pos-layout .border-gray-600 { border-color: #374151 !important; }
-.pos-layout .border-gray-800  { border-color: #1f2937 !important; }
-
-/* ═══════════════════════════════════════════════════════════
    COMPONENTES GLOBALES — clases reutilizables
    ═══════════════════════════════════════════════════════════ */
 

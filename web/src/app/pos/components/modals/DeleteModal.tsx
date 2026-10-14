@@ -34,15 +34,15 @@ export const DeleteModal = ({
     return (
       <Modal {...common} size="md" accent="danger" title={STRINGS.DELETE_CLEAR_TITLE} hideClose>
         <div className="text-center py-2">
-          <div className="text-6xl mb-4">🗑️</div>
-          <div className="text-lg text-gray-300 mb-6">
+          <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-[28px] bg-[var(--pos-danger-soft)] text-5xl">🗑️</div>
+          <div className="mb-6 text-lg font-semibold text-[var(--pos-ink-2)]">
             {STRINGS.DELETE_CLEAR_SUBTITLE} {cart.length} {STRINGS.CART_ITEMS_COUNT}
           </div>
           <div className="space-y-3">
-            <button onClick={onClearAll} className="o-btn o-btn-danger w-full !py-4 !text-lg">
+            <button onClick={onClearAll} className="o-btn o-btn-danger w-full !rounded-2xl !py-4 !text-lg">
               {STRINGS.DELETE_CLEAR_CONFIRM}
             </button>
-            <button onClick={onCancelClear} className="o-btn o-btn-secondary w-full">
+            <button onClick={onCancelClear} className="o-btn o-btn-secondary w-full !rounded-2xl">
               {STRINGS.DELETE_CLEAR_CANCEL}
             </button>
           </div>
@@ -58,7 +58,7 @@ export const DeleteModal = ({
       subtitle={`Total: ${cart.length} ${STRINGS.CART_ITEMS_COUNT}`}
       footer={
         <div className="w-full text-center">
-          <div className="text-sm text-gray-300 mb-2">
+          <div className="mb-3 text-sm text-[var(--pos-muted)]">
             <div>{STRINGS.DELETE_INSTRUCTION_1}</div>
             <div>{STRINGS.DELETE_INSTRUCTION_2}</div>
           </div>
@@ -67,23 +67,23 @@ export const DeleteModal = ({
       }
     >
       {/* Índice a eliminar */}
-      <div className="flex items-center justify-end gap-3 mb-4">
-        <div className="text-xs text-gray-400">{STRINGS.DELETE_INDEX_LABEL}</div>
-        <div className="o-row px-3 py-2 min-w-[60px]">
-          <div className="text-xl font-mono font-bold text-purple-400 text-center">{deleteInput || '---'}</div>
+      <div className="mb-5 flex items-center justify-end gap-3">
+        <div className="pos-eyebrow">{STRINGS.DELETE_INDEX_LABEL}</div>
+        <div className="min-w-[72px] rounded-2xl border-2 border-[var(--pos-danger)] bg-[var(--pos-danger-soft)] px-4 py-2">
+          <div className="pos-num text-center text-2xl font-extrabold text-[var(--pos-danger)]">{deleteInput || '---'}</div>
         </div>
       </div>
 
       {/* Productos ocupando todo el ancho */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
         {[...cart].reverse().map((item, reverseIndex) => (
-          <div key={item.id} className="o-row p-2 flex flex-col">
-            <div className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-xs mx-auto mb-1">
+          <div key={item.id} className="pos-line !flex-col !items-stretch !gap-1 !p-3 hover:!border-[var(--pos-danger)]">
+            <div className="pos-line-idx mx-auto mb-1">
               {reverseIndex + 1}
             </div>
-            <div className="text-white font-medium text-xs text-center truncate mb-1">{item.name}</div>
-            <div className="text-gray-400 text-xs text-center mb-1">{STRINGS.PRODUCT_QUANTITY} {lineQuantityLabel(item)}</div>
-            <div className="text-green-400 font-bold text-xs text-center">{formatMoney(item.total)}</div>
+            <div className="text-[var(--pos-ink)] font-semibold text-sm text-center truncate">{item.name}</div>
+            <div className="text-[var(--pos-muted)] text-xs text-center">{STRINGS.PRODUCT_QUANTITY} {lineQuantityLabel(item)}</div>
+            <div className="pos-num text-[var(--pos-primary)] font-extrabold text-sm text-center">{formatMoney(item.total)}</div>
           </div>
         ))}
       </div>

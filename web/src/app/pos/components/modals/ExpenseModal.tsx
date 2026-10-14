@@ -43,16 +43,16 @@ export const ExpenseModal = ({
     >
       <div className="text-center space-y-5">
         {/* Monto Display */}
-        <div className="o-row p-6">
-          <div className="text-sm text-gray-400 mb-2 tracking-wide">MONTO</div>
-          <div className="text-5xl font-mono font-bold text-red-400">${amount || '0'}</div>
+        <div className="pos-entry !border-[var(--pos-danger)] !shadow-[0_0_0_6px_var(--pos-danger-soft)]">
+          <div className="pos-eyebrow mb-2">MONTO</div>
+          <div className="v pos-num !text-[var(--pos-danger)]">${amount || '0'}</div>
         </div>
 
-        <div className="text-sm text-gray-400">Ingrese el monto y presione ENTER para confirmar</div>
+        <div className="text-sm text-[var(--pos-muted)]">Ingrese el monto y presione ENTER para confirmar</div>
 
         {isProcessing && (
-          <div className="flex items-center justify-center space-x-3 text-red-400">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-red-400"></div>
+          <div className="flex items-center justify-center space-x-3 text-[var(--pos-danger)]">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--pos-danger)]"></div>
             <div className="font-bold">Registrando gasto...</div>
           </div>
         )}
