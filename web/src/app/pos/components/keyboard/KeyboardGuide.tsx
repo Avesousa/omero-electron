@@ -11,90 +11,73 @@ const DISPLAY_TO_ACTION: Record<string, string> = {
   'Esc': 'Escape',
 }
 
-export const KeyboardGuide = ({ variant = 'main', onKeyPress }: KeyboardGuideProps) => {
-  const getGuideConfig = () => {
-    switch (variant) {
-      case 'payment':
-        return {
-          keys: [
-            { key: '0-9', label: STRINGS.KEY_WRITE, color: 'text-yellow-400' },
-            { key: 'Enter', label: STRINGS.KEY_PAY, color: 'text-green-400' },
-            { key: 'Esc', label: STRINGS.KEY_BACK, color: 'text-blue-400' },
-            { key: '⌫', label: STRINGS.KEY_BACKSPACE, color: 'text-red-400' }
-          ]
-        }
-      case 'delete':
-        return {
-          keys: [
-            { key: '0-9', label: STRINGS.KEY_WRITE, color: 'text-purple-400' },
-            { key: '-', label: STRINGS.KEY_DELETE, color: 'text-red-400' },
-            { key: '⌫', label: STRINGS.KEY_BACKSPACE, color: 'text-yellow-400' },
-            { key: 'Esc', label: STRINGS.KEY_EXIT, color: 'text-gray-400' }
-          ]
-        }
-      case 'expense':
-        return {
-          keys: [
-            { key: '0-9', label: STRINGS.KEY_WRITE, color: 'text-yellow-400' },
-            { key: 'Enter', label: 'Confirmar', color: 'text-green-400' },
-            { key: 'Esc', label: STRINGS.KEY_BACK, color: 'text-gray-400' },
-            { key: '⌫', label: STRINGS.KEY_BACKSPACE, color: 'text-red-400' }
-          ]
-        }
-      case 'products':
-        return {
-          keys: [
-            { key: '0-9', label: 'Buscar', color: 'text-yellow-400' },
-            { key: 'Esc', label: STRINGS.KEY_BACK, color: 'text-gray-400' },
-            { key: '⌫', label: STRINGS.KEY_BACKSPACE, color: 'text-red-400' }
-          ]
-        }
-      default:
-        return {
-          keys: [
-            { key: '+', label: STRINGS.KEY_ADD, color: 'text-green-400' },
-            { key: 'Enter', label: STRINGS.KEY_FINALIZE, color: 'text-blue-400' },
-            { key: '/', label: 'Productos', color: 'text-purple-400' },
-            { key: '.', label: 'Gasto', color: 'text-red-400' },
-            { key: '*', label: 'Multiplicar', color: 'text-blue-400' },
-            { key: '-', label: STRINGS.KEY_DELETE, color: 'text-purple-400' },
-            { key: 'Tab', label: 'Resumen', color: 'text-cyan-400' },
-            { key: 'T', label: 'MP', color: 'text-cyan-400' },
-            { key: 'Esc', label: STRINGS.KEY_BACK, color: 'text-gray-400' },
-            { key: '⌫', label: STRINGS.KEY_BACKSPACE, color: 'text-orange-400' }
-          ]
-        }
-    }
-  }
+type Tone = 'blue' | 'green' | 'orange' | 'red' | 'violet' | 'mp' | 'gray'
+type GuideKey = { key: string; label: string; tone: Tone }
 
-  const { keys } = getGuideConfig()
+const GUIDES: Record<NonNullable<KeyboardGuideProps['variant']>, GuideKey[]> = {
+  payment: [
+    { key: '0-9', label: STRINGS.KEY_WRITE, tone: 'blue' },
+    { key: 'Enter', label: STRINGS.KEY_PAY, tone: 'green' },
+    { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
+  ],
+  delete: [
+    { key: '0-9', label: STRINGS.KEY_WRITE, tone: 'violet' },
+    { key: '-', label: STRINGS.KEY_DELETE, tone: 'red' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'orange' },
+    { key: 'Esc', label: STRINGS.KEY_EXIT, tone: 'gray' },
+  ],
+  expense: [
+    { key: '0-9', label: STRINGS.KEY_WRITE, tone: 'blue' },
+    { key: 'Enter', label: 'Confirmar', tone: 'green' },
+    { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
+  ],
+  products: [
+    { key: '0-9', label: 'Buscar', tone: 'blue' },
+    { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
+  ],
+  main: [
+    { key: '+', label: STRINGS.KEY_ADD, tone: 'green' },
+    { key: 'Enter', label: 'Cobrar', tone: 'orange' },
+    { key: '*', label: 'Cantidad', tone: 'blue' },
+    { key: '/', label: 'Productos', tone: 'violet' },
+    { key: '.', label: 'Gasto', tone: 'red' },
+    { key: '-', label: STRINGS.KEY_DELETE, tone: 'red' },
+    { key: 'Tab', label: 'Resumen', tone: 'blue' },
+    { key: 'T', label: 'Mercado Pago', tone: 'mp' },
+    { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'gray' },
+  ],
+}
+
+export const KeyboardGuide = ({ variant = 'main', onKeyPress }: KeyboardGuideProps) => {
+  const keys = GUIDES[variant]
 
   const handleClick = (key: string) => {
     if (!onKeyPress) return
-    const action = DISPLAY_TO_ACTION[key] ?? key
-    onKeyPress(action)
+    onKeyPress(DISPLAY_TO_ACTION[key] ?? key)
   }
 
   // Teclas que representan rangos (no disparan una acción única)
   const isRange = (key: string) => key.includes('-') && key !== '-'
 
   return (
-    <div className="bg-gray-800 border-2 border-gray-600 p-3">
-      <div className="flex flex-wrap justify-center gap-2">
-        {keys.map(({ key, label, color }, index) => {
-          const clickable = onKeyPress && !isRange(key)
-          return (
-            <div
-              key={index}
-              className={`flex flex-col items-center justify-center w-20 h-16 px-2 py-2 bg-gray-900 border-2 border-gray-600 rounded ${clickable ? 'cursor-pointer hover:border-gray-400 hover:bg-gray-700 active:scale-95 active:bg-gray-600 transition-all' : 'opacity-60'}`}
-              onClick={clickable ? () => handleClick(key) : undefined}
-            >
-              <span className={`${color} font-bold text-xl flex items-center justify-center h-6`}>{key}</span>
-              <span className="text-gray-400 text-xs flex items-center justify-center h-4 mt-1">{label}</span>
-            </div>
-          )
-        })}
-      </div>
+    <div className="pos-keys">
+      {keys.map(({ key, label, tone }) => {
+        const clickable = Boolean(onKeyPress) && !isRange(key)
+        return (
+          <div
+            key={key}
+            className={`pos-key k-${tone} ${clickable ? '' : 'is-static'}`}
+            onClick={clickable ? () => handleClick(key) : undefined}
+          >
+            <span className="pos-key-glyph">{key}</span>
+            <span className="pos-key-label">{label}</span>
+          </div>
+        )
+      })}
     </div>
   )
-} 
+}

@@ -16,13 +16,13 @@ export function UpdateBanner({ update }: Props) {
   if (!update || dismissed) return null
 
   return (
-    <div className="flex items-center gap-2" data-testid="update-banner">
+    <div className="pos-chip is-mp" data-testid="update-banner">
       <a
         href={update.url}
         target="_blank"
         rel="noopener noreferrer"
         title="Abrir la página de descarga en GitHub"
-        className="bg-blue-600 text-white text-sm font-bold px-3 py-1 rounded-full hover:bg-blue-500"
+        className="pos-btn is-mp !px-3 !py-1 !text-sm !rounded-full hover:brightness-105"
       >
         Nueva versión {update.version} disponible — descargala
       </a>
@@ -31,7 +31,7 @@ export function UpdateBanner({ update }: Props) {
         onClick={() => setDismissed(true)}
         title="Ocultar aviso"
         aria-label="Ocultar aviso de nueva versión"
-        className="text-gray-400 hover:text-white text-sm px-1"
+        className="text-[var(--pos-muted)] hover:text-[var(--pos-ink)] text-sm px-1 cursor-pointer"
       >
         ✕
       </button>

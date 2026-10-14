@@ -41,12 +41,13 @@ export function ConnectionStatus({ status, pendingCount, reviewCount = 0, onOpen
   const checkedAt = status.lastCheckedAt ? new Date(status.lastCheckedAt).toLocaleTimeString('es-AR') : null
 
   return (
-    <div className="flex items-center gap-3" data-testid="connection-status">
+    <div className="flex items-center gap-2" data-testid="connection-status">
       {!status.online && (
         <span
-          className="bg-red-600 text-white text-sm font-bold px-3 py-1 rounded-full"
+          className="pos-chip is-bad"
           title={checkedAt ? `Última verificación: ${checkedAt}` : undefined}
         >
+          <span className="pos-dot" />
           Sin conexión con el servidor{cacheText}
         </span>
       )}
@@ -56,18 +57,18 @@ export function ConnectionStatus({ status, pendingCount, reviewCount = 0, onOpen
           onClick={onOpenList}
           disabled={!onOpenList}
           title="Ver lo que falta subir"
-          className="bg-amber-500 text-black text-sm font-bold px-3 py-1 rounded-full disabled:cursor-default"
+          className="pos-chip is-warn disabled:cursor-default"
         >
           {pendingCount} pendiente{pendingCount !== 1 ? 's' : ''} sin sync
         </button>
       )}
       {pendingCount > 0 && syncBlock === 'unauthorized' && (
-        <span className="bg-red-600 text-white text-sm font-bold px-3 py-1 rounded-full" data-testid="sync-blocked">
+        <span className="pos-chip is-bad" data-testid="sync-blocked">
           Sesión vencida: iniciá sesión para subirlas
         </span>
       )}
       {pendingCount > 0 && syncBlock === 'unsupported' && (
-        <span className="bg-red-600 text-white text-sm font-bold px-3 py-1 rounded-full" data-testid="sync-blocked">
+        <span className="pos-chip is-bad" data-testid="sync-blocked">
           El servidor aún no acepta la sincronización
         </span>
       )}
@@ -77,7 +78,7 @@ export function ConnectionStatus({ status, pendingCount, reviewCount = 0, onOpen
           onClick={onOpenList}
           disabled={!onOpenList}
           title="Ver ventas y gastos para revisar"
-          className="bg-orange-600 text-white text-sm font-bold px-3 py-1 rounded-full disabled:cursor-default"
+          className="pos-chip is-warn disabled:cursor-default"
         >
           {reviewCount} para revisar
         </button>
@@ -86,8 +87,7 @@ export function ConnectionStatus({ status, pendingCount, reviewCount = 0, onOpen
         onClick={() => void status.check()}
         disabled={status.checking}
         title="Verificar conexión con el servidor"
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{ borderColor: '#FF6B00', color: '#FF6B00', background: 'transparent' }}
+        className="pos-chip cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span className={status.checking ? 'animate-spin inline-block' : 'inline-block'}>↻</span>
         <span>{status.checking ? 'Verificando…' : 'Actualizar'}</span>

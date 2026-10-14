@@ -77,7 +77,7 @@ function press(keys: string) {
 
 async function openPos() {
   render(<POSPage />)
-  await waitFor(() => expect(screen.getByText('CARRITO DE COMPRAS')).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByTestId('pos-cart')).toBeInTheDocument())
   await act(async () => { await new Promise(r => setTimeout(r, 0)) }) // promociones y configuración de balanza
 }
 const panel = () => screen.queryByTestId('weight-entry')
@@ -85,7 +85,7 @@ const panel = () => screen.queryByTestId('weight-entry')
 const $ = (n: number) => formatMoney(n)
 /** Para getByText, que normaliza los espacios duros del símbolo. */
 const text$ = (n: number) => $(n).replace(/\u00a0/g, ' ')
-const cartText = () => screen.getByText('CARRITO DE COMPRAS').closest('div')!.parentElement!.textContent ?? ''
+const cartText = () => screen.getByTestId('pos-cart').textContent ?? ''
 
 describe('POS: productos por peso', () => {
   it('un producto por unidad se agrega como siempre, sin panel', async () => {
@@ -155,7 +155,7 @@ describe('POS: productos por peso', () => {
     press('0 . 5 Enter')
     expect(cartText()).toContain('0,500 kg')
     expect(cartText()).not.toContain('0,350 kg')
-    expect(cartText()).toContain('1 productos')
+    expect(cartText()).toContain('1 producto')
   })
 
   it('no deja vender más kilos que el stock', async () => {
@@ -211,7 +211,7 @@ describe('POS: etiquetas de balanza', () => {
     press(LABEL_QUESO_4200.split('').join(' '))
     expect(panel()).not.toBeInTheDocument()
     expect(cartText()).toContain('Queso cremoso')
-    expect(cartText()).toContain('ETIQUETA')
+    expect(cartText()).toContain('Etiqueta')
     expect(cartText()).toContain('0,525 kg')
     expect(cartText()).toContain($(4200))
   })
