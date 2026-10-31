@@ -2,10 +2,11 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { postLogin } from '@/shared/services/authService'
+import { postLogin, postLoginKey } from '@/shared/services/authService'
 import { setSession, clearSession, getSessionUser } from '@/lib/sessionManager'
 import { logoutWarning, pendingOutboxCount, wipeLocalCatalogCache } from '@/lib/localCache'
 import { deviceLogout } from '@/lib/deviceSession'
+import { saveLoginHint } from '@/lib/loginHint'
 import { useSessionRenewal } from '@/lib/useSessionRenewal'
 import type { AuthContextValue, AuthState, LoginCredentials } from '@/shared/types/auth'
 
@@ -40,11 +41,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
   })
 
-  const login = useCallback(async ({ email, password, redirectTo }: LoginCredentials) => {
+  const login = useCallback(async (credentials: LoginCredentials) => {
+    const { redirectTo } = credentials
     setState(s => ({ ...s, isLoading: true, error: null }))
 
     try {
-      const result = await postLogin({ email, password })
+      const result = 'key' in credentials
+        ? await postLoginKey({ tenantId: credentials.tenantId, key: credentials.key })
+        : await postLogin({ email: credentials.email, password: credentials.password })
 
       if (!result.success) {
         setState(s => ({ ...s, isLoading: false, error: result.error || 'Error al iniciar sesión.' }))
@@ -53,6 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { accessToken: jwt, user } = result.data
       setSession(jwt, user)
+      // Recuerda el negocio de esta caja y si ofrece clave numérica (los próximos logins pueden usarla). No espera.
+      void saveLoginHint({ tenantId: user.tenantId, quickKeyLoginEnabled: result.data.quickKeyLoginEnabled === true })
       setState({ user, isAuthenticated: true, isLoading: false, error: null })
 
       let destination = '/'

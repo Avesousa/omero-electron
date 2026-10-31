@@ -34,6 +34,8 @@ export const POS_ALLOWLIST: Rule[] = [
   { method: 'POST', pattern: '/api/expenses' },
   { method: 'POST', pattern: '/api/sync/batch' },
   { method: 'POST', pattern: '/api/auth/**' },
+  // Público (sin token, no pasa por el scope filter del backend): ¿el negocio ofrece login con clave numérica?
+  { method: 'GET', pattern: '/api/auth/login-options/*' },
 ]
 
 function matches(pattern: string, p: string): boolean {

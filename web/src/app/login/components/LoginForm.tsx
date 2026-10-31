@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchDeviceInfo, loginReasonMessage, reasonFor, renewSession } from '@/lib/deviceSession'
+import { classifyIdentifier, DEFAULT_KEY_MAX, DEFAULT_KEY_MIN, fetchLoginOptions, loadLoginHint, saveLoginHint, type LoginHint } from '@/lib/loginHint'
 import { useAuth } from '@/shared'
 import {
   sanitizeEmail,
@@ -49,6 +50,34 @@ export function LoginForm() {
   }, [reason, redirectTo, router])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+
+  // Login con clave numérica: solo si esta caja ya hizo un login con email (hay tenantId guardado) Y el negocio la
+  // tiene habilitada. La primera vez en una caja siempre es email + contraseña. El flag se refresca con el backend
+  // cuando hay conexión; sin conexión vale el último conocido.
+  const [hint, setHint] = useState<LoginHint | null>(null)
+  const [keyBounds, setKeyBounds] = useState({ min: DEFAULT_KEY_MIN, max: DEFAULT_KEY_MAX })
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const saved = await loadLoginHint()
+      if (cancelled || !saved) return
+      setHint(saved)
+      const options = await fetchLoginOptions(saved.tenantId)
+      if (cancelled || !options) return
+      setKeyBounds({ min: options.quickKeyMinLength, max: options.quickKeyMaxLength })
+      if (options.quickKeyLoginEnabled !== saved.quickKeyLoginEnabled) {
+        const next = { ...saved, quickKeyLoginEnabled: options.quickKeyLoginEnabled }
+        setHint(next)
+        void saveLoginHint(next)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const quickKeyAvailable = hint?.quickKeyLoginEnabled === true
+  // Con el modo habilitado, lo escrito es una clave (solo dígitos, largo válido) o un email; si es clave no hay contraseña
+  const keyMode = quickKeyAvailable && classifyIdentifier(email, keyBounds.min, keyBounds.max) === 'key'
   const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [touched, setTouched] = useState<{ email: boolean; password: boolean }>({
@@ -68,15 +97,23 @@ export function LoginForm() {
     if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: undefined }))
   }, [fieldErrors.password])
 
+  const keyModeRef = keyMode
   const handleBlur = useCallback((field: 'email' | 'password') => {
     setTouched(prev => ({ ...prev, [field]: true }))
+    if (keyModeRef) return // una clave no es un email: no se valida como tal
     const errors = validateLoginForm(email, password)
     setFieldErrors(prev => ({ ...prev, [field]: errors[field] }))
-  }, [email, password])
+  }, [email, password, keyModeRef])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setTouched({ email: true, password: true })
+
+    if (keyMode && hint) {
+      setFieldErrors({})
+      await login({ tenantId: hint.tenantId, key: email, redirectTo })
+      return
+    }
 
     const errors = validateLoginForm(email, password)
     if (Object.keys(errors).length > 0) {
@@ -129,7 +166,7 @@ export function LoginForm() {
         <form onSubmit={handleSubmit} noValidate className={styles.form}>
           <div className={styles.field}>
             <label htmlFor="login-email" className={styles.label}>
-              Email
+              {quickKeyAvailable ? 'Email o clave' : 'Email'}
             </label>
             <div className={styles.inputWrap}>
               <svg className={styles.inputIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -138,10 +175,10 @@ export function LoginForm() {
               </svg>
               <input
                 id="login-email"
-                type="email"
-                autoComplete="email"
+                type={quickKeyAvailable ? 'text' : 'email'}
+                autoComplete={quickKeyAvailable ? 'username' : 'email'}
                 required
-                placeholder="usuario@email.com"
+                placeholder={quickKeyAvailable ? 'usuario@email.com o clave' : 'usuario@email.com'}
                 value={email}
                 onChange={handleEmailChange}
                 onBlur={() => handleBlur('email')}
@@ -159,6 +196,11 @@ export function LoginForm() {
             )}
           </div>
 
+          {keyMode ? (
+            <p className={styles.subtitle} role="status" data-testid="key-mode-hint">
+              Ingresando con tu clave: no hace falta la contraseña.
+            </p>
+          ) : (
           <div className={styles.field}>
             <label htmlFor="login-password" className={styles.label}>
               Contraseña
@@ -210,6 +252,7 @@ export function LoginForm() {
               </p>
             )}
           </div>
+          )}
 
           <button
             id="login-submit"
