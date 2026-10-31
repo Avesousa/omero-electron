@@ -2,7 +2,7 @@ import { proxyToBackend } from '../backend-proxy'
 import { getDeviceState } from './device-state'
 
 /**
- * Login del POS desktop (fase 4): `POST /api/auth/login` se intercepta para registrar la caja.
+ * Login del POS desktop (fase 4): `POST /api/auth/login` (y `/login-key`) se intercepta para registrar la caja.
  *
  *  - Se agrega `device{deviceId,name,platform,appVersion}` al cuerpo (lo conoce Electron; el renderer no).
  *  - El backend responde el `deviceSecret`: se guarda en memoria (y Electron lo persiste cifrado) y se QUITA de la
@@ -11,8 +11,11 @@ import { getDeviceState } from './device-state'
  *  - Un backend viejo no devuelve `deviceSecret`: la respuesta pasa igual (sin sesión larga).
  */
 
+/** `POST /api/auth/login` (email) y `POST /api/auth/login-key` (clave numérica): ambos registran la caja igual. */
 export function isLoginRoute(method: string, pathname: string): boolean {
-  return method.toUpperCase() === 'POST' && pathname.replace(/\/+$/, '') === '/api/auth/login'
+  if (method.toUpperCase() !== 'POST') return false
+  const p = pathname.replace(/\/+$/, '')
+  return p === '/api/auth/login' || p === '/api/auth/login-key'
 }
 
 export async function handleLogin(request: Request): Promise<Response> {

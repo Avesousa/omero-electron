@@ -21,7 +21,11 @@ vi.mock('@/lib/sessionManager', () => ({
   getSessionUser: () => ({ id: '1', email: 'cajero@x.com', name: 'Cajero' }),
   authHeaders: () => ({ Authorization: 'Bearer tok' }),
 }))
-vi.mock('@/shared/services/authService', () => ({ postLogin: vi.fn() }))
+const postLogin = vi.fn()
+const postLoginKey = vi.fn()
+vi.mock('@/shared/services/authService', () => ({ postLogin: (...a: unknown[]) => postLogin(...a), postLoginKey: (...a: unknown[]) => postLoginKey(...a) }))
+const saveLoginHint = vi.fn(async () => {})
+vi.mock('@/lib/loginHint', () => ({ saveLoginHint: (h: unknown) => saveLoginHint(h) }))
 
 import { AuthProvider, useAuth } from './auth'
 
@@ -109,5 +113,68 @@ describe('expiración de sesión (401) NO borra la caché', () => {
     expect(wipeLocalCatalogCache).not.toHaveBeenCalled()
     Object.defineProperty(window, 'location', { value: originalLocation, writable: true, configurable: true })
     vi.unstubAllGlobals()
+  })
+})
+
+const TENANT = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
+const loginOk = (extra: Record<string, unknown> = {}) => ({
+  success: true as const,
+  data: { accessToken: 'jwt', refreshToken: 'r', expiresIn: '3600', user: { id: '1', tenantId: TENANT }, ...extra },
+})
+
+function LoginButtons() {
+  const { login, error } = useAuth()
+  return (
+    <>
+      <button onClick={() => void login({ email: 'a@x.com', password: 'secreto123' })}>email</button>
+      <button onClick={() => void login({ tenantId: TENANT, key: '12345678' })}>clave</button>
+      <span data-testid="err">{error}</span>
+    </>
+  )
+}
+
+describe('AuthProvider.login (email y clave numérica)', () => {
+  beforeEach(() => {
+    postLogin.mockReset()
+    postLoginKey.mockReset()
+    saveLoginHint.mockClear()
+  })
+
+  it('con email usa /login y guarda la pista (tenant + si el negocio ofrece clave)', async () => {
+    postLogin.mockResolvedValue(loginOk({ quickKeyLoginEnabled: true }))
+    render(<AuthProvider><LoginButtons /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'email' }).click() })
+    expect(postLogin).toHaveBeenCalledWith({ email: 'a@x.com', password: 'secreto123' })
+    expect(postLoginKey).not.toHaveBeenCalled()
+    expect(saveLoginHint).toHaveBeenCalledWith({ tenantId: TENANT, quickKeyLoginEnabled: true })
+    expect(push).toHaveBeenCalledWith('/')
+  })
+
+  it('un backend viejo (sin el campo) guarda la pista con la clave apagada', async () => {
+    postLogin.mockResolvedValue(loginOk())
+    render(<AuthProvider><LoginButtons /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'email' }).click() })
+    expect(saveLoginHint).toHaveBeenCalledWith({ tenantId: TENANT, quickKeyLoginEnabled: false })
+  })
+
+  it('con clave usa /login-key con tenantId + clave (sin email ni contraseña)', async () => {
+    postLoginKey.mockResolvedValue(loginOk({ quickKeyLoginEnabled: true }))
+    render(<AuthProvider><LoginButtons /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'clave' }).click() })
+    expect(postLoginKey).toHaveBeenCalledWith({ tenantId: TENANT, key: '12345678' })
+    expect(postLogin).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/')
+  })
+
+  it('una clave incorrecta muestra el error del backend (en español) y no guarda nada', async () => {
+    postLoginKey.mockResolvedValue({ success: false, error: 'Clave incorrecta' })
+    render(<AuthProvider><LoginButtons /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'clave' }).click() })
+    expect(screen.getByTestId('err')).toHaveTextContent('Clave incorrecta')
+    expect(saveLoginHint).not.toHaveBeenCalled()
   })
 })
