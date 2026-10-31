@@ -83,9 +83,12 @@ async function failStartup(title: string, message: string): Promise<void> {
 async function startFrontendWithFallback(backendUrl: string): Promise<number> {
   const failedPorts = new Set<number>()
   for (let attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
+    const previousPort = [...failedPorts].pop()
     const port = await findFreePort({ skip: failedPorts })
     if (port === null) throw new Error('no hay ningún puerto local disponible (loopback)')
-    if (port !== PREFERRED_PORT) electronLogger.warn(`puerto ${PREFERRED_PORT} no disponible, usando ${port}`)
+    if (port !== PREFERRED_PORT) {
+      electronLogger.warn(`puerto ${previousPort ?? PREFERRED_PORT} no disponible, usando ${port}`)
+    }
 
     startFrontend(port, backendUrl)
     try {
@@ -96,6 +99,12 @@ async function startFrontendWithFallback(backendUrl: string): Promise<number> {
       stopAll()
       failedPorts.add(port)
       electronLogger.warn(`intento ${attempt}/${MAX_START_ATTEMPTS} en el puerto ${port} falló: ${err.message}`)
+      // Reintentar en otro puerto solo tiene sentido si el puerto estaba ocupado. Cualquier otro error
+      // del SO (p. ej. Winsock no inicializado) va a fallar igual en los próximos 3 puertos: cortar ya
+      // y subir el código de error para que quede en el log y en el diálogo de soporte.
+      if (err.errorCode && err.errorCode !== 'EADDRINUSE') {
+        throw new Error(`el Next local no pudo abrir un socket (error del sistema: ${err.errorCode})`)
+      }
     }
   }
   throw new Error(`el POS local no pudo arrancar tras ${MAX_START_ATTEMPTS} intentos (puertos ${[...failedPorts].join(', ')})`)
