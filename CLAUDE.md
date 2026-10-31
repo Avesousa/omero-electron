@@ -381,3 +381,11 @@ una caja con Windows en inglés salía `1,234.5`). La región sale de la zona ho
 `setMoneyLocaleFromConfig` y quedan guardadas en el navegador (`omero_money_locale`), así la primera pantalla ya sale
 con el formato correcto. Default: `es-AR` / `ARS`. `lib/quantity` usa los mismos separadores para kilos y unidades.
 Mismo `money.ts` en `omero` y `omero-electron/web`.
+
+### Login con clave numérica (branch: feature/login-clave-rapida)
+
+Backend: ver `omero-backend/CLAUDE.md` ("Login con clave numérica"). La primera vez en una caja el login es SIEMPRE email + contraseña.
+
+- **Pista de login** (`lib/login-hint/store.ts` + `/api/_local/login-hint` + renderer `lib/loginHint.ts`): tras cada login exitoso (`AuthProvider.login`) se guarda `{tenantId, quickKeyLoginEnabled}`. Desktop: archivo `<OMERO_DATA_DIR>/login-hint.json` (userData, sobrevive a reinicios y al logout; NO localStorage porque su origen incluye el puerto, que puede cambiar). Web: `localStorage`. No es secreto.
+- **`LoginForm`:** con pista y `quickKeyLoginEnabled`, el campo pasa a "Email o clave" (`type=text`). `classifyIdentifier`: solo dígitos con largo en [min, max] (6–10, o lo que informe `GET /api/auth/login-options/{tenantId}`) = clave → se oculta la contraseña y se envía `POST /api/auth/login-key {tenantId, key}`; cualquier otra cosa = email + contraseña. El flag se refresca al montar (sin conexión vale el último conocido).
+- **Desktop:** `session-proxy` intercepta también `/api/auth/login-key` (registra la caja y oculta el `deviceSecret`, igual que el login con email).

@@ -14,6 +14,8 @@ export interface LoginData{
   refreshToken: string
   expiresIn: string
   user: User
+  /** Si el negocio ofrece login con clave numérica (backend nuevo; ausente = no). */
+  quickKeyLoginEnabled?: boolean
 }
 
 export interface AuthState {
@@ -23,11 +25,21 @@ export interface AuthState {
   error: string | null
 }
 
-export interface LoginCredentials {
+/** Login con email + contraseña (siempre disponible; obligatorio la primera vez en una caja). */
+export interface EmailCredentials {
   email: string
   password: string
   redirectTo?: string
 }
+
+/** Login con clave numérica: tenant guardado en la caja + clave. */
+export interface KeyCredentials {
+  tenantId: string
+  key: string
+  redirectTo?: string
+}
+
+export type LoginCredentials = EmailCredentials | KeyCredentials
 
 export interface AuthContextValue extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>

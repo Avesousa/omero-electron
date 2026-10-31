@@ -33,7 +33,7 @@ afterEach(() => {
 })
 
 describe('isLoginRoute', () => {
-  it.each([['POST', '/api/auth/login', true], ['post', '/api/auth/login/', true], ['GET', '/api/auth/login', false], ['POST', '/api/auth/register', false], ['POST', '/api/auth/device/refresh', false]])(
+  it.each([['POST', '/api/auth/login', true], ['POST', '/api/auth/login-key', true], ['GET', '/api/auth/login-key', false], ['POST', '/api/auth/login-keys', false], ['post', '/api/auth/login/', true], ['GET', '/api/auth/login', false], ['POST', '/api/auth/register', false], ['POST', '/api/auth/device/refresh', false]])(
     '%s %s → %s', (m, p, e) => expect(isLoginRoute(m, p)).toBe(e))
 })
 
@@ -53,6 +53,22 @@ describe('handleLogin', () => {
     expect(JSON.stringify(body)).not.toContain('SECRETO-DE-CAJA')
     expect(body.data).not.toHaveProperty('deviceSecret')
     expect(getDeviceState().get(T)).toEqual({ secret: 'SECRETO-DE-CAJA', sessionActive: true })
+  })
+
+  it('el login con clave numérica también registra la caja y oculta el secreto', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      backendOk({ accessToken: 'JWT', user: { tenantId: T }, deviceSecret: 'SECRETO-CLAVE' }),
+    )
+    const req = new Request('http://localhost:3000/api/auth/login-key', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tenantId: T, key: '12345678' }),
+    })
+    const res = await handleLogin(req)
+
+    const sent = JSON.parse(await new Response(fetchSpy.mock.calls[0][1]!.body as never).text())
+    expect(sent).toEqual({ tenantId: T, key: '12345678', device: { deviceId: ID, name: 'MOSTRADOR', platform: 'win32', appVersion: '1.2.3' } })
+    expect(String(fetchSpy.mock.calls[0][0])).toBe('http://127.0.0.1:9/api/auth/login-key')
+    expect(JSON.stringify(await res.json())).not.toContain('SECRETO-CLAVE')
+    expect(getDeviceState().get(T)).toEqual({ secret: 'SECRETO-CLAVE', sessionActive: true })
   })
 
   it('un backend viejo (sin deviceSecret) pasa igual y no se registra nada', async () => {
