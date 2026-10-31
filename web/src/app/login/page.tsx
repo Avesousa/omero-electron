@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { LoadingScreen } from '@/app/components/LoadingScreen'
 import { LoginForm } from './components/LoginForm'
 
 export const metadata: Metadata = {
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<LoadingScreen />}>
       <LoginForm />
     </Suspense>
   )

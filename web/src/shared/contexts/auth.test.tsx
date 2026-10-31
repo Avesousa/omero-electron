@@ -15,10 +15,11 @@ vi.mock('@/lib/localCache', () => ({
 }))
 
 const clearSession = vi.fn()
+const getSessionUserMock = vi.fn<() => unknown>(() => ({ id: '1', email: 'cajero@x.com', name: 'Cajero' }))
 vi.mock('@/lib/sessionManager', () => ({
   setSession: vi.fn(),
   clearSession: () => clearSession(),
-  getSessionUser: () => ({ id: '1', email: 'cajero@x.com', name: 'Cajero' }),
+  getSessionUser: () => getSessionUserMock(),
   authHeaders: () => ({ Authorization: 'Bearer tok' }),
 }))
 const postLogin = vi.fn()
@@ -176,5 +177,35 @@ describe('AuthProvider.login (email y clave numérica)', () => {
     await act(async () => { screen.getByRole('button', { name: 'clave' }).click() })
     expect(screen.getByTestId('err')).toHaveTextContent('Clave incorrecta')
     expect(saveLoginHint).not.toHaveBeenCalled()
+  })
+})
+
+describe('AuthProvider.syncSession (regresión relanzamiento en blanco)', () => {
+  function Probe() {
+    const { isAuthenticated, syncSession } = useAuth()
+    return <button onClick={() => syncSession()}>{isAuthenticated ? 'con sesión' : 'sin sesión'}</button>
+  }
+
+  afterEach(() => getSessionUserMock.mockImplementation(() => ({ id: '1', email: 'cajero@x.com', name: 'Cajero' })))
+
+  it('relee la sesión que se renovó fuera del provider y pasa a autenticado', async () => {
+    getSessionUserMock.mockReturnValue(null)
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await act(async () => {})
+    expect(screen.getByRole('button')).toHaveTextContent('sin sesión')
+    getSessionUserMock.mockReturnValue({ id: '2', email: 'a@b.com', name: 'X' }) // la renovó LoginForm
+    await act(async () => { screen.getByRole('button').click() })
+    expect(screen.getByRole('button')).toHaveTextContent('con sesión')
+  })
+
+  it('sin sesión sigue sin sesión; y un storage que lanza no rompe', async () => {
+    getSessionUserMock.mockReturnValue(null)
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button').click() })
+    expect(screen.getByRole('button')).toHaveTextContent('sin sesión')
+    getSessionUserMock.mockImplementation(() => { throw new Error('storage') })
+    await act(async () => { screen.getByRole('button').click() })
+    expect(screen.getByRole('button')).toHaveTextContent('sin sesión')
   })
 })
