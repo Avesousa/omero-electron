@@ -86,10 +86,12 @@ function onFrontendMessage(message: unknown): void {
 
 let frontendProcess: UtilityProcess | null = null
 let frontendExitCode: number | null = null
+/** Código de error del SO (p. ej. 'EADDRINUSE', 'UNKNOWN') leído del stderr del Next, si el crash lo trae. */
+let frontendErrorCode: string | null = null
 
 /** El Next local terminó antes de responder (p. ej. no pudo abrir el puerto): vale la pena reintentar en otro. */
 export class FrontendExitedError extends Error {
-  constructor(readonly code: number | null) {
+  constructor(readonly code: number | null, readonly errorCode: string | null = null) {
     super(`El POS local terminó inesperadamente (código ${code})`)
     this.name = 'FrontendExitedError'
   }
@@ -109,9 +111,14 @@ export function startFrontend(port: number, backendUrl: string): void {
 
   frontendLogger.info(`starting frontend (runtime=desktop, port=${port}, backend=${backendUrl})`)
   frontendExitCode = null
+  frontendErrorCode = null
   const proc = utilityProcess.fork(serverJs, [], {
     cwd: FRONTEND_DIR,
     env: {
+      // Heredar el entorno del sistema (SystemRoot, PATH, TEMP, etc.): sin él, en Windows, Winsock no
+      // inicializa dentro del proceso hijo y CUALQUIER listen() falla con WSALookupServiceBegin/-4094,
+      // sin importar el puerto. `utilityProcess.fork` REEMPLAZA el entorno en vez de complementarlo.
+      ...process.env,
       NODE_ENV: 'production',
       PORT: String(port),
       HOSTNAME: LOOPBACK_HOST,
@@ -127,6 +134,12 @@ export function startFrontend(port: number, backendUrl: string): void {
   proc.on('message', onFrontendMessage)
   proc.stdout?.on('data', makeLineHandler(frontendLogger.info))
   proc.stderr?.on('data', makeLineHandler(frontendLogger.error))
+  // Además del log línea a línea, se guarda el código de error del SO (si el stack del crash lo trae)
+  // para que el llamador decida si vale la pena reintentar en otro puerto o cortar directamente.
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    const match = chunk.toString().match(/code:\s*'([A-Z_]+)'/)
+    if (match) frontendErrorCode = match[1]
+  })
   proc.on('exit', (code) => {
     // Un intento anterior (ya reemplazado) no debe pisar el estado del actual.
     if (frontendProcess === proc) frontendExitCode = code
@@ -139,7 +152,7 @@ export async function waitForFrontend(port: number, timeoutMs = 60_000): Promise
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     // Si el Next murió (p. ej. configuración inválida o puerto no disponible) no tiene sentido seguir esperando.
-    if (frontendExitCode !== null) throw new FrontendExitedError(frontendExitCode)
+    if (frontendExitCode !== null) throw new FrontendExitedError(frontendExitCode, frontendErrorCode)
     try {
       const res = await fetch(`http://${LOOPBACK_HOST}:${port}/api/_local/health`)
       if (res.ok) return
