@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from 'next/font/google'
 import { ThemeProvider } from './components/ThemeProvider'
 import { AuthProvider } from '@/shared'
+import { AppReadyMarker } from './components/AppReadyMarker'
 import "./globals.css"
 
 const inter = Inter({
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <ThemeProvider>
           <AuthProvider>
+            <AppReadyMarker />
             {children}
           </AuthProvider>
         </ThemeProvider>

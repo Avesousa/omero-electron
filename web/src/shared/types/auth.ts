@@ -44,4 +44,6 @@ export type LoginCredentials = EmailCredentials | KeyCredentials
 export interface AuthContextValue extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>
   logout: () => void
+  /** Vuelve a leer la sesión guardada (cookie/sessionStorage) y actualiza el estado. true si hay sesión vigente. */
+  syncSession: () => boolean
 }

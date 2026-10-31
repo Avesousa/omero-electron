@@ -148,7 +148,7 @@ export function startFrontend(port: number, backendUrl: string): void {
 }
 
 /** Espera a que el Next local responda su health (no depende de la conexión con Railway). */
-export async function waitForFrontend(port: number, timeoutMs = 60_000): Promise<void> {
+export async function waitForFrontend(port: number, timeoutMs = 120_000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     // Si el Next murió (p. ej. configuración inválida o puerto no disponible) no tiene sentido seguir esperando.
@@ -161,7 +161,7 @@ export async function waitForFrontend(port: number, timeoutMs = 60_000): Promise
     }
     await new Promise(r => setTimeout(r, 500))
   }
-  throw new Error('El POS local no arrancó en 60 segundos')
+  throw new Error('El POS local no arrancó en 120 segundos')
 }
 
 export function stopAll(): void {

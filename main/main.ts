@@ -8,6 +8,8 @@ import {
 } from './process-manager'
 import { findFreePort, PREFERRED_PORT } from './ports'
 import { initLogger, electronLogger, flushLogs } from './logger'
+import { waitForAppReady } from './app-ready'
+import { readSavedTheme, THEME_BACKGROUND } from './ui-prefs'
 
 import { autoUpdater } from 'electron-updater'
 
@@ -66,12 +68,12 @@ const MAX_START_ATTEMPTS = 4
  * caja parecía colgada en "Iniciando…"; ahora se cierra antes, y `app.exit` no espera a nadie.
  * El mensaje es para el cajero (sin detalles técnicos): el detalle queda en el log para soporte.
  */
-async function failStartup(title: string, message: string): Promise<void> {
+async function failStartup(title: string, message: string, showDialog = true): Promise<void> {
   stopAll()
   await Promise.race([flushLogs(), new Promise((r) => setTimeout(r, FLUSH_LOGS_TIMEOUT_MS))]).catch(() => undefined)
   splashWindow?.destroy()
   splashWindow = null
-  dialog.showErrorBox(title, message)
+  if (showDialog) dialog.showErrorBox(title, message)
   app.exit(1)
 }
 
@@ -110,20 +112,61 @@ async function startFrontendWithFallback(backendUrl: string): Promise<number> {
   throw new Error(`el POS local no pudo arrancar tras ${MAX_START_ATTEMPTS} intentos (puertos ${[...failedPorts].join(', ')})`)
 }
 
+/** Directorio de datos del Next local (mismo que `catalogCacheEnv` en process-manager): ahí vive ui-prefs.json. */
+function dataDir(): string {
+  return path.join(app.getPath('userData'), 'catalog-cache')
+}
+
+/** Tema guardado de la caja (claro por defecto): para pintar la carga y la ventana sin un destello del otro tema. */
+function savedTheme() {
+  return readSavedTheme(dataDir())
+}
+
+/**
+ * Pantalla de carga (logo + "Cargando…"). Se muestra de inmediato y se mantiene hasta que la página del POS avisa que
+ * ya pintó (ver `revealWhenReady`): así nunca hay una ventana en blanco entre el arranque del Next local y el login.
+ */
 function createSplashWindow(): void {
+  const theme = savedTheme()
   splashWindow = new BrowserWindow({
-    width: 400,
-    height: 280,
+    width: 420,
+    height: 300,
     frame: false,
     alwaysOnTop: true,
     transparent: false,
     resizable: false,
+    backgroundColor: THEME_BACKGROUND[theme],
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
     },
   })
-  splashWindow.loadFile(path.join(__dirname, 'splash.html'))
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'), { query: { theme } })
+}
+
+function closeSplash(): void {
+  if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close()
+  splashWindow = null
+}
+
+const MAX_LOAD_RETRIES = 5
+const LOAD_RETRY_DELAY_MS = 1000
+const APP_READY_TIMEOUT_MS = 20_000
+
+/**
+ * Muestra la ventana del POS recién cuando la página avisó que está lista (hidratada, sesión restaurada, tema aplicado)
+ * o venció el tope de espera (entonces se muestra igual: mejor ver algo que quedar en la carga para siempre).
+ */
+async function revealWhenReady(win: BrowserWindow): Promise<void> {
+  const result = await waitForAppReady({
+    evaluate: (expression) => win.webContents.executeJavaScript(expression),
+    timeoutMs: APP_READY_TIMEOUT_MS,
+  })
+  if (win.isDestroyed()) return
+  if (result === 'timeout') electronLogger.warn(`la página no avisó que estaba lista en ${APP_READY_TIMEOUT_MS} ms: se muestra igual`)
+  closeSplash()
+  win.show()
+  electronLogger.info(`main window ready (${result})`)
 }
 
 function createMainWindow(): void {
@@ -134,33 +177,86 @@ function createMainWindow(): void {
     frame: false,
     autoHideMenuBar: true,
     show: false,
+    backgroundColor: THEME_BACKGROUND[savedTheme()],
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
+  const win = mainWindow
+  const url = buildPosUrl(frontendPort)
+  let loadFailures = 0
 
-  mainWindow.loadURL(buildPosUrl(frontendPort))
+  void win.loadURL(url).catch(() => undefined) // los fallos se manejan en did-fail-load
+  setupKeyboardFilter(win)
 
-  setupKeyboardFilter(mainWindow)
-
-  mainWindow.once('ready-to-show', () => {
-    splashWindow?.close()
-    splashWindow = null
-    mainWindow?.show()
-    electronLogger.info('main window ready')
+  // La página es del Next local (ya respondió el health): un fallo de carga es transitorio; se reintenta unas veces.
+  win.webContents.on('did-fail-load', (_e, code, description, _url, isMainFrame) => {
+    if (!isMainFrame || code === -3 /* ERR_ABORTED: navegación reemplazada */) return
+    electronLogger.warn(`la ventana no pudo cargar ${url}: ${description} (${code})`)
+    if (++loadFailures > MAX_LOAD_RETRIES) {
+      void offerRetry('No se pudo cargar la pantalla', 'Omero POS no pudo mostrar la pantalla principal.').then((retry) => {
+        if (retry && !win.isDestroyed()) { loadFailures = 0; void win.loadURL(url).catch(() => undefined) } else app.exit(1)
+      })
+      return
+    }
+    setTimeout(() => { if (!win.isDestroyed()) void win.loadURL(url).catch(() => undefined) }, LOAD_RETRY_DELAY_MS)
   })
+  win.webContents.on('render-process-gone', (_e, details) => {
+    electronLogger.error(`el renderer terminó (${details.reason}): recargando`)
+    if (!win.isDestroyed()) win.reload()
+  })
+
+  void revealWhenReady(win)
 
   // Keep POS window focused in production so OS shortcuts (Esc, etc.)
   // are always captured by the app before Windows intercepts them.
   if (app.isPackaged) {
-    mainWindow.on('blur', () => mainWindow?.focus())
+    win.on('blur', () => mainWindow?.focus())
   }
 
-  mainWindow.on('closed', () => {
+  win.on('closed', () => {
     mainWindow = null
   })
+}
+
+/** Diálogo en español con "Reintentar" / "Salir". La pantalla de carga baja de capa para no taparlo. */
+async function offerRetry(title: string, detail: string): Promise<boolean> {
+  splashWindow?.setAlwaysOnTop(false)
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title,
+    message: title,
+    detail: `${detail} Podés reintentar o cerrar el programa. Si el problema continúa, contactá a soporte.`,
+    buttons: ['Reintentar', 'Salir'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  splashWindow?.setAlwaysOnTop(true)
+  return response === 0
+}
+
+/** Levanta el Next local y abre la ventana; si el servidor no llega a responder, ofrece reintentar (nunca queda en blanco). */
+async function startPos(backendUrl: string): Promise<void> {
+  for (;;) {
+    try {
+      frontendPort = await startFrontendWithFallback(backendUrl)
+      electronLogger.info(`frontend ready on port ${frontendPort} — creating main window`)
+      createMainWindow()
+      checkForUpdatesSafely()
+      setInterval(checkForUpdatesSafely, UPDATE_CHECK_INTERVAL_MS)
+      return
+    } catch (err) {
+      electronLogger.error(`frontend failed to start: ${err}`)
+      stopAll()
+      if (!(await offerRetry('No se pudo iniciar Omero POS', 'El sistema local no respondió.'))) {
+        await failStartup('No se pudo iniciar Omero POS', 'Cerrá el programa y volvé a abrirlo. Si el problema continúa, contactá a soporte.', false)
+        return
+      }
+    }
+  }
 }
 
 app.on('ready', async () => {
@@ -195,19 +291,7 @@ app.on('ready', async () => {
     return
   }
 
-  try {
-    frontendPort = await startFrontendWithFallback(backendUrl)
-    electronLogger.info(`frontend ready on port ${frontendPort} — creating main window`)
-    createMainWindow()
-    checkForUpdatesSafely()
-    setInterval(checkForUpdatesSafely, UPDATE_CHECK_INTERVAL_MS)
-  } catch (err) {
-    electronLogger.error(`frontend failed to start: ${err}`)
-    await failStartup(
-      'No se pudo iniciar Omero POS',
-      'Cerrá el programa y volvé a abrirlo. Si el problema continúa, contactá a soporte.'
-    )
-  }
+  await startPos(backendUrl)
 })
 
 app.on('before-quit', async () => {

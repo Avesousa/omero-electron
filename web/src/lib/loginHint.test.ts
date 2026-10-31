@@ -76,3 +76,29 @@ describe('fetchLoginOptions', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 })
+
+describe('regresión: la pista de login nunca puede bloquear la pantalla (relanzamiento en blanco)', () => {
+  it('loadLoginHint con el servidor local colgado se aborta por timeout y cae al localStorage', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('omero_login_hint', JSON.stringify({ tenantId: T, quickKeyLoginEnabled: true }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_u, init) => new Promise((_res, rej) => {
+      init?.signal?.addEventListener('abort', () => rej(new Error('aborted')))
+    }))
+    const p = loadLoginHint()
+    await vi.advanceTimersByTimeAsync(3_100)
+    expect(await p).toEqual({ tenantId: T, quickKeyLoginEnabled: true })
+    vi.useRealTimers()
+  })
+
+  it('saveLoginHint con el servidor local colgado termina (timeout) y guarda en localStorage', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_u, init) => new Promise((_res, rej) => {
+      init?.signal?.addEventListener('abort', () => rej(new Error('aborted')))
+    }))
+    const p = saveLoginHint({ tenantId: T, quickKeyLoginEnabled: true })
+    await vi.advanceTimersByTimeAsync(3_100)
+    await p
+    expect(localStorage.getItem('omero_login_hint')).not.toBeNull()
+    vi.useRealTimers()
+  })
+})

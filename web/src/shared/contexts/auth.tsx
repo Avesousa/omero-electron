@@ -31,6 +31,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // La sesión puede cambiar FUERA de este provider (p. ej. el login renovó el JWT en silencio con la caja y navegó al POS: el
+  // provider vive en el layout raíz y NO se vuelve a montar). Sin esto el POS veía "sin sesión" y rebotaba al login en bucle.
+  const syncSession = useCallback((): boolean => {
+    let user = null
+    try {
+      user = getSessionUser()
+    } catch {
+      /* storage ilegible: sin sesión */
+    }
+    setState(s => (s.isAuthenticated === !!user && s.user?.id === user?.id && !s.isLoading
+      ? s
+      : { user, isAuthenticated: !!user, isLoading: false, error: null }))
+    return !!user
+  }, [])
+
   // Desktop con caja registrada: el JWT de 1 h se renueva solo. Si ya no se puede (revocada/vencida) se vuelve al login.
   useSessionRenewal({
     authenticated: state.isAuthenticated,
@@ -92,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router])
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, login, logout, syncSession }}>
       {children}
     </AuthContext.Provider>
   )

@@ -31,18 +31,22 @@ export function LoginForm() {
     if (reason) return // ya sabemos por qué volvió (revocada / vencida): no insistir
     let cancelled = false
     void (async () => {
-      const info = await fetchDeviceInfo()
-      if (cancelled || !info.desktop || !info.hasDevice || !info.sessionActive) return
-      setRenewing(true)
-      const r = await renewSession()
-      if (cancelled) return
-      if (r.ok) {
-        router.replace(redirectTo && redirectTo.startsWith('/') ? redirectTo : '/')
-        return
+      try {
+        const info = await fetchDeviceInfo()
+        if (cancelled || !info.desktop || !info.hasDevice || !info.sessionActive) return
+        setRenewing(true)
+        const r = await renewSession()
+        if (cancelled) return
+        if (r.ok) {
+          router.replace(redirectTo && redirectTo.startsWith('/') ? redirectTo : '/')
+          return
+        }
+        setRenewing(false)
+        const why = reasonFor(r.code)
+        if (why) setRenewMessage(loginReasonMessage(why))
+      } catch {
+        if (!cancelled) setRenewing(false) // nunca dejar el "Renovando sesión…" colgado: se muestra el formulario
       }
-      setRenewing(false)
-      const why = reasonFor(r.code)
-      if (why) setRenewMessage(loginReasonMessage(why))
     })()
     return () => {
       cancelled = true
@@ -58,17 +62,22 @@ export function LoginForm() {
   const [keyBounds, setKeyBounds] = useState({ min: DEFAULT_KEY_MIN, max: DEFAULT_KEY_MAX })
   useEffect(() => {
     let cancelled = false
+    // Nada de esto puede bloquear ni romper el formulario: ante cualquier error queda el login con email + contraseña.
     void (async () => {
-      const saved = await loadLoginHint()
-      if (cancelled || !saved) return
-      setHint(saved)
-      const options = await fetchLoginOptions(saved.tenantId)
-      if (cancelled || !options) return
-      setKeyBounds({ min: options.quickKeyMinLength, max: options.quickKeyMaxLength })
-      if (options.quickKeyLoginEnabled !== saved.quickKeyLoginEnabled) {
-        const next = { ...saved, quickKeyLoginEnabled: options.quickKeyLoginEnabled }
-        setHint(next)
-        void saveLoginHint(next)
+      try {
+        const saved = await loadLoginHint()
+        if (cancelled || !saved) return
+        setHint(saved)
+        const options = await fetchLoginOptions(saved.tenantId)
+        if (cancelled || !options) return
+        setKeyBounds({ min: options.quickKeyMinLength, max: options.quickKeyMaxLength })
+        if (options.quickKeyLoginEnabled !== saved.quickKeyLoginEnabled) {
+          const next = { ...saved, quickKeyLoginEnabled: options.quickKeyLoginEnabled }
+          setHint(next)
+          void saveLoginHint(next)
+        }
+      } catch {
+        /* sin pista: login con email */
       }
     })()
     return () => {
