@@ -1,0 +1,113 @@
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const push = vi.fn()
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
+
+const wipeLocalCatalogCache = vi.fn()
+const pendingOutboxCount = vi.fn(async () => 0)
+const deviceLogout = vi.fn()
+vi.mock('@/lib/deviceSession', () => ({ deviceLogout: () => deviceLogout(), fetchDeviceInfo: async () => ({ desktop: false, hasDevice: false, sessionActive: false }), renewSession: vi.fn(), reasonFor: () => null }))
+vi.mock('@/lib/localCache', () => ({
+  wipeLocalCatalogCache: () => wipeLocalCatalogCache(),
+  pendingOutboxCount: () => pendingOutboxCount(),
+  logoutWarning: (n: number) => `aviso ${n}`,
+}))
+
+const clearSession = vi.fn()
+vi.mock('@/lib/sessionManager', () => ({
+  setSession: vi.fn(),
+  clearSession: () => clearSession(),
+  getSessionUser: () => ({ id: '1', email: 'cajero@x.com', name: 'Cajero' }),
+  authHeaders: () => ({ Authorization: 'Bearer tok' }),
+}))
+vi.mock('@/shared/services/authService', () => ({ postLogin: vi.fn() }))
+
+import { AuthProvider, useAuth } from './auth'
+
+function LogoutButton() {
+  const { logout, isAuthenticated } = useAuth()
+  return (
+    <button onClick={logout}>
+      {isAuthenticated ? 'salir' : 'anónimo'}
+    </button>
+  )
+}
+
+beforeEach(() => {
+  push.mockClear()
+  clearSession.mockClear()
+  wipeLocalCatalogCache.mockClear()
+  deviceLogout.mockClear()
+  pendingOutboxCount.mockReset()
+  pendingOutboxCount.mockResolvedValue(0)
+})
+afterEach(() => vi.restoreAllMocks())
+
+describe('AuthProvider.logout', () => {
+  it('borra la caché local ANTES de limpiar la sesión y redirige al login', async () => {
+    render(<AuthProvider><LogoutButton /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'salir' }).click() })
+
+    expect(wipeLocalCatalogCache).toHaveBeenCalledTimes(1)
+    expect(clearSession).toHaveBeenCalled()
+    // el DELETE necesita el token: tiene que ir antes de clearSession
+    expect(wipeLocalCatalogCache.mock.invocationCallOrder[0]).toBeLessThan(clearSession.mock.invocationCallOrder.at(-1)!)
+    expect(push).toHaveBeenCalledWith('/login')
+    expect(screen.getByRole('button', { name: 'anónimo' })).toBeInTheDocument()
+  })
+})
+
+describe('AuthProvider.logout con ventas/gastos sin subir (outbox)', () => {
+  const click = async () => {
+    render(<AuthProvider><LogoutButton /></AuthProvider>)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'salir' }).click() })
+  }
+
+  it('avisa y, si el cajero confirma, cierra sesión (el outbox no se borra: solo se limpia la caché de catálogo)', async () => {
+    pendingOutboxCount.mockResolvedValue(3)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await click()
+    expect(confirm).toHaveBeenCalledWith('aviso 3')
+    expect(wipeLocalCatalogCache).toHaveBeenCalledTimes(1)
+    expect(deviceLogout).toHaveBeenCalledTimes(1) // la caja cierra sesión (conserva el secreto para subir lo pendiente)
+    expect(clearSession).toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/login')
+  })
+
+  it('si el cajero cancela, NO cierra sesión ni borra nada', async () => {
+    pendingOutboxCount.mockResolvedValue(2)
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await click()
+    expect(wipeLocalCatalogCache).not.toHaveBeenCalled()
+    expect(deviceLogout).not.toHaveBeenCalled()
+    expect(clearSession).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'salir' })).toBeInTheDocument()
+  })
+
+  it('sin pendientes no pregunta nada', async () => {
+    const confirm = vi.spyOn(window, 'confirm')
+    await click()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/login')
+  })
+})
+
+describe('expiración de sesión (401) NO borra la caché', () => {
+  it('apiFetch con 401 limpia la sesión pero no llama a wipeLocalCatalogCache', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })))
+    // apiFetch hace `window.location.href = '/login'`: jsdom no implementa navegación, se reemplaza `location`
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', { value: { href: '' }, writable: true, configurable: true })
+    const { apiFetch } = await import('@/lib/apiClient')
+    const result = await apiFetch('/api/products')
+    expect(result.success).toBe(false)
+    expect(clearSession).toHaveBeenCalled()
+    expect(wipeLocalCatalogCache).not.toHaveBeenCalled()
+    Object.defineProperty(window, 'location', { value: originalLocation, writable: true, configurable: true })
+    vi.unstubAllGlobals()
+  })
+})

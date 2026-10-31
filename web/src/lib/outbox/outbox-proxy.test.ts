@@ -1,0 +1,316 @@
+// @vitest-environment node
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const kick = vi.fn()
+vi.mock('./outbox-sender', () => ({ getSender: () => ({ kick }) }))
+
+import { closeAllOutboxStores, getOutboxStore } from './outbox-registry'
+import { handleOutboxRequest, matchOutboxRoute, MAX_BODY_BYTES } from './outbox-proxy'
+import { handleApiRequest } from '../data-layer'
+import { getSyncer } from '../catalog/syncer'
+import { resetEntitlementMemory, writeEntitlement } from '../entitlement/store'
+import type { Entitlement } from '../entitlement/rule'
+
+const TENANT = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
+const USER = '99999999-aaaa-bbbb-cccc-000000000001'
+
+function token(claims: Record<string, unknown> = { tenantId: TENANT, userId: USER }): string {
+  const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
+  return `Bearer ${b64({ alg: 'HS256' })}.${b64({ ...claims, exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`
+}
+const post = (pathname: string, body: unknown, auth: string | null = token()) =>
+  new Request(`http://localhost:3000${pathname}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(auth ? { authorization: auth } : {}) },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  })
+
+const goodSale = {
+  items: [
+    { productId: '001', productName: 'Coca', quantity: 2, unitPrice: 100, total: 200, promotionId: null, promotionName: null, unitCost: 5, cost: 7 },
+  ],
+  cashAmount: 200,
+  mpAmount: 0,
+  change: 0,
+  costTotal: 10,
+}
+
+let dir: string
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omero-outbox-proxy-'))
+  vi.stubEnv('OMERO_RUNTIME', 'desktop')
+  vi.stubEnv('BACKEND_URL', 'http://127.0.0.1:9')
+  vi.stubEnv('OMERO_DATA_DIR', dir)
+  kick.mockClear()
+  resetEntitlementMemory()
+})
+afterEach(() => {
+  closeAllOutboxStores()
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+  getSyncer().forget(TENANT)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+describe('matchOutboxRoute', () => {
+  it.each([
+    ['POST', '/api/sales', 'SALE'],
+    ['post', '/api/sales/', 'SALE'],
+    ['POST', '/api/expenses', 'EXPENSE'],
+    ['GET', '/api/sales', null],
+    ['POST', '/api/sales/5', null],
+    ['POST', '/api/products', null],
+    ['POST', '/api/sales/review', null],
+    ['POST', '/api/mercadopago/events/ticket', null], // el ticket SSE NO va al outbox offline
+  ])('%s %s → %s', (m, p, expected) => {
+    expect(matchOutboxRoute(m, p)).toBe(expected)
+  })
+})
+
+describe('venta', () => {
+  it('guarda en el outbox ANTES de responder 201 queued y dispara el envío', async () => {
+    const res = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    expect(res!.status).toBe(201)
+    const body = await res!.json()
+    expect(body).toMatchObject({ success: true, data: { id: null, queued: true, total: 200 } })
+    expect(body.data.clientId).toMatch(/^[0-9a-f-]{36}$/)
+
+    const row = getOutboxStore(TENANT)!.getByClientId(body.data.clientId)!
+    expect(row).toMatchObject({ type: 'SALE', status: 'PENDING', sourceUserId: USER, createdAt: body.data.createdAt })
+    expect(Math.abs(Date.parse(row.createdAt) - Date.now())).toBeLessThan(5000)
+    expect(kick).toHaveBeenCalledWith(TENANT)
+    expect(getSyncer().hasTenant(TENANT)).toBe(true) // el token queda en memoria para el sender
+  })
+
+  it('el payload guardado NO lleva costo ni campos desconocidos y conserva productName', async () => {
+    const res = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    const { clientId } = (await res!.json()).data
+    const payload = JSON.parse(getOutboxStore(TENANT)!.getByClientId(clientId)!.payload)
+    expect(JSON.stringify(payload)).not.toMatch(/cost/i)
+    expect(payload.items[0]).toEqual({
+      productId: '001', productName: 'Coca', quantity: 2, unitPrice: 100, total: 200, promotionId: null, promotionName: null,
+    })
+    expect(payload).toMatchObject({ cashAmount: 200, mpAmount: 0, change: 0 })
+  })
+
+  it('venta por peso: kg con hasta 3 decimales, con su unidad y lo que descuenta de stock', async () => {
+    const body = {
+      ...goodSale,
+      items: [
+        { productId: '002', productName: 'Queso', quantity: 0.35, unitPrice: 8000, total: 2800, saleUnit: 'KG', stockQuantity: 0.35 },
+        { productId: '003', productName: 'Pan', quantity: 3, unitPrice: 1200, total: 3600, saleUnit: 'UNIT', stockQuantity: 0.75, stockPerUnit: 0.25 },
+        { productId: '002', productName: 'Queso', quantity: 1.005, unitPrice: 8000, total: 8040, saleUnit: 'KG' },
+      ],
+    }
+    const res = await handleOutboxRequest(post('/api/sales', body), 'SALE')
+    expect(res!.status).toBe(201)
+    const payload = JSON.parse(getOutboxStore(TENANT)!.getByClientId((await res!.json()).data.clientId)!.payload)
+    expect(payload.items).toEqual([
+      { productId: '002', productName: 'Queso', quantity: 0.35, unitPrice: 8000, total: 2800, promotionId: null, promotionName: null, saleUnit: 'KG', stockQuantity: 0.35 },
+      { productId: '003', productName: 'Pan', quantity: 3, unitPrice: 1200, total: 3600, promotionId: null, promotionName: null, saleUnit: 'UNIT', stockQuantity: 0.75 },
+      { productId: '002', productName: 'Queso', quantity: 1.005, unitPrice: 8000, total: 8040, promotionId: null, promotionName: null, saleUnit: 'KG' },
+    ])
+  })
+
+  it('saleUnit y stockQuantity en null se tratan como ausentes (venta por unidad)', async () => {
+    const body = { ...goodSale, items: [{ ...goodSale.items[0], saleUnit: null, stockQuantity: null }] }
+    const res = await handleOutboxRequest(post('/api/sales', body), 'SALE')
+    expect(res!.status).toBe(201)
+    const payload = JSON.parse(getOutboxStore(TENANT)!.getByClientId((await res!.json()).data.clientId)!.payload)
+    expect(payload.items[0]).not.toHaveProperty('saleUnit')
+    expect(payload.items[0]).not.toHaveProperty('stockQuantity')
+  })
+
+  it('cada venta recibe un clientId distinto', async () => {
+    const a = (await (await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.json()).data.clientId
+    const b = (await (await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.json()).data.clientId
+    expect(a).not.toBe(b)
+    expect(getOutboxStore(TENANT)!.counts().pending).toBe(2)
+  })
+
+  it.each([
+    ['sin ítems', { ...goodSale, items: [] }],
+    ['ítems no es lista', { ...goodSale, items: 'x' }],
+    ['ítem no objeto', { ...goodSale, items: [5] }],
+    ['sin código', { ...goodSale, items: [{ ...goodSale.items[0], productId: ' ' }] }],
+    ['cantidad 0', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 0 }] }],
+    ['cantidad decimal', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 1.5 }] }],
+    ['cantidad decimal por unidad', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 1.5, saleUnit: 'UNIT' }] }],
+    ['unidad desconocida', { ...goodSale, items: [{ ...goodSale.items[0], saleUnit: 'LITRO' }] }],
+    ['unidad que no es texto', { ...goodSale, items: [{ ...goodSale.items[0], saleUnit: 5 }] }],
+    ['kg con más de 3 decimales', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 0.3505, saleUnit: 'KG' }] }],
+    ['kg en 0', { ...goodSale, items: [{ ...goodSale.items[0], quantity: 0, saleUnit: 'KG' }] }],
+    ['stockQuantity negativo', { ...goodSale, items: [{ ...goodSale.items[0], stockQuantity: -1 }] }],
+    ['stockQuantity no numérico', { ...goodSale, items: [{ ...goodSale.items[0], stockQuantity: '2' }] }],
+    ['precio negativo', { ...goodSale, items: [{ ...goodSale.items[0], unitPrice: -1 }] }],
+    ['total ausente', { ...goodSale, items: [{ ...goodSale.items[0], total: undefined }] }],
+    ['monto inválido', { ...goodSale, cashAmount: 'a' }],
+  ])('400 y NO encola: %s', async (_n, body) => {
+    const res = await handleOutboxRequest(post('/api/sales', body), 'SALE')
+    expect(res!.status).toBe(400)
+    expect((await res!.json()).success).toBe(false)
+    expect(getOutboxStore(TENANT)!.counts().pending).toBe(0)
+    expect(kick).not.toHaveBeenCalled()
+  })
+
+  it('JSON inválido y cuerpo que no es objeto → 400', async () => {
+    expect((await handleOutboxRequest(post('/api/sales', '{no'), 'SALE'))!.status).toBe(400)
+    expect((await handleOutboxRequest(post('/api/sales', '[1]'), 'SALE'))!.status).toBe(400)
+  })
+
+  it('cuerpo mayor a 1 MB → 413', async () => {
+    const big = JSON.stringify({ pad: 'x'.repeat(MAX_BODY_BYTES + 1) })
+    expect((await handleOutboxRequest(post('/api/sales', big), 'SALE'))!.status).toBe(413)
+  })
+
+  it('un userId que no es UUID se ignora', async () => {
+    const res = await handleOutboxRequest(post('/api/sales', goodSale, token({ tenantId: TENANT, userId: '../x' })), 'SALE')
+    const { clientId } = (await res!.json()).data
+    expect(getOutboxStore(TENANT)!.getByClientId(clientId)!.sourceUserId).toBeNull()
+  })
+})
+
+describe('gasto', () => {
+  it('encola con la lista blanca de campos', async () => {
+    const res = await handleOutboxRequest(
+      post('/api/expenses', { description: ' Bolsas ', amount: 25.5, type: 'GENERAL', businessId: 'b1', productId: 3, extra: 'x' }),
+      'EXPENSE',
+    )
+    expect(res!.status).toBe(201)
+    const { clientId } = (await res!.json()).data
+    const row = getOutboxStore(TENANT)!.getByClientId(clientId)!
+    expect(row.type).toBe('EXPENSE')
+    expect(JSON.parse(row.payload)).toEqual({ description: 'Bolsas', amount: 25.5, type: 'GENERAL', businessId: 'b1', productId: 3 })
+  })
+
+  it.each([
+    ['sin descripción', { amount: 5 }],
+    ['monto 0', { description: 'x', amount: 0 }],
+    ['monto negativo', { description: 'x', amount: -1 }],
+    ['monto ausente', { description: 'x' }],
+  ])('400: %s', async (_n, body) => {
+    expect((await handleOutboxRequest(post('/api/expenses', body), 'EXPENSE'))!.status).toBe(400)
+  })
+})
+
+describe('degradación (devuelve null → proxy directo)', () => {
+  it('sin Authorization', async () => {
+    expect(await handleOutboxRequest(post('/api/sales', goodSale, null), 'SALE')).toBeNull()
+  })
+  it('token sin tenant', async () => {
+    expect(await handleOutboxRequest(post('/api/sales', goodSale, token({ userId: USER })), 'SALE')).toBeNull()
+  })
+  it('sin OMERO_DATA_DIR (outbox no disponible)', async () => {
+    vi.stubEnv('OMERO_DATA_DIR', '')
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')).toBeNull()
+  })
+  it('falla de disco al encolar', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(getOutboxStore(TENANT)!, 'enqueue').mockImplementation(() => {
+      throw new Error('disk full')
+    })
+    expect(await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')).toBeNull()
+    expect(kick).not.toHaveBeenCalled()
+  })
+  it('si el sender falla al iniciar, la venta igual queda encolada', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    kick.mockImplementationOnce(() => {
+      throw new Error('x')
+    })
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+    expect(getOutboxStore(TENANT)!.counts().pending).toBe(1)
+  })
+})
+
+describe('handleApiRequest (data-layer)', () => {
+  it('desktop: POST /api/sales se encola sin tocar el backend', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const res = await handleApiRequest(post('/api/sales', goodSale))
+    expect(res.status).toBe(201)
+    expect((await res.json()).data.queued).toBe(true)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('web: POST /api/sales va directo al backend (jamás encola)', async () => {
+    vi.stubEnv('OMERO_RUNTIME', 'web')
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{"success":true,"data":{"id":1}}', { status: 201, headers: { 'content-type': 'application/json' } }))
+    const res = await handleApiRequest(post('/api/sales', goodSale))
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(String(fetchSpy.mock.calls[0][0])).toBe('http://127.0.0.1:9/api/sales')
+    expect((await res.json()).data.id).toBe(1)
+  })
+
+  it('desktop con la venta inválida: 400 local, sin backend', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    expect((await handleApiRequest(post('/api/sales', { items: [] }))).status).toBe(400)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('desktop sin outbox (sin token): cae al proxy directo', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{"success":false,"error":"no auth"}', { status: 401, headers: { 'content-type': 'application/json' } }))
+    const res = await handleApiRequest(post('/api/sales', goodSale, null))
+    expect(res.status).toBe(401)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('otras rutas no cambian (GET /api/sales pasa al backend)', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{"success":true,"data":[]}', { status: 200, headers: { 'content-type': 'application/json' } }))
+    const res = await handleApiRequest(new Request('http://localhost:3000/api/sales', { headers: { authorization: token() } }))
+    expect(res.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('suscripción vencida (bloqueo de venta antes de encolar)', () => {
+  const ent = (over: Partial<Entitlement> = {}): Entitlement => ({
+    status: 'ACTIVE', accessGranted: true, accessUntil: null, trialEndsAt: null, graceUntil: null,
+    planCode: 'PRO', courtesy: false, enforced: true, canManage: false, ...over,
+  })
+  it('sin acceso: la venta se rechaza con 403 SUBSCRIPTION_INACTIVE y NO se encola', async () => {
+    writeEntitlement(TENANT, ent({ accessGranted: false, status: 'EXPIRED' }))
+    const res = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    expect(res!.status).toBe(403)
+    expect(await res!.json()).toEqual({
+      success: false, error: 'La suscripción del negocio venció. Comunicate con el administrador.', code: 'SUBSCRIPTION_INACTIVE',
+    })
+    expect(getOutboxStore(TENANT)!.nextBatch(10)).toEqual([])
+    expect(kick).not.toHaveBeenCalled()
+  })
+
+  it('offline con accessUntil pasado se bloquea; con accessUntil futuro se encola', async () => {
+    writeEntitlement(TENANT, ent({ accessUntil: new Date(Date.now() - 60_000).toISOString() }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(403)
+
+    writeEntitlement(TENANT, ent({ accessUntil: new Date(Date.now() + 3600_000).toISOString() }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+  })
+
+  it('ADMIN_APPROVED, enforced=false y sin caché permiten la venta', async () => {
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201) // sin caché
+    writeEntitlement(TENANT, ent({ status: 'ADMIN_APPROVED', accessGranted: false }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+    writeEntitlement(TENANT, ent({ enforced: false, accessGranted: false }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(201)
+  })
+
+  it('lo ya encolado sigue en el outbox y los gastos no se bloquean', async () => {
+    const queued = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    const { clientId } = (await queued!.json()).data
+    writeEntitlement(TENANT, ent({ accessGranted: false }))
+    expect((await handleOutboxRequest(post('/api/sales', goodSale), 'SALE'))!.status).toBe(403)
+    expect(getOutboxStore(TENANT)!.getByClientId(clientId)!.status).toBe('PENDING')
+    const expense = await handleOutboxRequest(post('/api/expenses', { description: 'Luz', amount: 10 }), 'EXPENSE')
+    expect(expense!.status).toBe(201)
+  })
+})

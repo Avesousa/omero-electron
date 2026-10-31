@@ -1,17 +1,15 @@
 import log from 'electron-log/main'
 import { Logtail } from '@logtail/node'
-import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { RESOURCES_DIR } from './paths'
 
 log.initialize()
 log.transports.file.maxSize = 10 * 1024 * 1024 // 10 MB per file
 
 function readToken(): string | null {
   if (process.env.BETTERSTACK_TOKEN) return process.env.BETTERSTACK_TOKEN
-  const tokenFile = app.isPackaged
-    ? path.join(path.dirname(app.getPath('exe')), 'resources', 'betterstack.token')
-    : path.join(__dirname, '../../resources/betterstack.token')
+  const tokenFile = path.join(RESOURCES_DIR, 'betterstack.token')
   try {
     if (fs.existsSync(tokenFile)) return fs.readFileSync(tokenFile, 'utf-8').trim()
   } catch { /* ignore */ }
@@ -47,7 +45,7 @@ function makeLineHandler(logFn: (msg: string) => void): (d: Buffer) => void {
 
 export { makeLineHandler }
 
-type Source = 'backend' | 'frontend' | 'electron'
+type Source = 'frontend' | 'electron'
 
 function createLogger(source: Source) {
   return {
@@ -66,7 +64,6 @@ function createLogger(source: Source) {
   }
 }
 
-export const backendLogger = createLogger('backend')
 export const frontendLogger = createLogger('frontend')
 export const electronLogger = createLogger('electron')
 

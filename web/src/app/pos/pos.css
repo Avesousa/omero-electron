@@ -1,0 +1,340 @@
+/* ═══════════════════════════════════════════════════════════
+   POS v2 — diseño claro (rediseño 2026-10)
+   Tokens propios del POS, con variante oscura para quien use el
+   botón de tema. Todo el POS usa estas clases `pos-*`; no volver a
+   hardcodear colores de Tailwind (bg-black, text-yellow-400, …).
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --pos-bg: #EEF2F8;
+  --pos-bg-glow-1: rgba(37, 99, 235, 0.10);
+  --pos-bg-glow-2: rgba(255, 107, 0, 0.08);
+  --pos-card: #FFFFFF;
+  --pos-card-2: #F6F8FC;
+  --pos-line: #E2E8F0;
+  --pos-line-2: #CBD5E1;
+  --pos-ink: #0F172A;
+  --pos-ink-2: #334155;
+  --pos-muted: #64748B;
+  --pos-primary: #1E40AF;
+  --pos-primary-2: #2563EB;
+  --pos-primary-soft: #EAF0FF;
+  --pos-accent: #FF6B00;
+  --pos-accent-2: #FF8533;
+  --pos-accent-soft: #FFF1E6;
+  --pos-success: #16A34A;
+  --pos-success-soft: #E9F9EF;
+  --pos-danger: #DC2626;
+  --pos-danger-soft: #FEECEC;
+  --pos-warn: #D97706;
+  --pos-warn-soft: #FFF6E5;
+  --pos-mp: #009EE3;
+  --pos-mp-soft: #E6F6FD;
+  --pos-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
+  --pos-shadow-lg: 0 12px 40px rgba(15, 23, 42, .14);
+  --pos-key: #FFFFFF;
+  --pos-key-edge: #D5DCE8;
+}
+
+.pos-v2 {
+  font-family: var(--font-inter), "Inter", system-ui, sans-serif;
+  color: var(--pos-ink);
+  background:
+    radial-gradient(1200px 600px at -10% -20%, var(--pos-bg-glow-1), transparent 60%),
+    radial-gradient(900px 500px at 110% 120%, var(--pos-bg-glow-2), transparent 60%),
+    var(--pos-bg);
+}
+
+[data-theme="dark"] {
+  --pos-bg: #061226;
+  --pos-bg-glow-1: rgba(37, 99, 235, 0.18);
+  --pos-bg-glow-2: rgba(255, 107, 0, 0.10);
+  --pos-card: #0F1E36;
+  --pos-card-2: #142744;
+  --pos-line: #1F3456;
+  --pos-line-2: #2F4470;
+  --pos-ink: #E8EEFF;
+  --pos-ink-2: #C3D0EE;
+  --pos-muted: #8494B4;
+  --pos-primary: #3B82F6;
+  --pos-primary-2: #60A5FA;
+  --pos-primary-soft: #13284D;
+  --pos-accent-soft: #3A1E08;
+  --pos-success: #34D399;
+  --pos-success-soft: #0C2E25;
+  --pos-danger: #F87171;
+  --pos-danger-soft: #3A1414;
+  --pos-warn: #FBBF24;
+  --pos-warn-soft: #34260A;
+  --pos-mp-soft: #082F44;
+  --pos-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+  --pos-shadow-lg: 0 12px 40px rgba(0, 0, 0, .5);
+  --pos-key: #142744;
+  --pos-key-edge: #0A1628;
+}
+
+/* ── Estructura ─────────────────────────────────────────── */
+.pos-header {
+  background: color-mix(in srgb, var(--pos-card) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--pos-line);
+}
+.pos-title-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--pos-accent-soft); color: var(--pos-accent);
+  font-weight: 700; font-size: 13px; letter-spacing: .04em; text-transform: uppercase;
+}
+.pos-card {
+  background: var(--pos-card);
+  border: 1px solid var(--pos-line);
+  border-radius: 24px;
+  box-shadow: var(--pos-shadow);
+}
+.pos-card-2 { background: var(--pos-card-2); border: 1px solid var(--pos-line); border-radius: 16px; }
+.pos-ink { color: var(--pos-ink); }
+.pos-ink-2 { color: var(--pos-ink-2); }
+.pos-muted { color: var(--pos-muted); }
+.pos-primary { color: var(--pos-primary); }
+.pos-accent { color: var(--pos-accent); }
+.pos-success { color: var(--pos-success); }
+.pos-danger { color: var(--pos-danger); }
+.pos-num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.pos-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--pos-muted); }
+
+/* ── Pasos (código → cantidad → cobrar) ─────────────────── */
+.pos-steps { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.pos-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 14px 6px 6px; border-radius: 999px;
+  background: var(--pos-card-2); color: var(--pos-muted);
+  font-size: 13px; font-weight: 600; border: 1px solid var(--pos-line);
+  transition: all .25s ease;
+}
+.pos-step b {
+  width: 24px; height: 24px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--pos-line); color: var(--pos-ink-2); font-size: 12px;
+}
+.pos-step.is-active { background: var(--pos-primary-soft); color: var(--pos-primary); border-color: transparent; }
+.pos-step.is-active b { background: var(--pos-primary); color: #fff; }
+.pos-step.is-done b { background: var(--pos-success); color: #fff; }
+
+/* ── Display del código ─────────────────────────────────── */
+.pos-display {
+  position: relative; border-radius: 20px; padding: 28px 24px;
+  background: var(--pos-card-2); border: 2px solid var(--pos-line);
+  transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+  overflow: hidden; /* un código muy largo no debe agrandar ni deformar la caja */
+}
+.pos-display.is-typing { border-color: var(--pos-primary-2); box-shadow: 0 0 0 6px var(--pos-primary-soft); background: var(--pos-card); }
+.pos-display.is-quantity { border-color: var(--pos-accent); box-shadow: 0 0 0 6px var(--pos-accent-soft); background: var(--pos-card); }
+.pos-display-value {
+  font-size: 76px; line-height: 1; font-weight: 800; color: var(--pos-primary); letter-spacing: .02em;
+  display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: clip;
+}
+.pos-display.is-quantity .pos-display-value { color: var(--pos-accent); }
+.pos-display-empty { color: var(--pos-line-2); }
+.pos-caret {
+  display: inline-block; width: 5px; height: 64px; margin-left: 6px; vertical-align: -6px;
+  background: var(--pos-accent); border-radius: 3px; animation: pos-blink 1s steps(1) infinite;
+}
+@keyframes pos-blink { 50% { opacity: 0; } }
+
+.pos-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  font-size: 14px; font-weight: 600; background: var(--pos-card-2); border: 1px solid var(--pos-line); color: var(--pos-ink-2);
+}
+.pos-chip.is-ok { background: var(--pos-success-soft); color: var(--pos-success); border-color: transparent; }
+.pos-chip.is-warn { background: var(--pos-warn-soft); color: var(--pos-warn); border-color: transparent; }
+.pos-chip.is-bad { background: var(--pos-danger-soft); color: var(--pos-danger); border-color: transparent; }
+.pos-chip.is-mp { background: var(--pos-mp-soft); color: var(--pos-mp); border-color: transparent; }
+.pos-dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; display: inline-block; }
+
+/* ── Último agregado ────────────────────────────────────── */
+.pos-last {
+  display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 18px;
+  background: linear-gradient(135deg, var(--pos-primary-soft), var(--pos-card));
+  border: 1px solid var(--pos-line);
+  animation: pos-pop .45s cubic-bezier(.2, .9, .3, 1.2);
+}
+.pos-last-icon {
+  width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--pos-primary); color: #fff; font-weight: 800; font-size: 20px;
+}
+
+/* ── Carrito ────────────────────────────────────────────── */
+.pos-count {
+  min-width: 28px; height: 28px; padding: 0 9px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--pos-accent); color: #fff; font-weight: 800; font-size: 14px;
+}
+.pos-line {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 16px;
+  background: var(--pos-card); border: 1px solid var(--pos-line);
+  transition: border-color .2s ease, transform .2s ease;
+}
+.pos-line:hover { border-color: var(--pos-primary-2); }
+.pos-line.is-new { animation: pos-slide-in .45s cubic-bezier(.2, .9, .3, 1.1), pos-flash 1.4s ease-out; }
+.pos-line-idx {
+  width: 36px; height: 36px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--pos-primary-soft); color: var(--pos-primary); font-weight: 800; font-size: 15px;
+}
+.pos-line-qty {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 8px;
+  background: var(--pos-accent-soft); color: var(--pos-accent); font-weight: 800; font-size: 13px;
+}
+.pos-tag { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.pos-tag.is-promo { background: #F3E8FF; color: #7C3AED; }
+.pos-tag.is-scale { background: var(--pos-primary-soft); color: var(--pos-primary); }
+.pos-empty {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center;
+  color: var(--pos-muted);
+}
+.pos-empty-icon {
+  width: 84px; height: 84px; border-radius: 28px; display: flex; align-items: center; justify-content: center;
+  background: var(--pos-card-2); border: 2px dashed var(--pos-line-2); font-size: 36px;
+}
+
+/* ── Total + cobrar ─────────────────────────────────────── */
+.pos-total {
+  border-radius: 20px; padding: 16px 20px; color: #fff; position: relative; overflow: hidden;
+  background: linear-gradient(135deg, var(--pos-primary) 0%, var(--pos-primary-2) 100%);
+  box-shadow: 0 10px 30px rgba(30, 64, 175, .28);
+}
+.pos-total::after {
+  content: ""; position: absolute; right: -40px; top: -40px; width: 160px; height: 160px; border-radius: 999px;
+  background: rgba(255, 255, 255, .10);
+}
+.pos-total-value { font-size: 40px; font-weight: 800; line-height: 1.1; }
+.pos-total-value.is-bump { animation: pos-bump .35s ease; }
+.pos-btn-pay {
+  width: 100%; height: 100%; min-height: 84px; border-radius: 20px; border: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: linear-gradient(135deg, var(--pos-accent) 0%, var(--pos-accent-2) 100%); color: #fff;
+  font-weight: 800; font-size: 22px; box-shadow: 0 10px 28px rgba(255, 107, 0, .32);
+  transition: transform .12s ease, filter .2s ease;
+}
+.pos-btn-pay:hover { filter: brightness(1.05); }
+.pos-btn-pay:active { transform: scale(.98); }
+.pos-btn-pay small { font-size: 12px; font-weight: 700; opacity: .9; letter-spacing: .06em; text-transform: uppercase; }
+.pos-btn-pay:disabled { background: var(--pos-card-2); color: var(--pos-muted); box-shadow: none; cursor: not-allowed; border: 1px solid var(--pos-line); }
+
+/* ── Guía de teclas ─────────────────────────────────────── */
+.pos-keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.pos-key {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 84px; height: 64px; padding: 6px 10px; border-radius: 14px;
+  background: var(--pos-key); border: 1px solid var(--pos-line);
+  box-shadow: 0 3px 0 var(--pos-key-edge); cursor: pointer;
+  transition: transform .08s ease, box-shadow .08s ease, border-color .2s ease;
+}
+.pos-key:hover { border-color: var(--pos-primary-2); }
+.pos-key:active { transform: translateY(3px); box-shadow: 0 0 0 var(--pos-key-edge); }
+.pos-key.is-static { cursor: default; opacity: .75; }
+.pos-key-glyph { font-weight: 800; font-size: 20px; line-height: 1.1; }
+.pos-key-label { font-size: 11px; font-weight: 600; color: var(--pos-muted); }
+.pos-key.k-blue .pos-key-glyph { color: var(--pos-primary-2); }
+.pos-key.k-green .pos-key-glyph { color: var(--pos-success); }
+.pos-key.k-orange .pos-key-glyph { color: var(--pos-accent); }
+.pos-key.k-red .pos-key-glyph { color: var(--pos-danger); }
+.pos-key.k-violet .pos-key-glyph { color: #7C3AED; }
+.pos-key.k-mp .pos-key-glyph { color: var(--pos-mp); }
+.pos-key.k-gray .pos-key-glyph { color: var(--pos-muted); }
+
+/* ── Cobro (modal) ──────────────────────────────────────── */
+.pos-pay { color: var(--pos-ink); }
+.pos-pay-amount {
+  border-radius: 20px; padding: 18px; text-align: center;
+  background: var(--pos-card-2); border: 1px solid var(--pos-line);
+}
+.pos-pay-amount .v { font-size: 52px; font-weight: 800; color: var(--pos-primary); line-height: 1.1; }
+.pos-method {
+  position: relative; border-radius: 22px; padding: 22px 18px; text-align: left; cursor: pointer;
+  border: 2px solid var(--pos-line); background: var(--pos-card);
+  display: flex; flex-direction: column; gap: 10px; min-height: 150px;
+  transition: transform .15s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.pos-method:hover { transform: translateY(-2px); box-shadow: var(--pos-shadow-lg); }
+.pos-method:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+.pos-method .k {
+  position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px;
+  background: var(--pos-card-2); border: 1px solid var(--pos-line); box-shadow: 0 2px 0 var(--pos-key-edge); color: var(--pos-ink);
+}
+.pos-method .ic { width: 52px; height: 52px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+.pos-method .t { font-size: 20px; font-weight: 800; }
+.pos-method .s { font-size: 13px; color: var(--pos-muted); font-weight: 500; }
+.pos-method.is-mp { border-color: color-mix(in srgb, var(--pos-mp) 45%, var(--pos-line)); }
+.pos-method.is-mp .ic { background: var(--pos-mp-soft); color: var(--pos-mp); }
+.pos-method.is-cash { border-color: color-mix(in srgb, var(--pos-success) 45%, var(--pos-line)); }
+.pos-method.is-cash .ic { background: var(--pos-success-soft); color: var(--pos-success); }
+.pos-entry {
+  border-radius: 22px; padding: 22px; text-align: center; background: var(--pos-card);
+  border: 2px solid var(--pos-success); box-shadow: 0 0 0 6px var(--pos-success-soft);
+}
+.pos-entry.is-mp { border-color: var(--pos-mp); box-shadow: 0 0 0 6px var(--pos-mp-soft); }
+.pos-entry .v { font-size: 64px; font-weight: 800; line-height: 1; color: var(--pos-ink); }
+.pos-change {
+  border-radius: 26px; padding: 26px 20px; text-align: center; color: #fff; position: relative; overflow: hidden;
+  background: linear-gradient(135deg, #16A34A 0%, #22C55E 100%);
+  box-shadow: 0 14px 36px rgba(22, 163, 74, .32);
+  animation: pos-pop .5s cubic-bezier(.2, .9, .3, 1.25);
+}
+.pos-change::before, .pos-change::after {
+  content: ""; position: absolute; border-radius: 999px; background: rgba(255, 255, 255, .12);
+}
+.pos-change::before { width: 200px; height: 200px; left: -60px; bottom: -90px; }
+.pos-change::after { width: 140px; height: 140px; right: -30px; top: -50px; }
+.pos-change .v { font-size: 72px; font-weight: 800; line-height: 1.05; position: relative; }
+.pos-check {
+  width: 64px; height: 64px; border-radius: 999px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .22); font-size: 34px; position: relative;
+}
+.pos-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; font-weight: 700; cursor: pointer;
+  padding: 12px 22px; font-size: 16px; border: 1px solid var(--pos-line); background: var(--pos-card); color: var(--pos-ink-2);
+  transition: filter .2s ease, transform .1s ease;
+}
+.pos-btn:active { transform: scale(.98); }
+.pos-btn:disabled { opacity: .5; cursor: not-allowed; }
+.pos-btn.is-primary { background: var(--pos-success); color: #fff; border-color: transparent; }
+.pos-btn.is-mp { background: var(--pos-mp); color: #fff; border-color: transparent; }
+.pos-btn.is-accent { background: linear-gradient(135deg, var(--pos-accent), var(--pos-accent-2)); color: #fff; border-color: transparent; font-size: 20px; padding: 16px 28px; box-shadow: 0 10px 26px rgba(255, 107, 0, .3); }
+.pos-btn.is-ghost-danger { color: var(--pos-danger); border-color: transparent; background: var(--pos-danger-soft); }
+.pos-kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 7px; border-radius: 7px;
+  font-size: 12px; font-weight: 800; background: rgba(255, 255, 255, .25); border: 1px solid rgba(255, 255, 255, .35);
+}
+.pos-kbd.is-light { background: var(--pos-card-2); border-color: var(--pos-line); color: var(--pos-ink-2); }
+
+/* ── Avisos ─────────────────────────────────────────────── */
+.pos-toast {
+  position: fixed; top: 84px; right: 24px; z-index: 100; display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px 12px 12px; border-radius: 16px; max-width: 460px;
+  background: var(--pos-card); color: var(--pos-ink); border: 1px solid var(--pos-line); box-shadow: var(--pos-shadow-lg);
+  font-weight: 700; font-size: 16px; animation: pos-toast-in .35s cubic-bezier(.2, .9, .3, 1.15);
+}
+.pos-toast .ic { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.pos-toast.is-success .ic { background: var(--pos-success-soft); color: var(--pos-success); }
+.pos-toast.is-error .ic { background: var(--pos-danger-soft); color: var(--pos-danger); }
+.pos-toast.is-info .ic { background: var(--pos-primary-soft); color: var(--pos-primary); }
+.pos-toast.is-warn .ic { background: var(--pos-warn-soft); color: var(--pos-warn); }
+.pos-mp-banner {
+  position: fixed; bottom: 112px; right: 24px; z-index: 100; min-width: 300px; padding: 16px 18px; border-radius: 20px;
+  background: var(--pos-card); border: 2px solid var(--pos-mp); box-shadow: var(--pos-shadow-lg);
+  animation: pos-toast-in .4s cubic-bezier(.2, .9, .3, 1.15);
+}
+
+/* ── Animaciones ────────────────────────────────────────── */
+@keyframes pos-pop { 0% { opacity: 0; transform: scale(.94) translateY(8px); } 100% { opacity: 1; transform: none; } }
+@keyframes pos-slide-in { 0% { opacity: 0; transform: translateY(-14px) scale(.98); } 100% { opacity: 1; transform: none; } }
+@keyframes pos-flash { 0% { background: var(--pos-accent-soft); border-color: var(--pos-accent); } 100% { background: var(--pos-card); } }
+@keyframes pos-bump { 0% { transform: scale(1); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes pos-toast-in { 0% { opacity: 0; transform: translateX(24px); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .pos-v2 *, .pos-v2 *::before, .pos-v2 *::after { animation: none !important; transition: none !important; }
+}
+
+/* ── Modales (shell compartido) en el POS ───────────────── */
+.o-modal { border-radius: 24px !important; overflow: hidden; }
+.o-modal-title { font-size: 1.2rem !important; font-weight: 800 !important; letter-spacing: -0.01em; }
+.o-modal-overlay { backdrop-filter: blur(3px); }

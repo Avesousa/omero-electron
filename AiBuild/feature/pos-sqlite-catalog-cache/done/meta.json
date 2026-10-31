@@ -1,0 +1,593 @@
+{
+  "project": "omero-electron",
+  "feature": "pos-sqlite-catalog-cache",
+  "ticket_id": null,
+  "raw_input": "Fase 2 — caché SQLite del catálogo para el POS desktop (omero-electron, base develop)",
+  "type": "feature",
+  "branch": "feature/pos-sqlite-catalog-cache",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "finished",
+  "created_at": "2026-09-21T00:00:00Z",
+  "updated_at": "2026-09-21T15:12:25Z",
+  "git": true,
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "done",
+    "build": "done",
+    "finish": "done"
+  },
+  "open_questions": [],
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 0,
+      "description": "Actualizar Electron 33 → 40 (commit aislado)",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T002",
+        "T005"
+      ],
+      "done_when": "`npm run check` pasa; `node -e \"require('electron')\"` reporta 40.x y `ELECTRON_RUN_AS_NODE=1 electron -e \"console.log(process.versions.modules)\"` imprime 143; `npm run dev` abre el POS con teclado y pantalla completa correctos; el cambio queda en un commit separado.",
+      "complexity": "M",
+      "files_affected": [
+        "package.json",
+        "package-lock.json",
+        "main/*.ts (solo si hay breaking changes)"
+      ],
+      "started_at": "2026-09-21T14:30:52Z",
+      "completed_at": "2026-09-21T14:33:51Z",
+      "files_modified": [
+        "package.json",
+        "package-lock.json"
+      ]
+    },
+    {
+      "id": "T002",
+      "phase": 0,
+      "description": "Dependencia better-sqlite3 en web/ (opcional) y config de build",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001",
+        "T005"
+      ],
+      "done_when": "`cd web && npm ci && npx tsc --noEmit && npm run build` OK; `npm ci --omit=optional && npm run build` también OK (sin better-sqlite3); `docker build web/` OK.",
+      "complexity": "M",
+      "files_affected": [
+        "web/package.json",
+        "web/package-lock.json",
+        "web/next.config.ts",
+        "web/.gitignore",
+        "web/Dockerfile"
+      ],
+      "started_at": "2026-09-21T14:33:59Z",
+      "completed_at": "2026-09-21T14:41:48Z",
+      "files_modified": [
+        "web/package.json",
+        "web/package-lock.json",
+        "web/next.config.ts",
+        "web/.gitignore",
+        "web/Dockerfile"
+      ]
+    },
+    {
+      "id": "T003",
+      "phase": 0,
+      "description": "scripts/fetch-native.mjs: binarios de Electron con checksum fijado",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T011"
+      ],
+      "done_when": "`npm run fetch:native` deja los 3 archivos en resources/native con checksums verificados; alterar un checksum hace fallar el script.",
+      "complexity": "M",
+      "files_affected": [
+        "scripts/fetch-native.mjs",
+        "scripts/native-checksums.json",
+        "package.json",
+        ".gitignore"
+      ],
+      "started_at": "2026-09-21T14:47:10Z",
+      "completed_at": "2026-09-21T14:47:56Z",
+      "files_modified": [
+        "scripts/fetch-native.mjs",
+        "scripts/native-checksums.json",
+        "package.json",
+        ".gitignore"
+      ]
+    },
+    {
+      "id": "T004",
+      "phase": 0,
+      "description": "scripts/verify-native.mjs: carga con el ABI real de Electron",
+      "status": "done",
+      "depends_on": [
+        "T003"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`npm run verify:native` imprime la versión de SQLite en esta máquina; con un binario de otro ABI (p. ej. el de Node) falla con error claro.",
+      "complexity": "M",
+      "files_affected": [
+        "scripts/verify-native.mjs",
+        "package.json"
+      ],
+      "started_at": "2026-09-21T14:47:56Z",
+      "completed_at": "2026-09-21T14:48:47Z",
+      "files_modified": [
+        "scripts/verify-native.mjs",
+        "package.json"
+      ]
+    },
+    {
+      "id": "T005",
+      "phase": 1,
+      "description": "catalog: types, cache-policy y tenant",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001",
+        "T002"
+      ],
+      "done_when": "Funciones exportadas y tipadas; `tsc --noEmit` OK; comportamiento verificado en T015.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/catalog/types.ts",
+        "web/src/lib/catalog/cache-policy.ts",
+        "web/src/lib/catalog/tenant.ts"
+      ],
+      "started_at": "2026-09-21T14:41:48Z",
+      "completed_at": "2026-09-21T14:42:46Z",
+      "files_modified": [
+        "web/src/lib/catalog/types.ts",
+        "web/src/lib/catalog/cache-policy.ts",
+        "web/src/lib/catalog/tenant.ts"
+      ]
+    },
+    {
+      "id": "T006",
+      "phase": 1,
+      "description": "catalog: migraciones y SqliteCatalogStore",
+      "status": "done",
+      "depends_on": [
+        "T002",
+        "T005"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Con un archivo temporal: crear, migrar, snapshot, leer, lookup y wipe funcionan; `tsc --noEmit` OK; cobertura en T016.",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/catalog/migrations.ts",
+        "web/src/lib/catalog/sqlite-store.ts"
+      ],
+      "started_at": "2026-09-21T14:42:46Z",
+      "completed_at": "2026-09-21T14:43:43Z",
+      "files_modified": [
+        "web/src/lib/catalog/migrations.ts",
+        "web/src/lib/catalog/sqlite-store.ts"
+      ]
+    },
+    {
+      "id": "T007",
+      "phase": 1,
+      "description": "runtime: getDataDir/getSqliteBinding y store-registry",
+      "status": "done",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`getCatalogStore` devuelve null en web, sin dataDir o sin módulo; devuelve un store operativo en desktop con dataDir; sin efectos al importar (compatible con next build sin variables).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/runtime.ts",
+        "web/src/lib/catalog/store-registry.ts"
+      ],
+      "started_at": "2026-09-21T14:43:43Z",
+      "completed_at": "2026-09-21T14:44:53Z",
+      "files_modified": [
+        "web/src/lib/runtime.ts",
+        "web/src/lib/catalog/store-registry.ts",
+        "web/src/lib/catalog/sqlite-store.ts"
+      ]
+    },
+    {
+      "id": "T008",
+      "phase": 2,
+      "description": "catalog-proxy y data-layer (read-through + fallback)",
+      "status": "done",
+      "depends_on": [
+        "T005",
+        "T007"
+      ],
+      "can_parallelize_with": [
+        "T009"
+      ],
+      "done_when": "Verificado por T018: online deja snapshot, backend caído sirve caché con headers, 401/404/500 no activan caché.",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/catalog/catalog-proxy.ts",
+        "web/src/lib/data-layer.ts"
+      ],
+      "started_at": "2026-09-21T14:45:20Z",
+      "completed_at": "2026-09-21T14:45:46Z",
+      "files_modified": [
+        "web/src/lib/catalog/catalog-proxy.ts",
+        "web/src/lib/data-layer.ts",
+        "web/src/app/api/[...path]/route.ts"
+      ]
+    },
+    {
+      "id": "T009",
+      "phase": 2,
+      "description": "CatalogSyncer: refresco cada 5 min y sondeo de recuperación",
+      "status": "done",
+      "depends_on": [
+        "T005",
+        "T007"
+      ],
+      "can_parallelize_with": [
+        "T008"
+      ],
+      "done_when": "Con timers falsos: sincroniza a los 5 min, entra en recuperación tras fallo y sincroniza al volver; token vencido/401 detiene el intento (T017).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/catalog/syncer.ts"
+      ],
+      "started_at": "2026-09-21T14:44:53Z",
+      "completed_at": "2026-09-21T14:45:20Z",
+      "files_modified": [
+        "web/src/lib/catalog/syncer.ts",
+        "web/src/lib/catalog/snapshot.ts",
+        "web/src/lib/catalog/connectivity.ts"
+      ]
+    },
+    {
+      "id": "T010",
+      "phase": 2,
+      "description": "Endpoints locales y route handler con la capa de datos",
+      "status": "done",
+      "depends_on": [
+        "T008",
+        "T009"
+      ],
+      "can_parallelize_with": [
+        "T011"
+      ],
+      "done_when": "`GET /api/_local/connectivity` responde 200 online/offline; `DELETE /api/_local/cache` borra el archivo del tenant; el catch-all usa la capa de datos; `tsc` y `npm run build` OK.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/catalog/connectivity.ts",
+        "web/src/app/api/%5Flocal/connectivity/route.ts",
+        "web/src/app/api/%5Flocal/cache/route.ts",
+        "web/src/app/api/[...path]/route.ts"
+      ],
+      "started_at": "2026-09-21T14:45:46Z",
+      "completed_at": "2026-09-21T14:46:17Z",
+      "files_modified": [
+        "web/src/app/api/%5Flocal/connectivity/route.ts",
+        "web/src/app/api/%5Flocal/cache/route.ts"
+      ]
+    },
+    {
+      "id": "T011",
+      "phase": 2,
+      "description": "Electron: OMERO_DATA_DIR y OMERO_SQLITE_BINDING al Next",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T003",
+        "T010"
+      ],
+      "done_when": "`npm run typecheck` OK; el env del utilityProcess incluye ambas variables (verificado en T014).",
+      "complexity": "S",
+      "files_affected": [
+        "main/process-manager.ts"
+      ],
+      "started_at": "2026-09-21T14:46:17Z",
+      "completed_at": "2026-09-21T14:47:10Z",
+      "files_modified": [
+        "main/paths.ts",
+        "main/process-manager.ts",
+        "main/build-config.ts",
+        "main/logger.ts"
+      ]
+    },
+    {
+      "id": "T012",
+      "phase": 3,
+      "description": "POS: estado de conexión en el header y logout que borra la caché",
+      "status": "done",
+      "depends_on": [
+        "T010"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "En desktop el aviso aparece solo sin conexión o con pendientes y el botón solo verifica; en web el header no cambia; el logout llama al DELETE (verificado en T019 y T014).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/pos/hooks/useConnectionStatus.ts",
+        "web/src/app/pos/components/ConnectionStatus.tsx",
+        "web/src/app/pos/page.tsx",
+        "web/src/shared/contexts/auth.tsx"
+      ],
+      "started_at": "2026-09-21T14:48:47Z",
+      "completed_at": "2026-09-21T14:49:42Z",
+      "files_modified": [
+        "web/src/lib/localCache.ts",
+        "web/src/app/pos/hooks/useConnectionStatus.ts",
+        "web/src/app/pos/components/ConnectionStatus.tsx",
+        "web/src/app/pos/hooks/index.ts",
+        "web/src/app/pos/page.tsx",
+        "web/src/shared/contexts/auth.tsx"
+      ]
+    },
+    {
+      "id": "T013",
+      "phase": 3,
+      "description": "Empaquetado: standalone con better-sqlite3 + binarios + CI",
+      "status": "done",
+      "depends_on": [
+        "T002",
+        "T003",
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T012"
+      ],
+      "done_when": "`npm run prepare:app` deja resources/frontend + resources/native completos; `verify:native` pasa; installer.yml válido y sin referencias rotas.",
+      "complexity": "M",
+      "files_affected": [
+        "scripts/prepare-frontend.mjs",
+        "electron-builder.config.ts",
+        "package.json",
+        ".github/workflows/installer.yml"
+      ],
+      "started_at": "2026-09-21T14:49:42Z",
+      "completed_at": "2026-09-21T14:50:58Z",
+      "files_modified": [
+        "scripts/prepare-frontend.mjs",
+        "electron-builder.config.ts",
+        "package.json",
+        ".github/workflows/installer.yml"
+      ]
+    },
+    {
+      "id": "T014",
+      "phase": 3,
+      "description": "Smoke end-to-end local (Electron ABI + backend caído)",
+      "status": "done",
+      "depends_on": [
+        "T010",
+        "T011",
+        "T012",
+        "T013"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Los checks pasan y quedan anotados con fecha en manual-checklist.md.",
+      "complexity": "L",
+      "files_affected": [
+        "AiBuild/feature/pos-sqlite-catalog-cache/WIP/manual-checklist.md"
+      ],
+      "started_at": "2026-09-21T14:50:58Z",
+      "completed_at": "2026-09-21T14:55:10Z",
+      "files_modified": [
+        "AiBuild/feature/pos-sqlite-catalog-cache/WIP/manual-checklist.md",
+        "web/src/lib/catalog/sqlite-store.ts"
+      ]
+    },
+    {
+      "id": "T015",
+      "phase": 4,
+      "description": "Tests unit: cache-policy, tenant y runtime",
+      "status": "done",
+      "depends_on": [
+        "T005",
+        "T007"
+      ],
+      "can_parallelize_with": [
+        "T016"
+      ],
+      "done_when": "`npx vitest run` de esos archivos pasa; cobertura ≥85 % en cada módulo.",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/lib/catalog/cache-policy.test.ts",
+        "web/src/lib/catalog/tenant.test.ts",
+        "web/src/lib/runtime.test.ts"
+      ],
+      "started_at": "2026-09-21T14:55:10Z",
+      "completed_at": "2026-09-21T14:56:15Z",
+      "files_modified": [
+        "web/src/lib/catalog/cache-policy.test.ts",
+        "web/src/lib/catalog/tenant.test.ts",
+        "web/src/lib/runtime.test.ts"
+      ]
+    },
+    {
+      "id": "T016",
+      "phase": 4,
+      "description": "Tests unit: migraciones y SqliteCatalogStore (SQLite real)",
+      "status": "done",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T015"
+      ],
+      "done_when": "`npx vitest run` del archivo pasa; cobertura de sqlite-store/migrations ≥85 %.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/catalog/sqlite-store.test.ts",
+        "web/src/lib/catalog/migrations.test.ts"
+      ],
+      "started_at": "2026-09-21T14:56:15Z",
+      "completed_at": "2026-09-21T14:57:15Z",
+      "files_modified": [
+        "web/src/lib/catalog/sqlite-store.test.ts",
+        "web/src/lib/catalog/migrations.test.ts"
+      ]
+    },
+    {
+      "id": "T017",
+      "phase": 4,
+      "description": "Tests unit: syncer y connectivity (timers falsos)",
+      "status": "done",
+      "depends_on": [
+        "T009",
+        "T010"
+      ],
+      "can_parallelize_with": [
+        "T018"
+      ],
+      "done_when": "`npx vitest run` de esos archivos pasa; cobertura ≥85 %.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/catalog/syncer.test.ts",
+        "web/src/lib/catalog/connectivity.test.ts"
+      ],
+      "started_at": "2026-09-21T14:57:16Z",
+      "completed_at": "2026-09-21T14:57:36Z",
+      "files_modified": [
+        "web/src/lib/catalog/syncer.test.ts",
+        "web/src/lib/catalog/connectivity.test.ts"
+      ]
+    },
+    {
+      "id": "T018",
+      "phase": 4,
+      "description": "Tests de integración: capa de datos con backend falso y SQLite real",
+      "status": "done",
+      "depends_on": [
+        "T008",
+        "T010"
+      ],
+      "can_parallelize_with": [
+        "T017"
+      ],
+      "done_when": "`npx vitest run` pasa de forma estable (3 corridas seguidas sin flakiness).",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/catalog/catalog-proxy.integration.test.ts"
+      ],
+      "started_at": "2026-09-21T14:58:53Z",
+      "completed_at": "2026-09-21T14:59:39Z",
+      "files_modified": [
+        "web/src/lib/catalog/catalog-proxy.integration.test.ts"
+      ]
+    },
+    {
+      "id": "T019",
+      "phase": 4,
+      "description": "Tests de UI: useConnectionStatus, ConnectionStatus y logout",
+      "status": "done",
+      "depends_on": [
+        "T012"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`npx vitest run` de esos archivos pasa.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/pos/hooks/useConnectionStatus.test.ts",
+        "web/src/app/pos/components/ConnectionStatus.test.tsx",
+        "web/src/shared/contexts/auth.test.tsx"
+      ],
+      "started_at": "2026-09-21T14:59:39Z",
+      "completed_at": "2026-09-21T15:01:03Z",
+      "files_modified": [
+        "web/src/lib/localCache.test.ts",
+        "web/src/app/pos/components/ConnectionStatus.test.tsx",
+        "web/src/app/pos/hooks/useConnectionStatus.test.ts",
+        "web/src/shared/contexts/auth.test.tsx",
+        "web/src/app/pos/hooks/useConnectionStatus.ts"
+      ]
+    },
+    {
+      "id": "T020",
+      "phase": 4,
+      "description": "Umbrales de cobertura, gates y CI",
+      "status": "done",
+      "depends_on": [
+        "T015",
+        "T016",
+        "T017",
+        "T018",
+        "T019",
+        "T013"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`npm run check` pasa en web y raíz; el workflow invoca los gates y `verify:native`.",
+      "complexity": "S",
+      "files_affected": [
+        "web/vitest.config.mts",
+        "package.json",
+        ".github/workflows/installer.yml"
+      ],
+      "started_at": "2026-09-21T15:01:03Z",
+      "completed_at": "2026-09-21T15:01:24Z",
+      "files_modified": [
+        "web/vitest.config.mts",
+        "web/src/shared/contexts/auth.test.tsx"
+      ]
+    },
+    {
+      "id": "T021",
+      "phase": 5,
+      "description": "Documentación y spec ajustada",
+      "status": "done",
+      "depends_on": [
+        "T012",
+        "T013"
+      ],
+      "can_parallelize_with": [
+        "T022"
+      ],
+      "done_when": "Un desarrollador nuevo puede levantar el modo desktop con caché siguiendo el README; la spec refleja lo construido.",
+      "complexity": "M",
+      "files_affected": [
+        "CLAUDE.md",
+        "README.md",
+        "web/README.md",
+        "web/.env.example",
+        "AiBuild/feature/pos-sqlite-catalog-cache/WIP/technical-spec.md"
+      ],
+      "completed_at": "2026-09-21T15:02:41Z",
+      "files_modified": [
+        "CLAUDE.md",
+        "README.md",
+        "web/README.md",
+        "web/.env.example",
+        "AiBuild/feature/pos-sqlite-catalog-cache/WIP/technical-spec.md"
+      ]
+    },
+    {
+      "id": "T022",
+      "phase": 5,
+      "description": "Checklist manual, deuda técnica y pendientes",
+      "status": "done",
+      "depends_on": [
+        "T014"
+      ],
+      "can_parallelize_with": [
+        "T021"
+      ],
+      "done_when": "Archivo completo y referenciado desde el PR; pendientes reflejados en la memoria del proyecto.",
+      "complexity": "S",
+      "files_affected": [
+        "AiBuild/feature/pos-sqlite-catalog-cache/WIP/manual-checklist.md"
+      ],
+      "completed_at": "2026-09-21T15:02:41Z",
+      "files_modified": [
+        "AiBuild/feature/pos-sqlite-catalog-cache/WIP/manual-checklist.md"
+      ]
+    }
+  ],
+  "build_completed_at": "2026-09-21T15:08:35Z",
+  "finished_at": "2026-09-21T15:12:25Z",
+  "commit": "dea94ac"
+}

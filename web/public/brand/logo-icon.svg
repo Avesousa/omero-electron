@@ -1,0 +1,8 @@
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Omero icon">
+  <!-- Blue rounded square — like a POS terminal screen -->
+  <rect width="48" height="48" rx="10" fill="#1E40AF"/>
+  <!-- Stylized O: thick white ring, works down to 16px favicon -->
+  <circle cx="24" cy="25" r="11" fill="none" stroke="white" stroke-width="6"/>
+  <!-- Small upward arrow tip above the ring -->
+  <polygon points="24,7 29,14 19,14" fill="white"/>
+</svg>

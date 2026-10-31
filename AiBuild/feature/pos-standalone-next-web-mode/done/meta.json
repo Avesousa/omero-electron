@@ -1,0 +1,605 @@
+{
+  "project": "omero-electron",
+  "feature": "pos-standalone-next-web-mode",
+  "ticket_id": null,
+  "raw_input": "Fase 1 — POS independiente con Next y modo web (omero-electron, base develop)",
+  "type": "feature",
+  "branch": "feature/pos-standalone-next-web-mode",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "finished",
+  "created_at": "2026-09-21T00:00:00Z",
+  "updated_at": "2026-09-21T12:42:36Z",
+  "git": true,
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "done",
+    "build": "done",
+    "finish": "done"
+  },
+  "open_questions": [],
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 0,
+      "description": "Scaffold del paquete web/ (Next 16, npm)",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T004",
+        "T006"
+      ],
+      "done_when": "`cd web && npm ci && npx tsc --noEmit` corre sin errores con un app/page.tsx mínimo; `npm run build` genera .next/standalone/server.js en la raíz del standalone (no anidado en web/).",
+      "complexity": "M",
+      "files_affected": [
+        "web/package.json",
+        "web/package-lock.json",
+        "web/tsconfig.json",
+        "web/next.config.ts",
+        "web/postcss.config.mjs",
+        "web/vitest.config.ts",
+        "web/.gitignore"
+      ],
+      "started_at": "2026-09-21T11:57:30Z",
+      "completed_at": "2026-09-21T11:59:28Z",
+      "files_modified": [
+        "web/package.json",
+        "web/package-lock.json",
+        "web/.npmrc",
+        "web/tsconfig.json",
+        "web/next.config.ts",
+        "web/postcss.config.mjs",
+        "web/vitest.config.ts",
+        "web/.gitignore",
+        "web/src/app/page.tsx",
+        "web/src/app/layout.tsx",
+        "web/src/test/setup.ts"
+      ]
+    },
+    {
+      "id": "T002",
+      "phase": 0,
+      "description": "Copiar del repo omero el cierre de imports del POS a web/src",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T004",
+        "T006"
+      ],
+      "done_when": "Todos los archivos existen en web/src; el listado de web/README.md coincide con `git ls-files web/src`; ningún archivo importa algo inexistente (verificado en T003).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/pos/**",
+        "web/src/app/login/**",
+        "web/src/app/components/**",
+        "web/src/app/globals.css",
+        "web/src/app/layout.tsx",
+        "web/src/lib/*",
+        "web/src/shared/**",
+        "web/src/middleware.ts",
+        "web/src/instrumentation.ts",
+        "web/src/test/setup.ts",
+        "web/public/brand/**",
+        "web/README.md"
+      ],
+      "started_at": "2026-09-21T11:59:52Z",
+      "completed_at": "2026-09-21T12:00:33Z",
+      "files_modified": [
+        "web/src/** (60 archivos copiados de omero origin/develop 7b99acb)",
+        "web/public/brand",
+        "web/README.md"
+      ]
+    },
+    {
+      "id": "T003",
+      "phase": 0,
+      "description": "Hacer compilar el POS copiado (tsc + next build)",
+      "status": "done",
+      "depends_on": [
+        "T002"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`cd web && npx tsc --noEmit` y `npm run build` terminan con exit 0; `npm run start` sirve /login y /pos (redirige a /login sin sesión).",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/app/page.tsx",
+        "web/next.config.ts",
+        "web/src/**"
+      ],
+      "started_at": "2026-09-21T12:00:33Z",
+      "completed_at": "2026-09-21T12:01:23Z",
+      "files_modified": [
+        "web/src/app/page.tsx",
+        "web/next.config.ts"
+      ]
+    },
+    {
+      "id": "T004",
+      "phase": 1,
+      "description": "lib/runtime.ts: getRuntime() y getBackendUrl()",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T002",
+        "T006"
+      ],
+      "done_when": "Funciones exportadas y tipadas; `tsc --noEmit` OK; sin efectos al importar el módulo.",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/lib/runtime.ts"
+      ],
+      "started_at": "2026-09-21T12:01:23Z",
+      "completed_at": "2026-09-21T12:01:56Z",
+      "files_modified": [
+        "web/src/lib/runtime.ts",
+        "main/config.ts"
+      ]
+    },
+    {
+      "id": "T005",
+      "phase": 1,
+      "description": "instrumentation.ts: validar entorno al arrancar (+ mantener Better Stack)",
+      "status": "done",
+      "depends_on": [
+        "T002",
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T007"
+      ],
+      "done_when": "`OMERO_RUNTIME` ausente → `npm run start` falla con mensaje claro; con env válida arranca y loguea \"runtime=<x> backend=<origin>\"; `npm run build` funciona sin variables.",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/instrumentation.ts"
+      ],
+      "started_at": "2026-09-21T12:01:56Z",
+      "completed_at": "2026-09-21T12:03:42Z",
+      "files_modified": [
+        "web/src/instrumentation.ts",
+        "web/src/instrumentation-node.ts"
+      ]
+    },
+    {
+      "id": "T006",
+      "phase": 1,
+      "description": "Electron: config.ts con resolveBackendUrl() + build-config.ts",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T001",
+        "T002",
+        "T004"
+      ],
+      "done_when": "`npm run typecheck` OK en la raíz; resolveBackendUrl es pura y exportada sin importar electron.",
+      "complexity": "S",
+      "files_affected": [
+        "main/config.ts",
+        "main/build-config.ts"
+      ],
+      "started_at": "2026-09-21T11:59:28Z",
+      "completed_at": "2026-09-21T11:59:52Z",
+      "files_modified": [
+        "main/config.ts",
+        "main/build-config.ts"
+      ]
+    },
+    {
+      "id": "T007",
+      "phase": 2,
+      "description": "lib/backend-proxy.ts: proxyToBackend(request)",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T005",
+        "T009",
+        "T010"
+      ],
+      "done_when": "Función exportada y tipada; comportamiento verificado por los tests T017 y T018.",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/backend-proxy.ts"
+      ],
+      "started_at": "2026-09-21T12:03:42Z",
+      "completed_at": "2026-09-21T12:04:22Z",
+      "files_modified": [
+        "web/src/lib/backend-proxy.ts"
+      ]
+    },
+    {
+      "id": "T008",
+      "phase": 2,
+      "description": "Route handlers: /api/[...path] y /api/_local/health",
+      "status": "done",
+      "depends_on": [
+        "T007",
+        "T004"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`GET /api/_local/health` → 200 con runtime correcto aun con backend caído; `GET /api/auth/x` llega al backend configurado (verificado en T014/T018).",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/app/api/[...path]/route.ts",
+        "web/src/app/api/_local/health/route.ts"
+      ],
+      "started_at": "2026-09-21T12:04:22Z",
+      "completed_at": "2026-09-21T12:04:52Z",
+      "files_modified": [
+        "web/src/app/api/[...path]/route.ts",
+        "web/src/app/api/%5Flocal/health/route.ts"
+      ]
+    },
+    {
+      "id": "T009",
+      "phase": 2,
+      "description": "Electron: quitar Java y orquestar solo el Next local",
+      "status": "done",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T007",
+        "T010"
+      ],
+      "done_when": "`npm run typecheck` OK; no queda ninguna referencia a java/jre/jar/8080 en main/ (`grep -ri \"java\\|\\.jar\\|8080\" main/` vacío).",
+      "complexity": "M",
+      "files_affected": [
+        "main/process-manager.ts",
+        "main/main.ts",
+        "main/logger.ts"
+      ],
+      "started_at": "2026-09-21T12:04:52Z",
+      "completed_at": "2026-09-21T12:05:49Z",
+      "files_modified": [
+        "main/process-manager.ts",
+        "main/main.ts",
+        "main/logger.ts"
+      ]
+    },
+    {
+      "id": "T010",
+      "phase": 2,
+      "description": "Scripts de empaquetado y config de electron-builder",
+      "status": "done",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T007",
+        "T009"
+      ],
+      "done_when": "Con web/ construido, `node scripts/prepare-frontend.mjs` deja resources/frontend/server.js ejecutable con `node server.js`; `electron-builder.config.ts` ya no referencia jre/backend; `npm run typecheck` OK.",
+      "complexity": "M",
+      "files_affected": [
+        "scripts/prepare-frontend.mjs",
+        "scripts/write-build-config.mjs",
+        "package.json",
+        "electron-builder.config.ts",
+        ".gitignore"
+      ],
+      "started_at": "2026-09-21T12:05:49Z",
+      "completed_at": "2026-09-21T12:06:07Z",
+      "files_modified": [
+        "scripts/prepare-frontend.mjs",
+        "scripts/write-build-config.mjs",
+        "package.json",
+        "electron-builder.config.ts",
+        ".gitignore"
+      ]
+    },
+    {
+      "id": "T011",
+      "phase": 3,
+      "description": "Modo web en Railway: Dockerfile y railway.toml de web/",
+      "status": "done",
+      "depends_on": [
+        "T003",
+        "T008"
+      ],
+      "can_parallelize_with": [
+        "T012",
+        "T013"
+      ],
+      "done_when": "`docker build web/` produce imagen; `docker run -e OMERO_RUNTIME=web -e BACKEND_URL=http://host.docker.internal:8080 -p 3000:3000` responde 200 en /api/_local/health (si Docker no está disponible localmente, se valida con `npm run build && node .next/standalone/server.js` y se deja Docker para el primer deploy).",
+      "complexity": "M",
+      "files_affected": [
+        "web/Dockerfile",
+        "web/.dockerignore",
+        "web/railway.toml"
+      ],
+      "completed_at": "2026-09-21T12:17:25Z",
+      "files_modified": [
+        "web/Dockerfile",
+        "web/.dockerignore",
+        "web/railway.toml",
+        "web/src/instrumentation-node.ts",
+        "main/process-manager.ts"
+      ]
+    },
+    {
+      "id": "T012",
+      "phase": 3,
+      "description": "CI del instalador: eliminar JAR/JRE y construir el POS propio",
+      "status": "done",
+      "depends_on": [
+        "T010"
+      ],
+      "can_parallelize_with": [
+        "T011",
+        "T013"
+      ],
+      "done_when": "El YAML es válido (`actionlint` o revisión) y no contiene referencias a jre/omero-backend.jar/frontend.zip; la lista de pasos coincide con el flujo descrito en la technical-spec.",
+      "complexity": "M",
+      "files_affected": [
+        ".github/workflows/installer.yml"
+      ],
+      "started_at": "2026-09-21T12:17:25Z",
+      "completed_at": "2026-09-21T12:17:38Z",
+      "files_modified": [
+        ".github/workflows/installer.yml"
+      ]
+    },
+    {
+      "id": "T013",
+      "phase": 3,
+      "description": "omero (admin): \"Abrir POS\" usa NEXT_PUBLIC_POS_URL — PR aparte",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [
+        "T011",
+        "T012"
+      ],
+      "done_when": "Con NEXT_PUBLIC_POS_URL definida los 3 puntos navegan a esa URL; sin ella siguen apuntando a /pos; `tsc --noEmit` y `yarn test` de omero pasan; PR abierto contra develop de omero.",
+      "complexity": "S",
+      "files_affected": [
+        "(repo omero) src/app/components/nav/navConfig.ts",
+        "(repo omero) src/app/components/HomeNavCards.tsx",
+        "(repo omero) src/app/admin/sales/page.tsx",
+        "(repo omero) env.example.txt"
+      ],
+      "started_at": "2026-09-21T12:19:09Z",
+      "completed_at": "2026-09-21T12:19:58Z",
+      "files_modified": [
+        "omero:src/app/components/nav/navConfig.ts",
+        "omero:src/app/components/HomeNavCards.tsx",
+        "omero:src/app/admin/sales/page.tsx",
+        "omero:env.example.txt",
+        "omero:CLAUDE.md"
+      ]
+    },
+    {
+      "id": "T014",
+      "phase": 3,
+      "description": "Smoke test local end-to-end del build standalone",
+      "status": "done",
+      "depends_on": [
+        "T003",
+        "T008",
+        "T010"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "Los 4 checks pasan y quedan anotados con fecha en manual-checklist.md.",
+      "complexity": "M",
+      "files_affected": [
+        "AiBuild/feature/pos-standalone-next-web-mode/WIP/manual-checklist.md"
+      ],
+      "completed_at": "2026-09-21T12:19:09Z",
+      "files_modified": [
+        "AiBuild/feature/pos-standalone-next-web-mode/WIP/manual-checklist.md"
+      ]
+    },
+    {
+      "id": "T015",
+      "phase": 4,
+      "description": "Tests root: configurar vitest y probar resolveBackendUrl",
+      "status": "done",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T016",
+        "T017"
+      ],
+      "done_when": "`npm test` en la raíz pasa con 100% de cobertura de ramas en resolveBackendUrl.",
+      "complexity": "S",
+      "files_affected": [
+        "package.json",
+        "vitest.config.ts",
+        "main/config.test.ts"
+      ],
+      "started_at": "2026-09-21T12:06:07Z",
+      "completed_at": "2026-09-21T12:07:06Z",
+      "files_modified": [
+        "package.json",
+        ".npmrc",
+        "vitest.config.ts",
+        "main/config.test.ts",
+        "tsconfig.json"
+      ]
+    },
+    {
+      "id": "T016",
+      "phase": 4,
+      "description": "Tests unitarios de lib/runtime.ts",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T015",
+        "T017"
+      ],
+      "done_when": "`cd web && npx vitest run src/lib/runtime.test.ts` pasa; cobertura ≥85%.",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/lib/runtime.test.ts"
+      ],
+      "started_at": "2026-09-21T12:07:07Z",
+      "completed_at": "2026-09-21T12:08:17Z",
+      "files_modified": [
+        "web/src/lib/runtime.test.ts"
+      ]
+    },
+    {
+      "id": "T017",
+      "phase": 4,
+      "description": "Tests unitarios de lib/backend-proxy.ts (fetch mockeado)",
+      "status": "done",
+      "depends_on": [
+        "T007"
+      ],
+      "can_parallelize_with": [
+        "T015",
+        "T016"
+      ],
+      "done_when": "`npx vitest run src/lib/backend-proxy.test.ts` pasa; cobertura de backend-proxy.ts ≥85%.",
+      "complexity": "M",
+      "files_affected": [
+        "web/src/lib/backend-proxy.test.ts"
+      ],
+      "completed_at": "2026-09-21T12:08:17Z",
+      "files_modified": [
+        "web/src/lib/backend-proxy.test.ts"
+      ]
+    },
+    {
+      "id": "T018",
+      "phase": 4,
+      "description": "Tests de integración del proxy con backend falso (http.createServer)",
+      "status": "done",
+      "depends_on": [
+        "T008"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`npx vitest run src/lib/backend-proxy.integration.test.ts` pasa de forma estable (3 corridas seguidas sin flakiness).",
+      "complexity": "L",
+      "files_affected": [
+        "web/src/lib/backend-proxy.integration.test.ts"
+      ],
+      "started_at": "2026-09-21T12:09:48Z",
+      "completed_at": "2026-09-21T12:10:23Z",
+      "files_modified": [
+        "web/src/lib/backend-proxy.integration.test.ts"
+      ]
+    },
+    {
+      "id": "T019",
+      "phase": 4,
+      "description": "Tests migrados del POS pasan en web/",
+      "status": "done",
+      "depends_on": [
+        "T003"
+      ],
+      "can_parallelize_with": [
+        "T015",
+        "T016",
+        "T017"
+      ],
+      "done_when": "`cd web && npm test` pasa completo (incluye migrados + nuevos).",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/app/pos/hooks/__tests__/**",
+        "web/src/test/setup.ts",
+        "web/vitest.config.ts"
+      ],
+      "started_at": "2026-09-21T12:08:17Z",
+      "completed_at": "2026-09-21T12:08:41Z",
+      "files_modified": [
+        "web/vitest.config.mts",
+        "web/tsconfig.json"
+      ]
+    },
+    {
+      "id": "T020",
+      "phase": 4,
+      "description": "Umbrales de cobertura y gates de calidad",
+      "status": "done",
+      "depends_on": [
+        "T015",
+        "T016",
+        "T017",
+        "T018",
+        "T019",
+        "T012"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`npm run check` pasa en web/ y en la raíz; el workflow lo invoca.",
+      "complexity": "S",
+      "files_affected": [
+        "web/package.json",
+        "web/vitest.config.ts",
+        "package.json",
+        ".github/workflows/installer.yml"
+      ],
+      "started_at": "2026-09-21T12:10:49Z",
+      "completed_at": "2026-09-21T12:17:38Z",
+      "files_modified": [
+        "web/package.json",
+        "web/vitest.config.mts",
+        "package.json",
+        ".github/workflows/installer.yml"
+      ]
+    },
+    {
+      "id": "T021",
+      "phase": 5,
+      "description": "Documentación: CLAUDE.md, README, .env.example y web/README",
+      "status": "done",
+      "depends_on": [
+        "T011",
+        "T012"
+      ],
+      "can_parallelize_with": [
+        "T022"
+      ],
+      "done_when": "Un desarrollador nuevo puede levantar modo web y desktop siguiendo solo el README; CLAUDE.md ya no menciona JRE/JAR.",
+      "complexity": "M",
+      "files_affected": [
+        "CLAUDE.md",
+        "README.md",
+        "web/README.md",
+        "web/.env.example"
+      ],
+      "started_at": "2026-09-21T12:19:59Z",
+      "completed_at": "2026-09-21T12:21:16Z",
+      "files_modified": [
+        "CLAUDE.md",
+        "README.md",
+        "web/README.md",
+        "web/.env.example"
+      ]
+    },
+    {
+      "id": "T022",
+      "phase": 5,
+      "description": "Checklist manual, deuda técnica y pendientes",
+      "status": "done",
+      "depends_on": [
+        "T014"
+      ],
+      "can_parallelize_with": [
+        "T021"
+      ],
+      "done_when": "Archivo existe, referenciado desde el PR; pendientes reflejados también en memoria del proyecto.",
+      "complexity": "S",
+      "files_affected": [
+        "AiBuild/feature/pos-standalone-next-web-mode/WIP/manual-checklist.md"
+      ],
+      "completed_at": "2026-09-21T12:21:16Z",
+      "files_modified": [
+        "AiBuild/feature/pos-standalone-next-web-mode/WIP/manual-checklist.md"
+      ]
+    }
+  ],
+  "build_completed_at": "2026-09-21T12:21:55Z",
+  "finished_at": "2026-09-21T12:42:36Z",
+  "commit": "b8f58be"
+}

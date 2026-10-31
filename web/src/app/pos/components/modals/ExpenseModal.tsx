@@ -1,0 +1,65 @@
+import { KeyboardGuide } from '../keyboard/KeyboardGuide'
+import { Modal, ModalButton } from '@/app/components/ui/Modal'
+
+interface ExpenseModalProps {
+  show: boolean
+  amount: string
+  isProcessing: boolean
+  onAmountChange: (amount: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+  onKeyPress?: (key: string) => void
+}
+
+export const ExpenseModal = ({
+  show,
+  amount,
+  isProcessing,
+  onAmountChange,
+  onConfirm,
+  onCancel,
+  onKeyPress
+}: ExpenseModalProps) => {
+  if (!show) return null
+
+  return (
+    <Modal
+      isOpen
+      onClose={onCancel}
+      closeOnEsc={false}
+      hideClose={isProcessing}
+     
+      accent="danger"
+      size="lg"
+      title="Registrar gasto"
+      footer={
+        <>
+          <ModalButton variant="secondary" onClick={onCancel} disabled={isProcessing}>⇧ - CANCELAR</ModalButton>
+          <ModalButton variant="danger" onClick={onConfirm} disabled={isProcessing || !amount || parseFloat(amount) <= 0}>
+            {isProcessing ? 'Registrando gasto...' : 'ENTER - CONFIRMAR GASTO'}
+          </ModalButton>
+        </>
+      }
+    >
+      <div className="text-center space-y-5">
+        {/* Monto Display */}
+        <div className="pos-entry !border-[var(--pos-danger)] !shadow-[0_0_0_6px_var(--pos-danger-soft)]">
+          <div className="pos-eyebrow mb-2">MONTO</div>
+          <div className="v pos-num !text-[var(--pos-danger)]">${amount || '0'}</div>
+        </div>
+
+        <div className="text-sm text-[var(--pos-muted)]">Ingrese el monto y presione ENTER para confirmar</div>
+
+        {isProcessing && (
+          <div className="flex items-center justify-center space-x-3 text-[var(--pos-danger)]">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--pos-danger)]"></div>
+            <div className="font-bold">Registrando gasto...</div>
+          </div>
+        )}
+
+        {/* Guía de teclado */}
+        <KeyboardGuide variant="expense" onKeyPress={onKeyPress} />
+      </div>
+    </Modal>
+  )
+}

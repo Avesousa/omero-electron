@@ -1,0 +1,14 @@
+<svg width="224" height="48" viewBox="0 0 224 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Omero logo">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@800&amp;display=swap');
+      .wordmark { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-weight: 800; font-size: 38px; fill: #1E40AF; letter-spacing: -1px; }
+    </style>
+  </defs>
+  <!-- Icon: blue rounded square with O ring + arrow -->
+  <rect width="48" height="48" rx="10" fill="#1E40AF"/>
+  <circle cx="24" cy="25" r="11" fill="none" stroke="white" stroke-width="6"/>
+  <polygon points="24,7 29,14 19,14" fill="white"/>
+  <!-- Wordmark: "omero" in Inter ExtraBold -->
+  <text x="62" y="38" class="wordmark">omero</text>
+</svg>
