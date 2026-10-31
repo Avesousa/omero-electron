@@ -17,6 +17,28 @@ const STEPS: { mode: InputMode; label: string }[] = [
   { mode: 'payment', label: 'Cobrar' },
 ]
 
+/**
+ * El tamaño base del valor es 76px (ver pos.css), pensado para códigos cortos. Un código de barra
+ * largo (EAN-13, o uno leído con prefijo/sufijo de la pistola) desbordaba la caja: al no achicarse,
+ * el texto rompía línea y agrandaba todo el panel. Se achica en escalones según el largo para que
+ * siempre entre en una sola línea y la caja quede de tamaño fijo.
+ */
+const VALUE_FONT_STEPS: [maxLength: number, px: number][] = [
+  [6, 76],
+  [9, 56],
+  [12, 42],
+  [16, 32],
+  [20, 24],
+]
+const MIN_VALUE_FONT_PX = 18
+
+function valueFontSize(length: number): number {
+  for (const [maxLength, px] of VALUE_FONT_STEPS) {
+    if (length <= maxLength) return px
+  }
+  return MIN_VALUE_FONT_PX
+}
+
 export const InputDisplay = ({ mode, currentInput, cashReceived, currentProduct }: InputDisplayProps) => {
   const getProductInfo = () => {
     if (currentProduct) return currentProduct.name
@@ -74,7 +96,11 @@ export const InputDisplay = ({ mode, currentInput, cashReceived, currentProduct 
           </div>
         )}
 
-        <div className="pos-display-value pos-num" data-testid="pos-input-value">
+        <div
+          className="pos-display-value pos-num"
+          data-testid="pos-input-value"
+          style={value ? { fontSize: `${valueFontSize(value.length)}px` } : undefined}
+        >
           {value ? value : <span className="pos-display-empty">– – –</span>}
           <span className="pos-caret" aria-hidden="true" />
         </div>
