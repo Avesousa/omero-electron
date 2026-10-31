@@ -27,6 +27,8 @@ export const DEFAULT_KEY_MAX = 10
 const STORAGE_KEY = 'omero_login_hint'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const OPTIONS_TIMEOUT_MS = 5_000
+/** El servidor local responde en ms; si no lo hace, se sigue sin la pista (login con email) en vez de esperar. */
+const HINT_TIMEOUT_MS = 3_000
 
 export type IdentifierKind = 'key' | 'email'
 
@@ -65,12 +67,16 @@ function writeLocalStorage(hint: LoginHint): void {
 
 /** Pista guardada en esta caja, o null (primera vez). Nunca lanza. */
 export async function loadLoginHint(): Promise<LoginHint | null> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), HINT_TIMEOUT_MS)
   try {
-    const res = await fetch('/api/_local/login-hint', { cache: 'no-store' })
+    const res = await fetch('/api/_local/login-hint', { cache: 'no-store', signal: controller.signal })
     const body = (await res.json()) as { success?: boolean; data?: { available?: boolean; hint?: unknown } }
     if (body?.success && body.data?.available) return parseHint(body.data.hint)
   } catch {
-    /* servidor local ausente o respuesta inválida: se prueba el localStorage */
+    /* servidor local ausente, lento o respuesta inválida: se prueba el localStorage */
+  } finally {
+    clearTimeout(timer)
   }
   return readLocalStorage()
 }
@@ -79,16 +85,21 @@ export async function loadLoginHint(): Promise<LoginHint | null> {
 export async function saveLoginHint(hint: LoginHint): Promise<void> {
   const clean = parseHint(hint)
   if (!clean) return
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), HINT_TIMEOUT_MS)
   try {
     const res = await fetch('/api/_local/login-hint', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(clean),
+      signal: controller.signal,
     })
     const body = (await res.json()) as { success?: boolean; data?: { available?: boolean } }
     if (body?.success && body.data?.available) return // desktop: quedó en el userData
   } catch {
     /* sin servidor local: localStorage */
+  } finally {
+    clearTimeout(timer)
   }
   writeLocalStorage(clean)
 }

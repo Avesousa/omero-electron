@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const T = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const login = vi.fn()
 let authError: string | null = null
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }), useSearchParams: () => new URLSearchParams() }))
+// Router y params ESTABLES, como en Next: con objetos nuevos en cada render, los efectos que dependen de ellos se re-ejecutan sin fin.
+const router = { replace: vi.fn(), push: vi.fn() }
+const searchParams = new URLSearchParams()
+vi.mock('next/navigation', () => ({ useRouter: () => router, useSearchParams: () => searchParams }))
 vi.mock('@/shared', () => ({ useAuth: () => ({ login, isLoading: false, error: authError }) }))
 vi.mock('@/app/components/OmeroLogo', () => ({ OmeroLogo: () => null }))
 vi.mock('./LoginForm.module.css', () => ({ default: new Proxy({}, { get: (_t, k) => String(k) }) }))
@@ -107,5 +110,32 @@ describe('<LoginForm /> login con clave numérica', () => {
     await waitFor(() => expect(fetchLoginOptions).toHaveBeenCalled())
     await screen.findByLabelText('Email o clave')
     await waitFor(() => { type(idInput(), '1234'); expect(screen.queryByLabelText('Contraseña')).not.toBeInTheDocument() })
+  })
+
+  it('regresión relanzamiento en blanco: si cargar la pista o consultar el backend LANZA, el formulario email + contraseña sigue usable', async () => {
+    loadLoginHint.mockRejectedValue(new Error('boom'))
+    render(<LoginForm />)
+    await waitFor(() => expect(loadLoginHint).toHaveBeenCalled())
+    expect(screen.getByLabelText('Email')).toHaveAttribute('type', 'email')
+    expect(screen.getByLabelText('Contraseña')).toBeInTheDocument()
+  })
+
+  it('regresión: login-options que lanza no rompe ni oculta el formulario', async () => {
+    loadLoginHint.mockResolvedValue({ tenantId: T, quickKeyLoginEnabled: true })
+    fetchLoginOptions.mockRejectedValue(new Error('boom'))
+    render(<LoginForm />)
+    await waitFor(() => expect(fetchLoginOptions).toHaveBeenCalled())
+    expect(screen.getByLabelText(/^Email/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Ingresar/ })).toBeEnabled()
+  })
+
+  it('regresión: la renovación silenciosa que lanza no deja "Renovando sesión…" colgado', async () => {
+    loadLoginHint.mockResolvedValue(null)
+    vi.spyOn(device, 'fetchDeviceInfo').mockResolvedValue({ desktop: true, hasDevice: true, sessionActive: true })
+    vi.spyOn(device, 'renewSession').mockRejectedValue(new Error('boom'))
+    render(<LoginForm />)
+    await waitFor(() => expect(device.renewSession).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByTestId('renewing-session')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Contraseña')).toBeInTheDocument()
   })
 })
