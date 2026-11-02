@@ -7,7 +7,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 const wipeLocalCatalogCache = vi.fn()
 const pendingOutboxCount = vi.fn(async () => 0)
 const deviceLogout = vi.fn()
-vi.mock('@/lib/deviceSession', () => ({ deviceLogout: () => deviceLogout(), fetchDeviceInfo: async () => ({ desktop: false, hasDevice: false, sessionActive: false }), renewSession: vi.fn(), reasonFor: () => null }))
+vi.mock('@/lib/deviceSession', () => ({ deviceLogout: () => deviceLogout(), fetchDeviceInfo: async () => ({ desktop: false, hasDevice: false, sessionActive: false }), renewSession: vi.fn(async () => ({ ok: false, code: 'NO_DEVICE', message: '' })), reasonFor: () => null }))
 vi.mock('@/lib/localCache', () => ({
   wipeLocalCatalogCache: () => wipeLocalCatalogCache(),
   pendingOutboxCount: () => pendingOutboxCount(),
@@ -103,6 +103,7 @@ describe('AuthProvider.logout con ventas/gastos sin subir (outbox)', () => {
 
 describe('expiración de sesión (401) NO borra la caché', () => {
   it('apiFetch con 401 limpia la sesión pero no llama a wipeLocalCatalogCache', async () => {
+    // Sin caja (web): la renovación obligatoria responde NO_DEVICE y sigue el camino de siempre (limpiar sesión y login)
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })))
     // apiFetch hace `window.location.href = '/login'`: jsdom no implementa navegación, se reemplaza `location`
     const originalLocation = window.location

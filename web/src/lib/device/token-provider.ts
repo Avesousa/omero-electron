@@ -49,6 +49,10 @@ export class TokenProvider {
   async authorize(tenantId: string): Promise<Authorized> {
     const now = this.deps.now()
 
+    // Validación pasiva: cada ciclo del outbox es una "operación de la caja" (como mucho 1 renovación cada 24 h).
+    const device = this.deps.session()
+    if (device.state.enabled) void device.validateIfDue(tenantId)
+
     const live = this.deps.syncer.getAuthorization(tenantId)
     if (live && !this.expiresSoon(live, now)) return { ok: true, authorization: live, kind: 'pos' }
 

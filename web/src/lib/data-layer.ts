@@ -2,7 +2,7 @@ import { proxyToBackend } from './backend-proxy'
 import { proxyWithCatalog } from './catalog/catalog-proxy'
 import { getRuntime } from './runtime'
 import { handleOutboxRequest, matchOutboxRoute } from './outbox/outbox-proxy'
-import { handleLogin, isLoginRoute } from './device/session-proxy'
+import { handleLogin, isLoginRoute, validateDeviceOnRequest } from './device/session-proxy'
 import { handleEntitlementRequest, isEntitlementRoute } from './entitlement/entitlement-proxy'
 
 /**
@@ -29,6 +29,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
   const pathname = new URL(request.url).pathname
   if (isLoginRoute(request.method, pathname)) return handleLogin(request) // registra la caja (sesión larga)
+
+  validateDeviceOnRequest(request) // validación pasiva de la sesión de la caja (como mucho 1 vez cada 24 h; no frena la request)
 
   if (isEntitlementRoute(request.method, pathname)) return handleEntitlementRequest(request) // suscripción, con caché offline
 

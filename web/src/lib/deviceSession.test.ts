@@ -35,10 +35,15 @@ describe('reasonFor / loginReasonMessage', () => {
 })
 
 describe('fetchDeviceInfo', () => {
+  it('trae el motivo de fin definitivo detectado en segundo plano', async () => {
+    fetchMock.mockResolvedValue(json(200, { success: true, data: { desktop: true, hasDevice: true, sessionActive: true, endedReason: 'DEVICE_REVOKED' } }))
+    expect((await fetchDeviceInfo()).endedReason).toBe('DEVICE_REVOKED')
+  })
+
   it('devuelve el estado de la caja (sin secreto) y manda el JWT como pista si hay', async () => {
     vi.spyOn(session, 'getAuthToken').mockReturnValue('JWT')
     fetchMock.mockResolvedValue(json(200, { success: true, data: { desktop: true, hasDevice: true, sessionActive: true } }))
-    expect(await fetchDeviceInfo()).toEqual({ desktop: true, hasDevice: true, sessionActive: true })
+    expect(await fetchDeviceInfo()).toMatchObject({ desktop: true, hasDevice: true, sessionActive: true, endedReason: null })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/_local/session')
     expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({ Authorization: 'Bearer JWT' })
   })

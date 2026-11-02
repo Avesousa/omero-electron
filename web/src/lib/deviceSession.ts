@@ -15,6 +15,8 @@ export interface DeviceInfo {
   desktop: boolean
   hasDevice: boolean
   sessionActive: boolean
+  /** La renovación diaria (en segundo plano) detectó que la sesión de la caja terminó: hay que volver al login con ese motivo. */
+  endedReason?: RenewCode | null
 }
 
 const NO_DEVICE_INFO: DeviceInfo = { desktop: false, hasDevice: false, sessionActive: false }
@@ -35,7 +37,7 @@ export function reasonFor(code: RenewCode): LoginReason | null {
 
 const REASON_MESSAGES: Record<LoginReason, string> = {
   'device-revoked': 'Esta caja fue revocada por un administrador. Podés subir lo pendiente, pero no operar hasta que se autorice otra.',
-  'device-expired': 'La sesión de esta caja venció por inactividad. Iniciá sesión para seguir.',
+  'device-expired': 'Esta caja estuvo 14 días sin conectarse. Ingresá de nuevo.',
   'login-required': 'Iniciá sesión para seguir.',
 }
 
@@ -50,7 +52,7 @@ export async function fetchDeviceInfo(): Promise<DeviceInfo> {
     const res = await fetch('/api/_local/session', { cache: 'no-store', headers: token ? { Authorization: `Bearer ${token}` } : {} })
     const body = (await res.json()) as { success?: boolean; data?: Partial<DeviceInfo> }
     if (!body?.success || !body.data) return NO_DEVICE_INFO
-    return { desktop: !!body.data.desktop, hasDevice: !!body.data.hasDevice, sessionActive: !!body.data.sessionActive }
+    return { desktop: !!body.data.desktop, hasDevice: !!body.data.hasDevice, sessionActive: !!body.data.sessionActive, endedReason: body.data.endedReason ?? null }
   } catch {
     return NO_DEVICE_INFO
   }

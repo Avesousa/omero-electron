@@ -26,6 +26,8 @@ export interface SessionRefreshed {
   accessToken: string
   expiresIn: number
   user: DeviceUser
+  /** Vencimiento de la sesión de 14 días (ms epoch), si el backend lo informó. */
+  sessionExpiresAt: number | null
 }
 export interface SessionSyncToken {
   ok: true
@@ -42,6 +44,21 @@ export interface DeviceSessionDeps {
   state?: DeviceState
   client?: DeviceClient
   sink?: TokenSink
+  now?: () => number
+}
+
+/**
+ * Cada cuánto (como mucho) se valida la sesión de la caja contra el backend. La sesión dura 14 días y cada renovación
+ * (`refresh`) vuelve a dar 14. La validación es PASIVA: la dispara una operación de la caja, nunca un reloj.
+ */
+export const VALIDATION_INTERVAL_MS = 24 * 3600_000
+
+/** Códigos que terminan la sesión de la caja de forma definitiva (no se arreglan reintentando). */
+export type EndedCode = 'DEVICE_REVOKED' | 'DEVICE_EXPIRED' | 'LOGIN_REQUIRED'
+export const ENDED_MESSAGES: Record<EndedCode, string> = {
+  DEVICE_REVOKED: 'Esta caja fue revocada por un administrador.',
+  DEVICE_EXPIRED: 'Esta caja estuvo 14 días sin conectarse. Ingresá de nuevo.',
+  LOGIN_REQUIRED: 'Iniciá sesión para seguir.',
 }
 
 const KNOWN: readonly SessionCode[] = ['LOGIN_REQUIRED', 'DEVICE_EXPIRED', 'DEVICE_REVOKED', 'DEVICE_SECRET_INVALID', 'SYNC_WINDOW_CLOSED']
@@ -57,11 +74,11 @@ function toFailure(f: DeviceFailure): SessionFailure {
 
 export class DeviceSession {
   private readonly inFlight = new Map<string, Promise<SessionRefreshed | SessionFailure>>()
-  private readonly deps: { state: () => DeviceState; client: DeviceClient }
+  private readonly deps: { state: () => DeviceState; client: DeviceClient; now: () => number }
   private sink: TokenSink | null
 
   constructor(deps: DeviceSessionDeps = {}) {
-    this.deps = { state: () => deps.state ?? getDeviceState(), client: deps.client ?? new DeviceClient() }
+    this.deps = { state: () => deps.state ?? getDeviceState(), client: deps.client ?? new DeviceClient(), now: deps.now ?? Date.now }
     this.sink = deps.sink ?? null
   }
 
@@ -90,17 +107,49 @@ export class DeviceSession {
     if (!entry) return fail('NO_DEVICE', 'Esta caja no tiene sesión de dispositivo')
     if (!entry.sessionActive) return fail('LOGIN_REQUIRED', 'Hay que iniciar sesión')
 
+    // Ya se supo (en una renovación anterior) o que pasaron los 14 días sin renovar que el backend cerró esta sesión: no insistir en cada request.
+    const ended = state.endedReason(tenantId)
+    if (ended && ended !== 'LOGIN_REQUIRED') return fail(ended, ENDED_MESSAGES[ended])
+
     const r = await this.deps.client.refresh(entry.secret)
     if (r.ok) {
-      state.set(tenantId, r.deviceSecret, true) // el secreto rotó: se persiste antes de seguir
+      const now = this.deps.now()
+      const exp = Date.parse(r.deviceExpiresAt)
+      const sessionExpiresAt = Number.isFinite(exp) ? exp : null
+      // El secreto ROTÓ y el anterior ya no sirve: se espera a que Electron confirme que el nuevo quedó en disco antes de seguir.
+      await state.setDurable(tenantId, r.deviceSecret, { lastCheckedAt: now, expiresAt: sessionExpiresAt })
       this.sink?.remember(tenantId, `Bearer ${r.accessToken}`)
-      return { ok: true, accessToken: r.accessToken, expiresIn: r.expiresIn, user: r.user }
+      return { ok: true, accessToken: r.accessToken, expiresIn: r.expiresIn, user: r.user, sessionExpiresAt }
     }
     const failure = toFailure(r)
     // El backend ya no acepta renovar con esta sesión: no insistir en cada request.
     if (failure.code === 'LOGIN_REQUIRED') state.markLoggedOut(tenantId)
+    if (failure.code === 'LOGIN_REQUIRED' || failure.code === 'DEVICE_REVOKED' || failure.code === 'DEVICE_EXPIRED') state.markEnded(tenantId, failure.code)
     if (failure.code === 'DEVICE_SECRET_INVALID') state.remove(tenantId)
     return failure
+  }
+
+  /**
+   * Validador pasivo: si pasaron >= 24 h desde la última validación, renueva la sesión de la caja AHORA (single-flight).
+   * Lo llaman las operaciones que ya existen (arranque, requests, ciclo del outbox/syncer). Nunca lanza.
+   *  - Éxito: `refresh` ya guardó `lastCheckedAt`, el nuevo `expiresAt` (+14 días) y el secreto rotado.
+   *  - Falla transitoria (red, timeout, 5xx): no se corta nada ni se toca el secreto; se anota `lastCheckedAt = ahora` para no
+   *    volver a validar hasta dentro de 24 h (sin reintentos ni backoff). La `expiresAt` queda la de la última renovación
+   *    exitosa: pasados los 14 días sin éxito, `endedReason` pasa a `DEVICE_EXPIRED`.
+   *  - Error definitivo: `refresh` termina la sesión (conserva el secreto para el sync-token).
+   */
+  async validateIfDue(tenantId: string): Promise<void> {
+    try {
+      const state = this.state
+      const entry = state.get(tenantId)
+      if (!entry || !entry.sessionActive || state.endedReason(tenantId)) return
+      const now = this.deps.now()
+      if (entry.lastCheckedAt && now - entry.lastCheckedAt < VALIDATION_INTERVAL_MS) return
+      const r = await this.refresh(tenantId)
+      if (!r.ok && r.code === 'UNAVAILABLE') state.markChecked(tenantId, this.deps.now())
+    } catch {
+      /* la validación nunca debe romper la operación que la disparó */
+    }
   }
 
   /** Token de solo subida (`scope=sync`) para una caja revocada/vencida/sin sesión. No rota el secreto. */

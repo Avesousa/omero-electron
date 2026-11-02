@@ -1,9 +1,11 @@
+import { renewSession, reasonFor } from '@/lib/deviceSession'
 import { authHeaders, clearSession } from '@/lib/sessionManager'
 import { handleSubscriptionResponse } from '@/lib/subscriptionGate'
 
 export async function apiFetch<T = unknown>(
   path: string,
-  options?: RequestInit
+  options?: RequestInit,
+  renewed = false,
 ): Promise<{ success: true; data: T } | { success: false; error: string }> {
   const isFormData = options?.body instanceof FormData
   const res = await fetch(path, {
@@ -14,6 +16,19 @@ export async function apiFetch<T = unknown>(
   })
 
   if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/api/auth/')) {
+    // Caja registrada: el JWT venció (o el backend lo rechazó) y hay conexión → renovación OBLIGATORIA (obtener credencial) y
+    // un único reintento, para no frenar la venta. Sin caja (web) `renewSession` responde NO_DEVICE y sigue el camino de siempre.
+    if (!renewed) {
+      const r = await renewSession()
+      if (r.ok) return apiFetch<T>(path, options, true)
+      if (r.code === 'UNAVAILABLE') return { success: false, error: 'Sin conexión con el servidor. Probá de nuevo en unos instantes.' }
+      const reason = reasonFor(r.code)
+      if (reason) {
+        clearSession()
+        window.location.href = `/login?reason=${reason}`
+        return { success: false, error: 'Sesión expirada. Iniciá sesión nuevamente.' }
+      }
+    }
     clearSession()
     window.location.href = '/login'
     return { success: false, error: 'Sesión expirada. Iniciá sesión nuevamente.' }

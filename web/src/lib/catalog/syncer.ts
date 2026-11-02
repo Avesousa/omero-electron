@@ -50,6 +50,7 @@ export class CatalogSyncer {
   private lastOnline: boolean | null = null
   private readonly listeners = new Set<(event: SyncerEvent) => void>()
   private renewer: ((tenantId: string) => Promise<boolean>) | null = null
+  private validator: ((tenantId: string) => Promise<void>) | null = null
   private readonly deps: Required<SyncerDeps>
 
   constructor(deps: SyncerDeps = {}) {
@@ -82,6 +83,11 @@ export class CatalogSyncer {
    */
   setRenewer(renewer: ((tenantId: string) => Promise<boolean>) | null): void {
     this.renewer = renewer
+  }
+
+  /** Validador pasivo de la sesión de la caja: se invoca por tenant en cada ciclo (él decide si ya pasaron 24 h). */
+  setValidator(validator: ((tenantId: string) => Promise<void>) | null): void {
+    this.validator = validator
   }
 
   private async tryRenew(tenantId: string): Promise<boolean> {
@@ -180,6 +186,7 @@ export class CatalogSyncer {
     try {
       for (const [tenantId, initial] of [...this.tokens]) {
         let entry = initial
+        void this.validator?.(tenantId)?.catch(() => {}) // validación pasiva de la caja (como mucho 1 vez cada 24 h)
         if (entry.exp !== null && entry.exp * 1000 <= this.deps.now()) {
           // vencido: la caja lo renueva sola; sin caja se espera una nueva request autenticada
           const renewed = (await this.tryRenew(tenantId)) ? this.tokens.get(tenantId) : undefined
