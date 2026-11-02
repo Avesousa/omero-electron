@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { postLogin, postLoginKey } from '@/shared/services/authService'
 import { setSession, clearSession, getSessionUser } from '@/lib/sessionManager'
 import { logoutWarning, pendingOutboxCount, wipeLocalCatalogCache } from '@/lib/localCache'
-import { deviceLogout } from '@/lib/deviceSession'
+import { deviceLogout, syncDeviceSessionCookie } from '@/lib/deviceSession'
 import { saveLoginHint } from '@/lib/loginHint'
 import { useSessionRenewal } from '@/lib/useSessionRenewal'
 import type { AuthContextValue, AuthState, LoginCredentials } from '@/shared/types/auth'
@@ -72,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { accessToken: jwt, user } = result.data
       setSession(jwt, user)
+      void syncDeviceSessionCookie()
       // Recuerda el negocio de esta caja y si ofrece clave numérica (los próximos logins pueden usarla). No espera.
       void saveLoginHint({ tenantId: user.tenantId, quickKeyLoginEnabled: result.data.quickKeyLoginEnabled === true })
       setState({ user, isAuthenticated: true, isLoading: false, error: null })

@@ -38,6 +38,8 @@ export interface SessionSyncToken {
 /** Lo mínimo que se le pide al CatalogSyncer: guardar el token vigente en memoria. */
 export interface TokenSink {
   remember(tenantId: string, authorization: string): void
+  /** Olvida el JWT `pos` vigente (la caja terminó: no se opera más con él). */
+  forget?(tenantId: string): void
 }
 
 export interface DeviceSessionDeps {
@@ -127,6 +129,19 @@ export class DeviceSession {
     if (failure.code === 'LOGIN_REQUIRED' || failure.code === 'DEVICE_REVOKED' || failure.code === 'DEVICE_EXPIRED') state.markEnded(tenantId, failure.code)
     if (failure.code === 'DEVICE_SECRET_INVALID') state.remove(tenantId)
     return failure
+  }
+
+  /**
+   * El backend cortó la caja en una request normal (403 DEVICE_REVOKED / DEVICE_EXPIRED / LOGIN_REQUIRED): la sesión termina
+   * YA, igual que ante un error definitivo del refresh. Se conserva el secreto (flujo sync-token) y se olvida el JWT `pos`.
+   * Sin caja de ese tenant (web) no hace nada.
+   */
+  reportEnded(tenantId: string, code: EndedCode): void {
+    const state = this.state
+    if (!state.get(tenantId)) return
+    if (code === 'LOGIN_REQUIRED') state.markLoggedOut(tenantId)
+    state.markEnded(tenantId, code)
+    this.sink?.forget?.(tenantId)
   }
 
   /**

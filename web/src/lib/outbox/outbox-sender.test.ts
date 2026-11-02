@@ -306,6 +306,44 @@ describe('reintentos con backoff', () => {
 })
 
 describe('autenticación', () => {
+  it('403 DEVICE_REVOKED con el JWT pos: avisa el fin de sesión y reintenta por el camino sync (token distinto); sube lo pendiente', async () => {
+    const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    const reportEnded = vi.fn(async () => 'DEVICE_REVOKED')
+    const authorize = vi.fn()
+      .mockResolvedValueOnce({ ok: true, authorization: jwt(), kind: 'pos' })
+      .mockResolvedValueOnce({ ok: true, authorization: jwt(), kind: 'sync' })
+    fetchFn
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'DEVICE_REVOKED' }), { status: 403 }))
+      .mockResolvedValueOnce(ok([created(a.clientId, '1', { reason: 'caja revocada' })]))
+    const s = new OutboxSender({
+      fetchFn: fetchFn as unknown as typeof fetch, getStore: () => store, authorize, reportEnded, invalidateAuthorization: invalidate as unknown as (t: string) => void,
+      forgetAuthorization: forget as unknown as (t: string) => void, backendUrl: () => 'https://backend.test', now: () => Date.now(), log: vi.fn(),
+    })
+    s.kick(TENANT)
+    await flush()
+    expect(reportEnded).toHaveBeenCalledTimes(1)
+    expect(authorize).toHaveBeenCalledTimes(2)
+    expect(store.getByClientId(a.clientId)?.status).toBe('REVIEW')
+    expect(forget).not.toHaveBeenCalled()
+  })
+
+  it('403 con JWT sync (ventana cerrada / rechazo): NO avisa fin de sesión, no insiste y deja lo pendiente', async () => {
+    const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
+    const reportEnded = vi.fn()
+    fetchFn.mockResolvedValue(new Response(JSON.stringify({ code: 'SYNC_WINDOW_CLOSED' }), { status: 403 }))
+    const s = new OutboxSender({
+      fetchFn: fetchFn as unknown as typeof fetch, getStore: () => store, authorize: async () => ({ ok: true, authorization: jwt(), kind: 'sync' }), reportEnded,
+      invalidateAuthorization: invalidate as unknown as (t: string) => void, forgetAuthorization: forget as unknown as (t: string) => void,
+      backendUrl: () => 'https://backend.test', now: () => Date.now(), log: vi.fn(),
+    })
+    s.kick(TENANT)
+    await flush()
+    expect(reportEnded).not.toHaveBeenCalled()
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(s.state(TENANT).backend).toBe('unauthorized')
+    expect(store.getByClientId(a.clientId)?.status).toBe('PENDING')
+  })
+
   it('401 → renueva y reintenta UNA vez; si vuelve el 401 → detiene, olvida el token y deja lo pendiente intacto', async () => {
     const a = store.enqueue({ type: 'SALE', payload: saleJson() }).row
     fetchFn.mockResolvedValue(status(401))

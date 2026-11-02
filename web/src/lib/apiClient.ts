@@ -41,6 +41,14 @@ export async function apiFetch<T = unknown>(
   }
   try {
     const body = JSON.parse(text)
+    // 403 DEVICE_REVOKED / DEVICE_EXPIRED / LOGIN_REQUIRED: el backend cortó la caja (aunque el JWT siga vigente). Es un fin
+    // DEFINITIVO: NO se renueva ni se reintenta (eso es solo para el 401); se vuelve al login con el motivo en español.
+    const endedReason = res.status === 403 && typeof window !== 'undefined' ? reasonFor(body?.code) : null
+    if (endedReason) {
+      clearSession()
+      window.location.href = `/login?reason=${endedReason}`
+      return { success: false, error: typeof body.error === 'string' ? body.error : 'La sesión de esta caja terminó. Iniciá sesión nuevamente.' }
+    }
     // 403 SUBSCRIPTION_INACTIVE: abre la pantalla bloqueante del POS (no cierra sesión ni revoca la caja).
     handleSubscriptionResponse(res.status, body)
     return body

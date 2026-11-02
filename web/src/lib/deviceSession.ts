@@ -1,4 +1,4 @@
-import { clearSession, getAuthToken, setSession } from '@/lib/sessionManager'
+import { clearSession, getAuthToken, setDeviceSessionUntil, setSession } from '@/lib/sessionManager'
 import type { User } from '@/shared/types/auth'
 
 /**
@@ -17,6 +17,8 @@ export interface DeviceInfo {
   sessionActive: boolean
   /** La renovación diaria (en segundo plano) detectó que la sesión de la caja terminó: hay que volver al login con ese motivo. */
   endedReason?: RenewCode | null
+  /** Fin (ms epoch) de la sesión de 14 días de la caja según el servidor local; null si aún no se conoce. */
+  sessionExpiresAt?: number | null
 }
 
 const NO_DEVICE_INFO: DeviceInfo = { desktop: false, hasDevice: false, sessionActive: false }
@@ -52,7 +54,7 @@ export async function fetchDeviceInfo(): Promise<DeviceInfo> {
     const res = await fetch('/api/_local/session', { cache: 'no-store', headers: token ? { Authorization: `Bearer ${token}` } : {} })
     const body = (await res.json()) as { success?: boolean; data?: Partial<DeviceInfo> }
     if (!body?.success || !body.data) return NO_DEVICE_INFO
-    return { desktop: !!body.data.desktop, hasDevice: !!body.data.hasDevice, sessionActive: !!body.data.sessionActive, endedReason: body.data.endedReason ?? null }
+    return { desktop: !!body.data.desktop, hasDevice: !!body.data.hasDevice, sessionActive: !!body.data.sessionActive, endedReason: body.data.endedReason ?? null, sessionExpiresAt: typeof body.data.sessionExpiresAt === 'number' ? body.data.sessionExpiresAt : null }
   } catch {
     return NO_DEVICE_INFO
   }
@@ -74,9 +76,9 @@ export async function renewSession(): Promise<RenewResult> {
       signal: controller.signal,
       headers: expired ? { Authorization: `Bearer ${expired}` } : {},
     })
-    const body = (await res.json()) as { success?: boolean; data?: { accessToken: string; user: User }; error?: string; code?: RenewCode }
+    const body = (await res.json()) as { success?: boolean; data?: { accessToken: string; user: User; sessionExpiresAt?: number | null }; error?: string; code?: RenewCode }
     if (res.ok && body?.success && body.data?.accessToken && body.data.user) {
-      setSession(body.data.accessToken, body.data.user)
+      setSession(body.data.accessToken, body.data.user, body.data.sessionExpiresAt ?? null)
       return { ok: true, user: body.data.user }
     }
     return { ok: false, code: body?.code ?? 'UNAVAILABLE', message: body?.error ?? 'No se pudo renovar la sesión' }
@@ -84,6 +86,17 @@ export async function renewSession(): Promise<RenewResult> {
     return { ok: false, code: 'UNAVAILABLE', message: 'No se pudo renovar la sesión' }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/**
+ * Tras un login en una caja: si el servidor local ya conoce el fin de su sesión de 14 días, la marca para que un JWT vencido
+ * (p. ej. sin internet) no mande al login. Si todavía no lo conoce (se fija en la primera renovación) no hace nada. Nunca lanza.
+ */
+export async function syncDeviceSessionCookie(): Promise<void> {
+  const info = await fetchDeviceInfo()
+  if (info.desktop && info.hasDevice && info.sessionActive && !info.endedReason && info.sessionExpiresAt) {
+    setDeviceSessionUntil(info.sessionExpiresAt)
   }
 }
 

@@ -242,10 +242,14 @@ describe('renovación silenciosa (el JWT de 1 h vence y nadie pide login)', () =
 describe('caja revocada: no opera pero sube lo pendiente', () => {
   it('refresh → 403 DEVICE_REVOKED y el outbox sube con el token de solo subida (scope sync)', async () => {
     const { jwt: shortLived } = await activate()
-    backend.revoked = true
-    expect((await refreshRoute(post('/api/_local/session/refresh', {}))).status).toBe(403)
-
+    // La venta se hizo ANTES de enterarse de la revocación (sin conexión); al reconectar sube por el sync-token.
+    backend.mode = 'down'
     const id = await sell(shortLived)
+    await until(() => getSender().state(TENANT_A).backend === 'offline')
+    backend.revoked = true
+    backend.mode = 'ok'
+    expect((await refreshRoute(post('/api/_local/session/refresh', {}))).status).toBe(403)
+    getSender().kick(TENANT_A, { force: true })
     await until(() => row(id).status === 'SENT')
     expect(backend.calls).toContain('POST /api/auth/device/sync-token')
     expect(backend.batches[0].scope).toBe('sync')
@@ -260,11 +264,28 @@ describe('caja revocada: no opera pero sube lo pendiente', () => {
 
   it('ventana de subida cerrada → el sender queda "unauthorized" y el outbox NO pierde nada', async () => {
     const { jwt: shortLived } = await activate()
+    backend.mode = 'down'
+    const id = await sell(shortLived)
+    await until(() => getSender().state(TENANT_A).backend === 'offline')
     backend.revoked = true
     backend.windowClosed = true
-    const id = await sell(shortLived)
+    backend.mode = 'ok'
+    expect((await refreshRoute(post('/api/_local/session/refresh', {}))).status).toBe(403)
+    getSender().kick(TENANT_A, { force: true })
     await until(() => getSender().state(TENANT_A).backend === 'unauthorized')
     expect(row(id).status).toBe('PENDING')
+  })
+})
+
+describe('caja revocada: corte inmediato en la siguiente request', () => {
+  it('una venta NUEVA con la sesión terminada no se encola: 403 local con code (decisión: lo más seguro)', async () => {
+    const { jwt: shortLived } = await activate()
+    backend.revoked = true
+    expect((await refreshRoute(post('/api/_local/session/refresh', {}))).status).toBe(403)
+    const res = await handleApiRequest(post('/api/sales', saleBody(), `Bearer ${shortLived}`))
+    expect(res.status).toBe(403)
+    expect((await res.json()).code).toBe('DEVICE_REVOKED')
+    expect(getOutboxStore(TENANT_A)?.counts().pending ?? 0).toBe(0)
   })
 })
 

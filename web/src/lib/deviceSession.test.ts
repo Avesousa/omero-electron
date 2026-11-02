@@ -60,9 +60,17 @@ describe('renewSession', () => {
     const setSpy = vi.spyOn(session, 'setSession').mockImplementation(() => {})
     fetchMock.mockResolvedValue(json(200, { success: true, data: { accessToken: 'JWT2', expiresIn: 3600, user } }))
     expect(await renewSession()).toEqual({ ok: true, user })
-    expect(setSpy).toHaveBeenCalledWith('JWT2', user)
+    expect(setSpy).toHaveBeenCalledWith('JWT2', user, null)
     expect(fetchMock.mock.calls[0][0]).toBe('/api/_local/session/refresh')
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST')
+  })
+
+  it('éxito con fin de sesión de la caja: se lo pasa a setSession (cookie de 14 días)', async () => {
+    const setSpy = vi.spyOn(session, 'setSession').mockImplementation(() => {})
+    const until = Date.now() + 10 * 86_400_000
+    fetchMock.mockResolvedValue(json(200, { success: true, data: { accessToken: 'JWT3', expiresIn: 93600, user, sessionExpiresAt: until } }))
+    await renewSession()
+    expect(setSpy).toHaveBeenCalledWith('JWT3', user, until)
   })
 
   it('manda el JWT vencido de sessionStorage solo como pista del tenant', async () => {

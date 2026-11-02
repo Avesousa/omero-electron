@@ -7,7 +7,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 const wipeLocalCatalogCache = vi.fn()
 const pendingOutboxCount = vi.fn(async () => 0)
 const deviceLogout = vi.fn()
-vi.mock('@/lib/deviceSession', () => ({ deviceLogout: () => deviceLogout(), fetchDeviceInfo: async () => ({ desktop: false, hasDevice: false, sessionActive: false }), renewSession: vi.fn(async () => ({ ok: false, code: 'NO_DEVICE', message: '' })), reasonFor: () => null }))
+vi.mock('@/lib/deviceSession', () => ({ deviceLogout: () => deviceLogout(), fetchDeviceInfo: async () => ({ desktop: false, hasDevice: false, sessionActive: false }), renewSession: vi.fn(async () => ({ ok: false, code: 'NO_DEVICE', message: '' })), reasonFor: () => null, syncDeviceSessionCookie: async () => {} }))
 vi.mock('@/lib/localCache', () => ({
   wipeLocalCatalogCache: () => wipeLocalCatalogCache(),
   pendingOutboxCount: () => pendingOutboxCount(),

@@ -4,26 +4,39 @@ const PUBLIC_ROUTES = ['/login']
 
 const BYPASS_PREFIXES = ['/_next', '/api', '/brand', '/favicon']
 
-function isValidJwt(token: string | undefined): boolean {
-  if (!token) return false
+function decodePayload(token: string | undefined): { exp?: number; sub?: string } | null {
+  if (!token) return null
 
   const parts = token.split('.')
-  if (parts.length !== 3) return false
+  if (parts.length !== 3) return null
 
   try {
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
     const json = atob(base64)
-    const payload = JSON.parse(json) as { exp?: number; sub?: string }
-
-    if (typeof payload.exp !== 'number' || !payload.sub) return false
-
-    const nowSeconds = Math.floor(Date.now() / 1000)
-    if (payload.exp <= nowSeconds) return false
-
-    return true
+    return JSON.parse(json) as { exp?: number; sub?: string }
   } catch {
-    return false
+    return null
   }
+}
+
+function isValidJwt(token: string | undefined): boolean {
+  const payload = decodePayload(token)
+  if (!payload || typeof payload.exp !== 'number' || !payload.sub) return false
+
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  return payload.exp > nowSeconds
+}
+
+/**
+ * Caja con su sesión de 14 días vigente (cookie `omero_device_until`, ms epoch) y un JWT bien formado pero vencido: se deja
+ * pasar para que el cliente lo renueve (o trabaje sin internet) en vez de mandar al login. La cookie solo habilita la
+ * pantalla; el backend valida siempre el JWT, así que una cookie falsificada no da acceso a datos.
+ */
+function isDeviceSessionWithExpiredJwt(token: string | undefined, untilRaw: string | undefined): boolean {
+  const until = untilRaw ? Number(untilRaw) : NaN
+  if (!Number.isFinite(until) || until <= Date.now()) return false
+  const payload = decodePayload(token)
+  return !!payload && typeof payload.exp === 'number' && !!payload.sub
 }
 
 
@@ -35,7 +48,8 @@ export function middleware(request: NextRequest) {
   }
 
   const sessionToken = request.cookies.get('omero_session')?.value
-  const hasValidSession = isValidJwt(sessionToken)
+  const deviceUntil = request.cookies.get('omero_device_until')?.value
+  const hasValidSession = isValidJwt(sessionToken) || isDeviceSessionWithExpiredJwt(sessionToken, deviceUntil)
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
 
   if (isPublicRoute && hasValidSession) {

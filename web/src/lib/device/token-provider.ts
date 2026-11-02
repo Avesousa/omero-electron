@@ -53,7 +53,9 @@ export class TokenProvider {
     const device = this.deps.session()
     if (device.state.enabled) void device.validateIfDue(tenantId)
 
-    const live = this.deps.syncer.getAuthorization(tenantId)
+    // Sesión terminada (revocada / vencida / exige login): el JWT pos ya no se usa, solo el camino sync-token.
+    const ended = device.state.enabled && device.state.endedReason(tenantId) !== null
+    const live = ended ? null : this.deps.syncer.getAuthorization(tenantId)
     if (live && !this.expiresSoon(live, now)) return { ok: true, authorization: live, kind: 'pos' }
 
     const cached = this.syncTokens.get(tenantId)

@@ -5,6 +5,7 @@ import { applyCatalogPayload } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { tokenExpiry } from './tenant'
 import { SCALE_CONFIG_KEYS } from '../scale'
+import { reportEndedResponse } from '../device/session-ended'
 import type { CatalogRoute, CatalogStore } from './types'
 
 /**
@@ -246,6 +247,7 @@ export class CatalogSyncer {
           signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
         })
         if (res.status === 403 && (await isSubscriptionInactive(res))) return 'ok' // token válido: no se olvida (el outbox lo necesita)
+        if (res.status === 403) await reportEndedResponse(tenantId, res) // caja revocada/vencida: la sesión termina ya
         if (res.status === 401 || res.status === 403) return 'unauthorized'
         if (!res.ok) {
           if (!optional) failed = true

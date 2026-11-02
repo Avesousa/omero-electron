@@ -71,3 +71,24 @@ describe('apiFetch: renovación OBLIGATORIA ante 401 (JWT de caja vencido)', () 
     expect(renew).not.toHaveBeenCalled()
   })
 })
+
+describe('apiFetch: 403 de fin de sesión (el backend cortó la caja aunque el JWT siga vigente)', () => {
+  it.each([['DEVICE_REVOKED', 'device-revoked'], ['DEVICE_EXPIRED', 'device-expired'], ['LOGIN_REQUIRED', 'login-required']])('%s → login con motivo, SIN renovar ni reintentar', async (code, reason) => {
+    fetchMock.mockResolvedValue(json(403, { success: false, error: 'Caja revocada', code }))
+    const renew = vi.spyOn(device, 'renewSession')
+    const r = await apiFetch('/api/sales', { method: 'POST' })
+    expect(r).toEqual({ success: false, error: 'Caja revocada' })
+    expect(renew).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(clear).toHaveBeenCalled()
+    expect(window.location.href).toBe(`/login?reason=${reason}`)
+  })
+
+  it('otros 403 (p. ej. suscripción) no cierran la sesión', async () => {
+    fetchMock.mockResolvedValue(json(403, { success: false, error: 'x', code: 'SUBSCRIPTION_INACTIVE' }))
+    await apiFetch('/api/sales', { method: 'POST' })
+    expect(clear).not.toHaveBeenCalled()
+    expect(window.location.href).toBe('')
+  })
+})
+
