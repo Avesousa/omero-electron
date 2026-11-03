@@ -8,7 +8,7 @@ import { readBuildConfig } from './build-config'
 import { RESOURCES_DIR } from './paths'
 import { LOOPBACK_HOST } from './ports'
 import os from 'os'
-import { DeviceStore, sanitize } from './device-store'
+import { DeviceStore, SecretsPersister } from './device-store'
 import { safeStorage } from 'electron'
 
 const IS_PACKAGED = app.isPackaged
@@ -39,8 +39,7 @@ function catalogCacheEnv(): Record<string, string> {
  * al arrancar se descifra y se pasa al Next por env; el Next avisa por IPC cada vez que el secreto rota.
  */
 let deviceStore: DeviceStore | null = null
-let pendingSecrets: unknown = null
-let persistTimer: ReturnType<typeof setTimeout> | null = null
+let persister: SecretsPersister | null = null
 const PERSIST_DEBOUNCE_MS = 200
 
 function getDeviceStore(): DeviceStore {
@@ -65,23 +64,14 @@ function deviceEnv(): Record<string, string> {
   }
 }
 
-function flushSecrets(): void {
-  if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = null
-  if (pendingSecrets === null) return
-  const secrets = sanitize(pendingSecrets)
-  pendingSecrets = null
-  getDeviceStore().save(secrets)
+function getPersister(): SecretsPersister {
+  return (persister ??= new SecretsPersister(getDeviceStore(), PERSIST_DEBOUNCE_MS))
 }
 
-/** El Next avisa que los secretos cambiaron (login, rotación, logout): se persisten con un pequeño debounce. */
-function onFrontendMessage(message: unknown): void {
-  if (message === null || typeof message !== 'object') return
-  const { type, secrets } = message as { type?: unknown; secrets?: unknown }
-  if (type !== 'omero:device-secrets') return
-  pendingSecrets = secrets
-  if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(flushSecrets, PERSIST_DEBOUNCE_MS)
+/** El Next avisa que los secretos cambiaron (login, rotación, logout): debounce, o inmediato y con ack si lo pide. */
+function onFrontendMessage(proc: UtilityProcess, message: unknown): void {
+  const reply = getPersister().handle(message)
+  if (reply) proc.postMessage(reply)
 }
 
 let frontendProcess: UtilityProcess | null = null
@@ -131,7 +121,7 @@ export function startFrontend(port: number, backendUrl: string): void {
   })
   frontendProcess = proc
 
-  proc.on('message', onFrontendMessage)
+  proc.on('message', (m) => onFrontendMessage(proc, m))
   proc.stdout?.on('data', makeLineHandler(frontendLogger.info))
   proc.stderr?.on('data', makeLineHandler(frontendLogger.error))
   // Además del log línea a línea, se guarda el código de error del SO (si el stack del crash lo trae)
@@ -165,7 +155,7 @@ export async function waitForFrontend(port: number, timeoutMs = 120_000): Promis
 }
 
 export function stopAll(): void {
-  flushSecrets() // no perder una rotación que todavía está en el debounce
+  persister?.flush() // no perder una rotación que todavía está en el debounce
   if (frontendProcess) {
     frontendProcess.kill()
     frontendProcess = null

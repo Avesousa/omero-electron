@@ -24,6 +24,13 @@ function validateEnv() {
 const { runtime, backend } = validateEnv()
 console.log(`[omero-pos] runtime=${runtime} backend=${backend}`)
 
+// Desktop con caja registrada: valida la sesión de la caja (si pasaron >= 24 h desde la última validación renueva en ese momento). Nunca debe impedir el arranque.
+if (runtime === 'desktop') {
+  void import('./lib/device/device-wiring')
+    .then((m) => m.validateDevicesOnStart())
+    .catch((err) => console.warn(`[omero-pos] no se pudo iniciar la validación de la caja: ${err instanceof Error ? err.message : err}`))
+}
+
 async function log(token: string, message: string): Promise<void> {
   try {
     await fetch('https://in.logs.betterstack.com', {

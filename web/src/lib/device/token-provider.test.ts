@@ -10,9 +10,10 @@ const jwt = (expInMs: number) => {
   return `Bearer ${b64({ alg: 'HS256' })}.${b64({ tenantId: T, exp: Math.floor((NOW + expInMs) / 1000) })}.sig`
 }
 
-function make(opts: { live?: string | null; enabled?: boolean; refresh?: unknown; sync?: unknown } = {}) {
+function make(opts: { ended?: string | null; live?: string | null; enabled?: boolean; refresh?: unknown; sync?: unknown } = {}) {
   const session = {
-    state: { enabled: opts.enabled ?? true },
+    state: { enabled: opts.enabled ?? true, endedReason: vi.fn(() => opts.ended ?? null) },
+    validateIfDue: vi.fn(async () => {}),
     refresh: vi.fn(async () => opts.refresh ?? { ok: true, accessToken: 'NEW', expiresIn: 3600, user: {} }),
     syncToken: vi.fn(async () => opts.sync ?? { ok: true, accessToken: 'SYNC', expiresIn: 3600 }),
   }
@@ -24,6 +25,24 @@ function make(opts: { live?: string | null; enabled?: boolean; refresh?: unknown
 }
 
 describe('TokenProvider.authorize', () => {
+  it('cada ciclo es una operación de la caja: dispara la validación pasiva (ella decide si pasaron 24 h)', async () => {
+    const { provider, session } = make({ live: jwt(30 * 60_000) })
+    await provider.authorize(T)
+    expect(session.validateIfDue).toHaveBeenCalledWith(T)
+  })
+
+  it('sesión terminada: ignora el JWT pos vigente y va directo al sync-token (sin refresh exitoso)', async () => {
+    const { provider, session } = make({ live: jwt(30 * 60_000), ended: 'DEVICE_REVOKED', refresh: { ok: false, code: 'DEVICE_REVOKED', message: '' } })
+    expect(await provider.authorize(T)).toEqual({ ok: true, authorization: 'Bearer SYNC', kind: 'sync' })
+    expect(session.syncToken).toHaveBeenCalled()
+  })
+
+  it('sin caja (web) no valida nada', async () => {
+    const { provider, session } = make({ live: jwt(30 * 60_000), enabled: false })
+    await provider.authorize(T)
+    expect(session.validateIfDue).not.toHaveBeenCalled()
+  })
+
   it('1. usa el JWT pos vigente del syncer sin llamar al backend', async () => {
     const live = jwt(30 * 60_000)
     const { provider, session } = make({ live })

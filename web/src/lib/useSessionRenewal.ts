@@ -1,25 +1,23 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { fetchDeviceInfo, reasonFor, renewSession, type RenewCode } from '@/lib/deviceSession'
+import { fetchDeviceInfo, reasonFor, renewSession } from '@/lib/deviceSession'
 import { getSessionExpiry } from '@/lib/sessionManager'
 
-/** Se renueva 5 min antes de que venza el JWT de 1 h. */
-export const RENEW_BEFORE_MS = 5 * 60_000
-/** Reintento cuando el servidor local no pudo renovar (sin red). */
-export const RETRY_MS = 60_000
-const MIN_DELAY_MS = 5_000
-
 interface Options {
-  /** Solo hay sesión que renovar si el usuario está autenticado. */
+  /** Solo hay sesión que revisar si el usuario está autenticado. */
   authenticated: boolean
-  /** La sesión no se puede renovar (revocada, vencida, exige login): el llamador cierra y va al login con el motivo. */
+  /** La sesión de la caja terminó (revocada, vencida, exige login): el llamador cierra y va al login con el motivo. */
   onSessionLost: (reason: 'device-revoked' | 'device-expired' | 'login-required') => void
 }
 
 /**
- * Renovación silenciosa del JWT en el POS de escritorio con caja registrada (fase 4): agenda `exp − 5 min`, y también
- * renueva al recuperar la red o volver a la pestaña si ya está por vencer. En web / sin caja no hace nada.
+ * Sesión de la caja en el POS de escritorio. NO hay renovaciones por reloj: el JWT de caja dura 26 h y la validación de la
+ * sesión de 14 días la hace el servidor local de forma pasiva (como mucho 1 vez cada 24 h, al operar). Acá solo se reacciona
+ * a eventos:
+ *  - al montar y al volver a la pestaña / recuperar la red: si el servidor local ya sabe que la sesión terminó, se corta con
+ *    el motivo; si el JWT está vencido, se renueva (renovación OBLIGATORIA: es obtener credencial, no validar).
+ * Sin conexión no pasa nada: la caja sigue vendiendo (outbox). En web / sin caja no hace nada.
  */
 export function useSessionRenewal({ authenticated, onSessionLost }: Options): void {
   const lost = useRef(onSessionLost)
@@ -28,61 +26,47 @@ export function useSessionRenewal({ authenticated, onSessionLost }: Options): vo
   useEffect(() => {
     if (!authenticated) return
     let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
     let running = false
+    let active = false // hay caja registrada (desktop)
 
-    const remainingMs = () => {
+    const jwtExpired = () => {
       const exp = getSessionExpiry()
-      return exp === null ? null : exp * 1000 - Date.now()
+      return exp !== null && exp * 1000 <= Date.now()
     }
 
-    const schedule = (delay: number) => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => void renew(), Math.max(delay, MIN_DELAY_MS))
-    }
-
-    const renew = async () => {
+    const check = async () => {
       if (cancelled || running) return
       running = true
       try {
-        const r = await renewSession()
+        const info = await fetchDeviceInfo()
         if (cancelled) return
-        if (r.ok) {
-          const left = remainingMs()
-          schedule(left === null ? RETRY_MS : left - RENEW_BEFORE_MS)
+        active = info.desktop && info.hasDevice
+        if (!active) return
+        const ended = info.endedReason ? reasonFor(info.endedReason) : null
+        if (ended) {
+          lost.current(ended)
           return
         }
-        const reason = reasonFor(r.code as RenewCode)
-        if (reason) lost.current(reason)
-        else schedule(RETRY_MS) // UNAVAILABLE / NO_DEVICE transitorio: se reintenta
+        if (!jwtExpired()) return
+        const r = await renewSession() // obligatoria: JWT vencido
+        if (cancelled || r.ok) return
+        const reason = reasonFor(r.code)
+        if (reason) lost.current(reason) // UNAVAILABLE / NO_DEVICE: sin conexión no pasa nada, se reintenta al volver
       } finally {
         running = false
       }
     }
 
-    const soonOrExpired = () => {
-      const left = remainingMs()
-      return left !== null && left <= RENEW_BEFORE_MS
-    }
     const onWake = () => {
       if (typeof document !== 'undefined' && document.hidden) return
-      if (soonOrExpired()) void renew()
+      void check()
     }
 
-    void (async () => {
-      const info = await fetchDeviceInfo()
-      if (cancelled || !info.desktop || !info.hasDevice) return // web o sin caja: nada que renovar
-      const left = remainingMs()
-      if (left === null) return
-      if (left <= RENEW_BEFORE_MS) void renew()
-      else schedule(left - RENEW_BEFORE_MS)
-      window.addEventListener('online', onWake)
-      document.addEventListener('visibilitychange', onWake)
-    })()
-
+    void check()
+    window.addEventListener('online', onWake)
+    document.addEventListener('visibilitychange', onWake)
     return () => {
       cancelled = true
-      if (timer) clearTimeout(timer)
       window.removeEventListener('online', onWake)
       document.removeEventListener('visibilitychange', onWake)
     }

@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DeviceStore, sanitize, type SafeStorageLike } from './device-store'
+import { DeviceStore, SecretsPersister, sanitize, type SafeStorageLike } from './device-store'
 
 const T1 = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const T2 = '11111111-2222-3333-4444-555555555555'
@@ -141,5 +141,94 @@ describe('sanitize', () => {
   it('sessionActive solo es false si viene explícitamente false', () => {
     expect(sanitize({ [T1]: { secret: 's', sessionActive: false } })[T1].sessionActive).toBe(false)
     expect(sanitize({ [T1]: { secret: 's', sessionActive: 'no' } })[T1].sessionActive).toBe(true)
+  })
+})
+
+describe('persistencia atómica del secreto rotado', () => {
+  it('hace fsync del temporal ANTES del rename (nunca queda un archivo a medias tras un corte)', () => {
+    const order: string[] = []
+    const fsync = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => { order.push('fsync') })
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => { order.push('rename') })
+    try {
+      store().save({ [T1]: { secret: 'nuevo', sessionActive: true } })
+    } finally {
+      fsync.mockRestore()
+      rename.mockRestore()
+    }
+    expect(order).toEqual(['fsync', 'rename'])
+  })
+
+  it('si falla la escritura el archivo anterior queda intacto (con el secreto viejo completo)', () => {
+    const s = store()
+    s.save({ [T1]: { secret: 'viejo', sessionActive: true } })
+    const spy = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => { throw new Error('disco lleno') })
+    expect(s.save({ [T1]: { secret: 'nuevo', sessionActive: true } })).toBe(false)
+    spy.mockRestore()
+    expect(s.load()[T1].secret).toBe('viejo')
+  })
+
+  it('lastCheckedAt / expiresAt sobreviven al guardado; valores inválidos se descartan', () => {
+    const s = store()
+    s.save({ [T1]: { secret: 'x', sessionActive: true, lastCheckedAt: 1700000000000, expiresAt: 1701000000000 } })
+    expect(s.load()[T1]).toEqual({ secret: 'x', sessionActive: true, lastCheckedAt: 1700000000000, expiresAt: 1701000000000 })
+    expect(sanitize({ [T1]: { secret: 'x', lastCheckedAt: 'ayer', expiresAt: -5 } })[T1]).toEqual({ secret: 'x', sessionActive: true })
+  })
+})
+
+describe('SecretsPersister', () => {
+  const msg = (secret: string, ackId?: string) => ({ type: 'omero:device-secrets', secrets: { [T1]: { secret, sessionActive: true } }, ...(ackId ? { ackId } : {}) })
+
+  it('sin ackId: debounce (varios cambios seguidos → una sola escritura con el último)', () => {
+    vi.useFakeTimers()
+    const save = vi.fn(() => true)
+    const p = new SecretsPersister({ save }, 200)
+    expect(p.handle(msg('a'))).toBeNull()
+    expect(p.handle(msg('b'))).toBeNull()
+    expect(save).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(200)
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith({ [T1]: { secret: 'b', sessionActive: true } })
+    vi.useRealTimers()
+  })
+
+  it('con ackId: escribe YA y confirma ok=true (el Next no sigue hasta tener el secreto nuevo en disco)', () => {
+    vi.useFakeTimers()
+    const save = vi.fn(() => true)
+    const p = new SecretsPersister({ save }, 200)
+    p.handle(msg('viejo'))
+    expect(p.handle(msg('nuevo', 'k1'))).toEqual({ type: 'omero:device-secrets-ack', ackId: 'k1', ok: true })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith({ [T1]: { secret: 'nuevo', sessionActive: true } })
+    vi.advanceTimersByTime(1000)
+    expect(save).toHaveBeenCalledTimes(1) // el debounce pendiente quedó cancelado
+    vi.useRealTimers()
+  })
+
+  it('si no pudo guardar confirma ok=false', () => {
+    const p = new SecretsPersister({ save: () => false })
+    expect(p.handle(msg('x', 'k2'))).toEqual({ type: 'omero:device-secrets-ack', ackId: 'k2', ok: false })
+  })
+
+  it('ignora mensajes ajenos o malformados; ackId inválido se trata como mensaje normal', () => {
+    vi.useFakeTimers()
+    const save = vi.fn(() => true)
+    const p = new SecretsPersister({ save })
+    expect(p.handle(null)).toBeNull()
+    expect(p.handle('x')).toBeNull()
+    expect(p.handle({ type: 'otro' })).toBeNull()
+    expect(p.handle(msg('a', 'x'.repeat(101)))).toBeNull()
+    vi.advanceTimersByTime(300)
+    expect(save).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
+
+  it('flush al cerrar la app guarda lo pendiente; sin nada pendiente no escribe', () => {
+    const save = vi.fn(() => true)
+    const p = new SecretsPersister({ save })
+    expect(p.flush()).toBe(true)
+    expect(save).not.toHaveBeenCalled()
+    p.handle(msg('z'))
+    expect(p.flush()).toBe(true)
+    expect(save).toHaveBeenCalledTimes(1)
   })
 })

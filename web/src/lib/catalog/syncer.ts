@@ -5,6 +5,7 @@ import { applyCatalogPayload } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { tokenExpiry } from './tenant'
 import { SCALE_CONFIG_KEYS } from '../scale'
+import { reportEndedResponse } from '../device/session-ended'
 import type { CatalogRoute, CatalogStore } from './types'
 
 /**
@@ -50,6 +51,7 @@ export class CatalogSyncer {
   private lastOnline: boolean | null = null
   private readonly listeners = new Set<(event: SyncerEvent) => void>()
   private renewer: ((tenantId: string) => Promise<boolean>) | null = null
+  private validator: ((tenantId: string) => Promise<void>) | null = null
   private readonly deps: Required<SyncerDeps>
 
   constructor(deps: SyncerDeps = {}) {
@@ -82,6 +84,11 @@ export class CatalogSyncer {
    */
   setRenewer(renewer: ((tenantId: string) => Promise<boolean>) | null): void {
     this.renewer = renewer
+  }
+
+  /** Validador pasivo de la sesión de la caja: se invoca por tenant en cada ciclo (él decide si ya pasaron 24 h). */
+  setValidator(validator: ((tenantId: string) => Promise<void>) | null): void {
+    this.validator = validator
   }
 
   private async tryRenew(tenantId: string): Promise<boolean> {
@@ -180,6 +187,7 @@ export class CatalogSyncer {
     try {
       for (const [tenantId, initial] of [...this.tokens]) {
         let entry = initial
+        void this.validator?.(tenantId)?.catch(() => {}) // validación pasiva de la caja (como mucho 1 vez cada 24 h)
         if (entry.exp !== null && entry.exp * 1000 <= this.deps.now()) {
           // vencido: la caja lo renueva sola; sin caja se espera una nueva request autenticada
           const renewed = (await this.tryRenew(tenantId)) ? this.tokens.get(tenantId) : undefined
@@ -239,6 +247,7 @@ export class CatalogSyncer {
           signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
         })
         if (res.status === 403 && (await isSubscriptionInactive(res))) return 'ok' // token válido: no se olvida (el outbox lo necesita)
+        if (res.status === 403) await reportEndedResponse(tenantId, res) // caja revocada/vencida: la sesión termina ya
         if (res.status === 401 || res.status === 403) return 'unauthorized'
         if (!res.ok) {
           if (!optional) failed = true

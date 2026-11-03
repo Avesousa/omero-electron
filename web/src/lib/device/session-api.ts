@@ -46,7 +46,7 @@ export async function refreshLocalSession(request: Request): Promise<Response> {
 
   const r = await getDeviceSession().refresh(tenantId)
   if (!r.ok) return failure(r.code, r.message)
-  return json(200, { success: true, data: { accessToken: r.accessToken, expiresIn: r.expiresIn, user: r.user } })
+  return json(200, { success: true, data: { accessToken: r.accessToken, expiresIn: r.expiresIn, user: r.user, sessionExpiresAt: r.sessionExpiresAt } })
 }
 
 /** GET /api/_local/session → estado de la caja para la UI (nunca el secreto). */
@@ -57,7 +57,15 @@ export function getLocalSession(request: Request): Response {
   const entry = tenantId ? state.get(tenantId) : null
   return json(200, {
     success: true,
-    data: { desktop, hasDevice: !!entry, sessionActive: entry?.sessionActive ?? false },
+    data: {
+      desktop,
+      hasDevice: !!entry,
+      sessionActive: entry?.sessionActive ?? false,
+      // Fin definitivo detectado en segundo plano (renovación diaria): la UI vuelve al login con el motivo.
+      endedReason: tenantId ? state.endedReason(tenantId) : null,
+      sessionExpiresAt: entry?.expiresAt ?? null,
+      lastCheckedAt: entry?.lastCheckedAt ?? null,
+    },
   })
 }
 

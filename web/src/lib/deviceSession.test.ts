@@ -17,6 +17,14 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('loginReasonMessage: motivos del modo web', () => {
+  it('replaced / expired tienen mensaje en español; prototipo y desconocidos no', () => {
+    expect(loginReasonMessage('replaced')).toBe('Tu sesión se cerró porque se inició en otro lugar.')
+    expect(loginReasonMessage('expired')).toBe('Tu sesión venció. Ingresá de nuevo.')
+    expect(loginReasonMessage('toString')).toBeNull()
+  })
+})
+
 describe('reasonFor / loginReasonMessage', () => {
   it.each([['DEVICE_REVOKED', 'device-revoked'], ['DEVICE_EXPIRED', 'device-expired'], ['LOGIN_REQUIRED', 'login-required']] as const)('%s → %s', (code, reason) => {
     expect(reasonFor(code)).toBe(reason)
@@ -35,10 +43,15 @@ describe('reasonFor / loginReasonMessage', () => {
 })
 
 describe('fetchDeviceInfo', () => {
+  it('trae el motivo de fin definitivo detectado en segundo plano', async () => {
+    fetchMock.mockResolvedValue(json(200, { success: true, data: { desktop: true, hasDevice: true, sessionActive: true, endedReason: 'DEVICE_REVOKED' } }))
+    expect((await fetchDeviceInfo()).endedReason).toBe('DEVICE_REVOKED')
+  })
+
   it('devuelve el estado de la caja (sin secreto) y manda el JWT como pista si hay', async () => {
     vi.spyOn(session, 'getAuthToken').mockReturnValue('JWT')
     fetchMock.mockResolvedValue(json(200, { success: true, data: { desktop: true, hasDevice: true, sessionActive: true } }))
-    expect(await fetchDeviceInfo()).toEqual({ desktop: true, hasDevice: true, sessionActive: true })
+    expect(await fetchDeviceInfo()).toMatchObject({ desktop: true, hasDevice: true, sessionActive: true, endedReason: null })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/_local/session')
     expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({ Authorization: 'Bearer JWT' })
   })
@@ -55,9 +68,17 @@ describe('renewSession', () => {
     const setSpy = vi.spyOn(session, 'setSession').mockImplementation(() => {})
     fetchMock.mockResolvedValue(json(200, { success: true, data: { accessToken: 'JWT2', expiresIn: 3600, user } }))
     expect(await renewSession()).toEqual({ ok: true, user })
-    expect(setSpy).toHaveBeenCalledWith('JWT2', user)
+    expect(setSpy).toHaveBeenCalledWith('JWT2', user, null, null)
     expect(fetchMock.mock.calls[0][0]).toBe('/api/_local/session/refresh')
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST')
+  })
+
+  it('éxito con fin de sesión de la caja: se lo pasa a setSession (cookie de 14 días)', async () => {
+    const setSpy = vi.spyOn(session, 'setSession').mockImplementation(() => {})
+    const until = Date.now() + 10 * 86_400_000
+    fetchMock.mockResolvedValue(json(200, { success: true, data: { accessToken: 'JWT3', expiresIn: 93600, user, sessionExpiresAt: until } }))
+    await renewSession()
+    expect(setSpy).toHaveBeenCalledWith('JWT3', user, null, until)
   })
 
   it('manda el JWT vencido de sessionStorage solo como pista del tenant', async () => {
