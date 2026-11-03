@@ -128,6 +128,16 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 - Comandos: `npm run verify:safestorage` (compila y corre `safeStorage` **real** con Electron: cifra/descifra, comprueba que el archivo no tiene el secreto en claro; requiere sesión gráfica).
 - Tests: `main/device-store.test.ts` (100 %), unit de `lib/device/**` (≥ 99 %), `device.integration.test.ts` (backend HTTP falso: activación, renovación con JWT vencido, rotación y reinicio, revocada → sync-token, ventana cerrada, logout, aislamiento de tenants, web/backend viejo), renderer (`useSessionRenewal`, `LoginForm`, `deviceSession`, logout).
 
+### Sesión en modo web (added 2026-11-02, branch: feat/sesion-modo-web)
+
+El POS también corre en modo **web** (Railway, navegador, SIN identidad de caja) y ahí usa la sesión renovable portada de `omero` (PR #99): JWT web corto + refresh token que rota en cada uso y una sola sesión web por usuario.
+
+- **`lib/sessionManager.ts`**: refresh token en `localStorage` (respaldo en memoria), `refreshSession` single-flight + `navigator.locks` entre pestañas, `getFreshAuthHeaders`, `handleSessionLost` (→ `/login?reason=replaced|expired`), `startSessionRenewal` (proactiva SOLO con actividad del usuario en los últimos 10 min, al volver a la pestaña, y sincroniza otras pestañas por `storage`). Un fallo de red no cierra la sesión; `SESSION_REPLACED` / `TOKEN_INVALID` (401, en el refresh o en CUALQUIER request) sí.
+- **Cookies**: `omero_has_refresh=1` (no sensible, 7 días deslizantes) deja pasar al `middleware` con el JWT vencido para que el cliente renueve; no da acceso a datos (el backend siempre valida el JWT).
+- **Login**: `409 SESSION_ACTIVE` (con `data.lastSeenAt`, o en la raíz) → `sessionConflict` en `useAuth`, `SessionConflictModal` en `LoginForm` ("Cerrar la otra y continuar" = `confirmReplaceSession`, reintenta con `replaceSession:true`). `logout` revoca la sesión en el backend (`postLogout`).
+- **`apiFetch`**: 401 → `refreshSession` y UN reintento; si falla de forma definitiva → `/login?reason=replaced|expired`.
+- **Coexistencia con la CAJA de escritorio** (los dos mecanismos NO se mezclan): el discriminante es el refresh token. Un login con identidad de caja (`fetchDeviceInfo()`: desktop && hasDevice) llama `setSession(jwt, user, null)`, que **descarta** el `refreshToken` que venga y cualquier refresh previo: la caja jamás guarda refresh token ni `omero_has_refresh`, no arranca `startSessionRenewal`, no llama al refresh web ni muestra el modal de conflicto (un 409 en una caja se trata como error común), y su logout es `deviceLogout` (no el logout web). Su sesión sigue siendo la de dispositivo: `omero_device_until`, validador pasivo de 24 h, corte por 403 `DEVICE_*` y renovación obligatoria por `/api/_local/session/refresh` (en `apiFetch`, ese camino se usa solo si NO hay refresh token). `clearSession` limpia todo lo de ambos (token, usuario, refresh, `omero_has_refresh`, `omero_device_until`).
+
 ### Validación pasiva de la sesión de la caja (added 2026-11-02, branch: feat/sesion-renovable)
 
 La sesión de la caja dura 14 días; cada `/refresh` la vuelve a extender 14 días y rota el secreto. El JWT de caja (`scope=pos`) dura **26 h** (el `sync` sigue en 1 h) y **no hay endpoint de solo-JWT**: obtener un JWT nuevo implica un `/refresh` completo. **No hay renovaciones por reloj**: ni timers, ni backoff, ni reintento por evento `online`.
@@ -257,7 +267,6 @@ No definir `NEXT_PUBLIC_API_URL` en el POS (mismo origen + proxy).
 
 ## Pendientes registrados
 
-- **Migración de datos H2 → Railway** de las instalaciones actuales (rama `master`, con Java+H2) antes de actualizarlas.
 - Eliminar `/pos` de `omero` tras validar este POS.
 - Idea futura: tabla de sobreventas (hoy el stock se limita a 0 y no queda registro de lo vendido de más).
 - Node 20 (Docker/CI del POS web) está fuera de soporte; el desktop corre en Node 24. Base SQLite sin cifrar (SQLCipher fuera de alcance).
@@ -297,7 +306,6 @@ docker build web/                 # imagen del modo web
 ```
 
 #### TODOs / Technical debt
-- [ ] Migración de datos H2 → Railway de las instalaciones actuales (rama `master`) antes de actualizarlas.
 - [ ] Eliminar `/pos` de `omero` tras validar este POS (PR aparte); `NEXT_PUBLIC_POS_URL` ya está en la rama `feat/pos-external-url` de `omero`.
 - [ ] Verificación manual: instalador Windows/macOS y deploy en Railway (`AiBuild/.../done/manual-checklist.md`).
 - [ ] CI de PR (solo hay workflow por tags); `middleware.ts` usa la convención deprecada de Next 16.
@@ -339,7 +347,7 @@ OMERO_DEFAULT_BACKEND_URL=https://<backend> npm run prepare:app   # arma resourc
 - [ ] Verificación manual: Electron 40 (numpad/F1/foco), aviso en pantalla, instaladores Windows y macOS (arm64 e Intel) — `AiBuild/.../done/manual-checklist.md`.
 - [ ] Fase 3: outbox de ventas/gastos, `mp_offline`, ventas a revisar en admin, stock en 0. Fase 4: sesión de dispositivo de semanas.
 - [ ] Node 20 (Docker/CI del POS web) fuera de soporte; `electron-builder` 25 sin probar empaquetando con Electron 40; base SQLite sin cifrar.
-- [ ] Migración H2 → Railway de instalaciones actuales; eliminar `/pos` de `omero`; `middleware` → `proxy` de Next 16.
+- [ ] Eliminar `/pos` de `omero`; `middleware` → `proxy` de Next 16.
 
 **Archivo de specs:** `AiBuild/feature/pos-sqlite-catalog-cache/done/`
 

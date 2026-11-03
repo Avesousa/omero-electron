@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const PUBLIC_ROUTES = ['/login']
 
+/**
+ * MODO WEB — sesión renovable: el JWT dura poco pero la sesión hasta 7 días con refresh token (que vive en localStorage,
+ * ilegible para el middleware). Si el middleware rebotara a /login apenas vence la cookie `omero_session`, el cliente nunca
+ * podría renovar. Por eso el cliente mantiene la cookie no sensible `omero_has_refresh=1` (Max-Age 7 días, deslizante) y, con
+ * ella, el middleware deja pasar las rutas protegidas aunque el JWT haya vencido: el cliente renueva (apiFetch / AuthProvider)
+ * o redirige a /login?reason=expired. No abre un agujero: la cookie no otorga acceso a datos (toda API valida el JWT en el
+ * backend; falsificarla solo muestra el shell de la página). Es independiente de `omero_device_until` (caja de escritorio).
+ */
+const REFRESH_HINT_COOKIE = 'omero_has_refresh'
+
 const BYPASS_PREFIXES = ['/_next', '/api', '/brand', '/favicon']
 
 function decodePayload(token: string | undefined): { exp?: number; sub?: string } | null {
@@ -49,14 +59,16 @@ export function middleware(request: NextRequest) {
 
   const sessionToken = request.cookies.get('omero_session')?.value
   const deviceUntil = request.cookies.get('omero_device_until')?.value
-  const hasValidSession = isValidJwt(sessionToken) || isDeviceSessionWithExpiredJwt(sessionToken, deviceUntil)
+  const hasValidJwt = isValidJwt(sessionToken)
+  const hasValidSession = hasValidJwt || isDeviceSessionWithExpiredJwt(sessionToken, deviceUntil)
+  const hasRefreshHint = request.cookies.get(REFRESH_HINT_COOKIE)?.value === '1'
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
 
   if (isPublicRoute && hasValidSession) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  if (!isPublicRoute && !hasValidSession) {
+  if (!isPublicRoute && !hasValidSession && !hasRefreshHint) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(loginUrl)

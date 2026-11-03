@@ -57,3 +57,27 @@ describe('middleware (POS de escritorio)', () => {
     expect(location(middleware(req('/api/products')))).toBeNull()
   })
 })
+
+describe('middleware (modo web: sesión renovable con omero_has_refresh)', () => {
+  it('JWT vencido (o sin cookie) CON omero_has_refresh=1 deja pasar para que el cliente renueve', () => {
+    expect(location(middleware(req('/pos', { omero_session: jwt(-60), omero_has_refresh: '1' })))).toBeNull()
+    expect(location(middleware(req('/pos', { omero_has_refresh: '1' })))).toBeNull()
+  })
+
+  it('un valor distinto de "1" no cuenta', () => {
+    expect(location(middleware(req('/pos', { omero_has_refresh: '0' })))).toContain('/login')
+  })
+
+  it('/login con solo la señal de refresh NO redirige (evita bucles)', () => {
+    expect(location(middleware(req('/login', { omero_has_refresh: '1' })))).toBeNull()
+  })
+
+  it('no se pisa con la cookie de la caja: omero_device_until sin JWT bien formado no deja pasar', () => {
+    expect(location(middleware(req('/pos', { omero_device_until: inDays(10) })))).toContain('/login')
+  })
+
+  it('las dos señales juntas siguen dejando pasar (cada una por su cuenta)', () => {
+    expect(location(middleware(req('/pos', { omero_session: jwt(-3600), omero_device_until: inDays(10), omero_has_refresh: '1' })))).toBeNull()
+  })
+})
+

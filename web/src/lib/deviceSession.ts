@@ -43,8 +43,16 @@ const REASON_MESSAGES: Record<LoginReason, string> = {
   'login-required': 'Iniciá sesión para seguir.',
 }
 
+/** Motivos del modo WEB (sesión renovable, sin caja): `/login?reason=replaced|expired`. */
+const WEB_REASON_MESSAGES: Record<string, string> = {
+  replaced: 'Tu sesión se cerró porque se inició en otro lugar.',
+  expired: 'Tu sesión venció. Ingresá de nuevo.',
+}
+
 export function loginReasonMessage(reason: string | null | undefined): string | null {
-  return reason && reason in REASON_MESSAGES ? REASON_MESSAGES[reason as LoginReason] : null
+  if (!reason) return null
+  if (Object.hasOwn(REASON_MESSAGES, reason)) return REASON_MESSAGES[reason as LoginReason]
+  return Object.hasOwn(WEB_REASON_MESSAGES, reason) ? WEB_REASON_MESSAGES[reason] : null
 }
 
 /** Estado de la caja según el servidor local. Nunca lanza (ante cualquier error: sin caja). */
@@ -78,7 +86,7 @@ export async function renewSession(): Promise<RenewResult> {
     })
     const body = (await res.json()) as { success?: boolean; data?: { accessToken: string; user: User; sessionExpiresAt?: number | null }; error?: string; code?: RenewCode }
     if (res.ok && body?.success && body.data?.accessToken && body.data.user) {
-      setSession(body.data.accessToken, body.data.user, body.data.sessionExpiresAt ?? null)
+      setSession(body.data.accessToken, body.data.user, null, body.data.sessionExpiresAt ?? null)
       return { ok: true, user: body.data.user }
     }
     return { ok: false, code: body?.code ?? 'UNAVAILABLE', message: body?.error ?? 'No se pudo renovar la sesión' }

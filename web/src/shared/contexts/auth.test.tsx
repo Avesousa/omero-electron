@@ -16,7 +16,8 @@ vi.mock('@/lib/localCache', () => ({
 
 const clearSession = vi.fn()
 const getSessionUserMock = vi.fn<() => unknown>(() => ({ id: '1', email: 'cajero@x.com', name: 'Cajero' }))
-vi.mock('@/lib/sessionManager', () => ({
+vi.mock('@/lib/sessionManager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/sessionManager')>()),
   setSession: vi.fn(),
   clearSession: () => clearSession(),
   getSessionUser: () => getSessionUserMock(),
@@ -24,7 +25,8 @@ vi.mock('@/lib/sessionManager', () => ({
 }))
 const postLogin = vi.fn()
 const postLoginKey = vi.fn()
-vi.mock('@/shared/services/authService', () => ({ postLogin: (...a: unknown[]) => postLogin(...a), postLoginKey: (...a: unknown[]) => postLoginKey(...a) }))
+const postLogout = vi.fn(async () => {})
+vi.mock('@/shared/services/authService', () => ({ postLogin: (...a: unknown[]) => postLogin(...a), postLoginKey: (...a: unknown[]) => postLoginKey(...a), postLogout: (...a: unknown[]) => postLogout(...a), SESSION_ACTIVE: 'SESSION_ACTIVE' }))
 const saveLoginHint = vi.fn(async () => {})
 vi.mock('@/lib/loginHint', () => ({ saveLoginHint: (h: unknown) => saveLoginHint(h) }))
 
