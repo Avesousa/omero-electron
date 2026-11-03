@@ -18,6 +18,12 @@ export interface LoginData{
   quickKeyLoginEnabled?: boolean
 }
 
+/** El backend respondió 409 SESSION_ACTIVE (solo modo web): hay otra sesión web abierta. */
+export interface SessionConflict {
+  /** Última actividad de la otra sesión (ISO), si el backend la informó. */
+  lastSeenAt?: string
+}
+
 export interface AuthState {
   user: User | null
   isAuthenticated: boolean
@@ -46,4 +52,9 @@ export interface AuthContextValue extends AuthState {
   logout: () => void
   /** Vuelve a leer la sesión guardada (cookie/sessionStorage) y actualiza el estado. true si hay sesión vigente. */
   syncSession: () => boolean
+  /** Solo modo web: no nulo mientras se espera que el usuario decida si cierra la otra sesión. Siempre null en una caja. */
+  sessionConflict: SessionConflict | null
+  /** Reintenta el login con `replaceSession: true` (cierra la otra sesión). */
+  confirmReplaceSession: () => Promise<void>
+  dismissSessionConflict: () => void
 }

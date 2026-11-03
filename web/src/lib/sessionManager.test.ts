@@ -46,13 +46,13 @@ describe('sesión sin caja (web / sin identidad de dispositivo)', () => {
 
 describe('sesión de caja con JWT vencido (sesión de 14 días vigente)', () => {
   it('setSession con fin de sesión escribe la cookie y alarga las de sesión', () => {
-    setSession(jwt(600), user, inDays(14))
+    setSession(jwt(600), user, undefined, inDays(14))
     expect(Number(cookie('omero_device_until'))).toBeGreaterThan(Date.now() + 13 * 86_400_000)
     expect(deviceSessionUntil()).not.toBeNull()
   })
 
   it('con el JWT vencido el usuario sigue en pantalla, pero NO se manda como credencial', () => {
-    setSession(jwt(-120), user, inDays(14))
+    setSession(jwt(-120), user, undefined, inDays(14))
     expect(getSessionUser()?.email).toBe('a@x.com')
     expect(getAuthToken()).toBeNull() // la request sale sin token → 401 → renovación obligatoria
     expect(getSessionExpiry()).not.toBeNull() // useSessionRenewal puede detectar el vencimiento y renovar
@@ -60,19 +60,19 @@ describe('sesión de caja con JWT vencido (sesión de 14 días vigente)', () => 
   })
 
   it('una pestaña nueva se rehidrata desde las cookies aunque el JWT esté vencido', () => {
-    setSession(jwt(-120), user, inDays(14))
+    setSession(jwt(-120), user, undefined, inDays(14))
     sessionStorage.clear() // pestaña nueva: sin sessionStorage
     expect(getSessionUser()?.email).toBe('a@x.com')
   })
 
   it('al pasar la sesión de 14 días (cookie vencida) un JWT vencido vuelve a cerrar la sesión', () => {
-    setSession(jwt(-120), user, inDays(14))
+    setSession(jwt(-120), user, undefined, inDays(14))
     document.cookie = 'omero_device_until=; Path=/; Max-Age=0'
     expect(getSessionUser()).toBeNull()
   })
 
   it('una renovación sin fin nuevo conserva el fin de sesión ya conocido', () => {
-    setSession(jwt(600), user, inDays(14))
+    setSession(jwt(600), user, undefined, inDays(14))
     const until = cookie('omero_device_until')
     setSession(jwt(3600), user)
     expect(cookie('omero_device_until')).toBe(until)
@@ -87,7 +87,7 @@ describe('sesión de caja con JWT vencido (sesión de 14 días vigente)', () => 
   })
 
   it('clearSession borra también la cookie de la caja', () => {
-    setSession(jwt(-120), user, inDays(14))
+    setSession(jwt(-120), user, undefined, inDays(14))
     clearSession()
     expect(deviceSessionUntil()).toBeNull()
     expect(getSessionUser()).toBeNull()
