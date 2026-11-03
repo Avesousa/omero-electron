@@ -98,7 +98,7 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
   expiración **no** borra la caché.
 - **Degradación:** modo web, sin `OMERO_DATA_DIR` (producción), módulo nativo ausente/ABI equivocado o directorio sin permisos → pass-through
   sin error (la caché jamás rompe una request).
-- **Limitación (resuelta en la fase 4):** el JWT dura 1 h; con caja registrada se renueva solo (ver "Sesión de dispositivo"). Sin caja (web, backend viejo) sigue pidiendo login.
+- **Limitación (resuelta en la fase 4):** el JWT de caja dura 26 h; con caja registrada se renueva al hacer falta (ver "Sesión de dispositivo"). Sin caja (web, backend viejo) sigue pidiendo login.
 
 ### Outbox de ventas y gastos (fase 3, solo desktop)
 
@@ -112,21 +112,48 @@ web/                          Next.js 16 (ESM, standalone). Su propio package.js
 - **Endpoints locales** (no se proxean; tenant del JWT): `GET /api/_local/outbox` (`counts`, `backend`, `items` sin payload; `?status=`, `?limit=`, `?detail=<clientId>` con payload), `POST /api/_local/outbox/import` (cola vieja de localStorage, idempotente por `clientId` derivado), `POST /api/_local/outbox/{clientId}/dismiss` (un `FAILED` deja de contarse). `GET /api/_local/connectivity` suma `outbox:{pending,review,failed,backend,nextAttemptAt}`. En web/sin outbox responden `available:false`.
 - **Configuración offline**: la caché de catálogo también guarda `mp_offline` (`settings`). En el POS, el botón MercadoPago se bloquea sin conexión salvo `mp_offline` (`useBusinessFlag`, `PaymentModal`); el negocio lo activa en el admin.
 - **UI**: `ConnectionStatus` (chips "N pendientes sin sync" / "N para revisar", "Sesión vencida: iniciá sesión…"), `OutboxListModal` (lista y "Entendido" para rechazos), `useOutboxStatus` (5 s con pendientes / 20 s en reposo). Cerrar sesión con pendientes pregunta antes (no los borra). `useSales` hace **un solo intento** (sin reintentos ni `localStorage`); `useOfflineQueue` solo **migra** la cola vieja (desktop → import al outbox; web → la sube una vez).
-- **Limitación conocida**: el JWT dura 1 h y no se renueva; pasada la hora hay que iniciar sesión para subir lo pendiente (fase 4: sesión de dispositivo de semanas, revocable).
+- **Limitación conocida**: el JWT no se renueva por reloj; con caja registrada se renueva solo al hacer falta (fase 4) para subir lo pendiente (fase 4: sesión de dispositivo de semanas, revocable).
 - Tests: unit por módulo + `outbox.integration.test.ts` (backend HTTP falso + SQLite real: envío, `DUPLICATE`, mixto, red caída, 401 y reanudación, 404, reinicio, aislamiento de tenants, cola vieja, web y degradación). `npm --prefix web run check` (umbral 85 % también en `lib/outbox/**`).
 
 ### Sesión de dispositivo de la caja (fase 4, solo desktop)
 
-`main/device-store.ts` (Electron) + `web/src/lib/device/` (Next local) + `web/src/lib/{deviceSession,useSessionRenewal}.ts` (renderer). Resuelve el JWT de 1 h: la caja se registra al hacer login y renueva sola su sesión.
+`main/device-store.ts` (Electron) + `web/src/lib/device/` (Next local) + `web/src/lib/{deviceSession,useSessionRenewal}.ts` (renderer). Resuelve el JWT de caja (26 h): la caja se registra al hacer login y renueva sola su sesión.
 
 - **Identidad y secreto** (Electron main): `device-id` (UUID plano, no secreto) y `device-session.bin` (secretos por tenant **cifrados con `safeStorage`**: Keychain/DPAPI) en `<userData>/device/`. `safeStorage` solo existe en el main, así que `process-manager` descifra al arrancar y pasa al Next por env `OMERO_DEVICE_ID/NAME/PLATFORM/SECRETS/PERSIST` y `OMERO_APP_VERSION`; el Next avisa cada cambio por IPC (`parentPort` → `omero:device-secrets`) y el main lo persiste (debounce, escritura atómica). Sin cifrado del SO (o Linux `basic_text`) **no se persiste**: la sesión larga vive solo en memoria. Archivo ilegible → se aparta a `.corrupt-<ts>`, nunca se borra.
-- **Login** (`session-proxy`): `POST /api/auth/login` se intercepta en desktop, agrega `device{…}`, guarda el `deviceSecret` y lo **quita de la respuesta** (el renderer nunca ve el secreto; solo recibe el JWT de 1 h). Sin identidad de caja (web / dev sin Electron) o con un backend viejo → comportamiento de siempre.
+- **Login** (`session-proxy`): `POST /api/auth/login` se intercepta en desktop, agrega `device{…}`, guarda el `deviceSecret` y lo **quita de la respuesta** (el renderer nunca ve el secreto; solo recibe el JWT de caja). Sin identidad de caja (web / dev sin Electron) o con un backend viejo → comportamiento de siempre.
 - **Renovación** (`device-session`, un refresh en vuelo por tenant porque el secreto **rota** en cada uno): `POST /api/_local/session/refresh` (sin Authorization; el tenant sale de una pista o de la última sesión) → 200 `{accessToken,expiresIn,user}` | 401 `LOGIN_REQUIRED|DEVICE_EXPIRED|NO_DEVICE` | 403 `DEVICE_REVOKED` | 503 `UNAVAILABLE`. `GET/DELETE /api/_local/session` (estado de la caja y logout: conserva el secreto para subir lo pendiente, renovar exige un nuevo login). **Sin guardia local** (decisión): riesgo aceptado, mitigación futura = nonce por arranque.
 - **Outbox** (`token-provider`): `authorize(tenant)` = JWT `pos` vigente (>2 min) → `refresh` → (revocada / vencida / sin sesión) **`sync-token`** (JWT `scope=sync`, solo `/api/sync/batch`, ventana de 30 d) → `unauthorized` (el outbox no se toca). El sender reintenta **una vez** ante un 401/403 renovando; el `syncer` renueva en vez de olvidar un token vencido (solo con tokens `pos`). Un "volvió la conexión" durante un envío que falla reintenta ya (`forceAgain`). `device-wiring` cablea sesión ↔ syncer sin ciclos de imports (`rememberSession` lo invoca).
-- **Renderer**: `useSessionRenewal` agenda la renovación a `exp − 5 min` (y al recuperar red / volver a la pestaña); `LoginForm` renueva en silencio al montar (el middleware nos manda a `/login` apenas vence el JWT) y muestra el motivo (`?reason=device-revoked|device-expired|login-required`); `logout` llama `DELETE /api/_local/session`. Web: nada cambia.
+- **Renderer**: `useSessionRenewal` reacciona a eventos (montar, recuperar red / volver a la pestaña; sin timers) y renueva solo si el JWT ya venció; `LoginForm` renueva en silencio al montar (el middleware nos manda a `/login` apenas vence el JWT) y muestra el motivo (`?reason=device-revoked|device-expired|login-required`); `logout` llama `DELETE /api/_local/session`. Web: nada cambia.
 - **Alcance**: el backend impone la lista blanca del POS (`scope=pos`). `web/src/lib/device/allowlist.contract.test.ts` **extrae las rutas `/api/...` que el POS llama y falla si alguna no está en la lista**: si el POS agrega una llamada nueva, agregarla también en `DeviceScopeFilter` del backend.
 - Comandos: `npm run verify:safestorage` (compila y corre `safeStorage` **real** con Electron: cifra/descifra, comprueba que el archivo no tiene el secreto en claro; requiere sesión gráfica).
 - Tests: `main/device-store.test.ts` (100 %), unit de `lib/device/**` (≥ 99 %), `device.integration.test.ts` (backend HTTP falso: activación, renovación con JWT vencido, rotación y reinicio, revocada → sync-token, ventana cerrada, logout, aislamiento de tenants, web/backend viejo), renderer (`useSessionRenewal`, `LoginForm`, `deviceSession`, logout).
+
+### Sesión en modo web (added 2026-11-02, branch: feat/sesion-modo-web)
+
+El POS también corre en modo **web** (Railway, navegador, SIN identidad de caja) y ahí usa la sesión renovable portada de `omero` (PR #99): JWT web corto + refresh token que rota en cada uso y una sola sesión web por usuario.
+
+- **`lib/sessionManager.ts`**: refresh token en `localStorage` (respaldo en memoria), `refreshSession` single-flight + `navigator.locks` entre pestañas, `getFreshAuthHeaders`, `handleSessionLost` (→ `/login?reason=replaced|expired`), `startSessionRenewal` (proactiva SOLO con actividad del usuario en los últimos 10 min, al volver a la pestaña, y sincroniza otras pestañas por `storage`). Un fallo de red no cierra la sesión; `SESSION_REPLACED` / `TOKEN_INVALID` (401, en el refresh o en CUALQUIER request) sí.
+- **Cookies**: `omero_has_refresh=1` (no sensible, 7 días deslizantes) deja pasar al `middleware` con el JWT vencido para que el cliente renueve; no da acceso a datos (el backend siempre valida el JWT).
+- **Login**: `409 SESSION_ACTIVE` (con `data.lastSeenAt`, o en la raíz) → `sessionConflict` en `useAuth`, `SessionConflictModal` en `LoginForm` ("Cerrar la otra y continuar" = `confirmReplaceSession`, reintenta con `replaceSession:true`). `logout` revoca la sesión en el backend (`postLogout`).
+- **`apiFetch`**: 401 → `refreshSession` y UN reintento; si falla de forma definitiva → `/login?reason=replaced|expired`.
+- **Coexistencia con la CAJA de escritorio** (los dos mecanismos NO se mezclan): el discriminante es el refresh token. Un login con identidad de caja (`fetchDeviceInfo()`: desktop && hasDevice) llama `setSession(jwt, user, null)`, que **descarta** el `refreshToken` que venga y cualquier refresh previo: la caja jamás guarda refresh token ni `omero_has_refresh`, no arranca `startSessionRenewal`, no llama al refresh web ni muestra el modal de conflicto (un 409 en una caja se trata como error común), y su logout es `deviceLogout` (no el logout web). Su sesión sigue siendo la de dispositivo: `omero_device_until`, validador pasivo de 24 h, corte por 403 `DEVICE_*` y renovación obligatoria por `/api/_local/session/refresh` (en `apiFetch`, ese camino se usa solo si NO hay refresh token). `clearSession` limpia todo lo de ambos (token, usuario, refresh, `omero_has_refresh`, `omero_device_until`).
+
+### Validación pasiva de la sesión de la caja (added 2026-11-02, branch: feat/sesion-renovable)
+
+La sesión de la caja dura 14 días; cada `/refresh` la vuelve a extender 14 días y rota el secreto. El JWT de caja (`scope=pos`) dura **26 h** (el `sync` sigue en 1 h) y **no hay endpoint de solo-JWT**: obtener un JWT nuevo implica un `/refresh` completo. **No hay renovaciones por reloj**: ni timers, ni backoff, ni reintento por evento `online`.
+
+- **Validador pasivo** (`DeviceSession.validateIfDue`): se guarda `lastCheckedAt` junto al secreto (`device-state`, `main/device-store.ts`). Cuando ocurre una operación de la caja y pasaron ≥ 24 h, renueva en ese momento (single-flight). Operaciones que lo disparan: el arranque del Next local (`instrumentation-node` → `validateDevicesOnStart`), cualquier request de `/api/*` en desktop (`validateDeviceOnRequest`, sin frenar la request), cada ciclo del outbox (`token-provider.authorize`) y cada ciclo del syncer (`CatalogSyncer.setValidator`).
+- **Éxito**: `lastCheckedAt = ahora`, `expiresAt` nuevo (+14 d), secreto rotado y persistido de forma atómica. **Falla transitoria** (red, timeout, 5xx): no se corta nada ni se toca el secreto y se pone `lastCheckedAt = ahora` (no se valida de nuevo hasta dentro de 24 h). **14 días sin éxito** (`expiresAt` local vencido): `endedReason` = `DEVICE_EXPIRED` y la sesión se cierra sin llamar al backend. **Errores definitivos** (`DEVICE_REVOKED`, `DEVICE_EXPIRED`, `LOGIN_REQUIRED`/usuario inactivo): `markEnded`, no se vuelve a llamar al backend, se conserva el secreto para el `sync-token`. `GET /api/_local/session` expone `endedReason`, `lastCheckedAt` y `sessionExpiresAt`.
+- **Renovación obligatoria** (no es validación, es obtener credencial; igual extiende los 14 días): `refresh` siempre llama al backend, sin mirar las 24 h. La usan el JWT vencido al montar/volver (`useSessionRenewal`, solo eventos) y el `401` de `apiFetch` (renueva y reintenta UNA vez; sin conexión no cierra la sesión; con revocada/vencida va al login con el motivo). Offline las ventas siguen en el outbox y suben con el ciclo existente.
+- **Persistencia atómica del secreto rotado**: `DeviceState.setDurable` pide a Electron escribir YA (`ackId`) y espera `omero:device-secrets-ack` (3 s) antes de entregar el JWT; `SecretsPersister` (main) responde tras `save` (temporal + `fsync` + `rename`).
+- **Corte instantáneo por revocación**: el backend verifica la caja en CADA request con JWT `scope=pos` y responde `403` con `DEVICE_REVOKED` / `DEVICE_EXPIRED` / `LOGIN_REQUIRED` aunque el JWT siga vigente (el scope `sync` no pasa por esa verificación). Es un fin DEFINITIVO, igual que en el refresh: **no** es un 401 y **no** dispara la renovación obligatoria.
+  - `device/session-ended.ts`: detecta el 403; `DeviceSession.reportEnded` marca `endedReason` YA, conserva el secreto y olvida el JWT pos del syncer. Lo invocan `data-layer` (toda request `/api/*` de desktop: proxy, catálogo, entitlement, polling de MP), el ciclo del `syncer`, el sender del outbox (solo si usó un JWT pos) y `apiFetch` en el renderer (limpia la sesión y va a `/login?reason=...`, sin renovar ni reintentar).
+  - Con la sesión terminada, `data-layer` corta localmente TODA request con el JWT pos (403 + code, sin ir al backend) hasta un nuevo login (el login pasa y limpia el motivo).
+  - **Outbox**: `token-provider.authorize` ignora el JWT pos si la sesión terminó y entrega el `sync-token`; el sender reintenta UNA vez por ese camino y sube lo ya vendido (el backend lo marca "a revisar"). Si la ventana sync se cerró o rechaza → `unauthorized` sin insistir ni mostrar error crudo.
+  - **Ventas/gastos NUEVOS con la sesión terminada NO se encolan**: `POST /api/sales|expenses` recibe el 403 local (no entra al outbox) y el POS vuelve al login con el motivo en español. Es lo más seguro: lo posterior a la revocación el backend lo rechazaría igual, y encolarlo escondería el problema. Limitación: sin conexión no hay forma de enterarse; el corte ocurre en el primer intento de subir/pedir algo al reconectar (outbox/syncer/request), que NO pasa por el gate de 24 h (ese gate es solo del refresh).
+- **Mensaje de caja vencida**: "Esta caja estuvo 14 días sin conectarse. Ingresá de nuevo."
+- **JWT vencido dentro de la sesión de 14 días (aplicado, aprobado por el dueño)**: un JWT de caja vencido NO manda al login mientras la sesión de la caja siga vigente. Solo con identidad de caja confirmada por el servidor local; la web normal no cambia. Cómo: `sessionManager.setDeviceSessionUntil(ms)` escribe la cookie `omero_device_until` (fin de la sesión, ms epoch) y alarga a ese plazo las cookies `omero_session`/`omero_user`; la fijan `renewSession` (con `sessionExpiresAt` de la renovación) y `syncDeviceSessionCookie` tras el login (si el servidor local aún no conoce el fin, se fija en la primera renovación). `middleware.ts` deja pasar un JWT bien formado pero vencido si esa cookie está vigente; `getSessionUser` y la rehidratación entre pestañas hacen lo mismo. `getAuthToken` sigue devolviendo `null` con el JWT vencido: la request sale sin credencial, el backend responde 401 y se dispara la renovación obligatoria. `clearSession` borra también la cookie, así que al terminar la sesión (revocada, vencida, logout) no hay bucle `/login` ↔ `/`. La cookie solo habilita la pantalla: el backend siempre rechaza el JWT vencido y el servidor local solo usa el `tenantId` para elegir archivos, nunca para autorizar. Tests: `middleware.test.ts`, `lib/sessionManager.test.ts`.
+- Un `409 SESSION_ACTIVE` del login web pasa tal cual por `session-proxy`/`authService`; el login de caja (con `device`) no lo recibe.
 
 ### Suscripción del negocio / entitlement (solo control de acceso)
 
@@ -240,7 +267,6 @@ No definir `NEXT_PUBLIC_API_URL` en el POS (mismo origen + proxy).
 
 ## Pendientes registrados
 
-- **Migración de datos H2 → Railway** de las instalaciones actuales (rama `master`, con Java+H2) antes de actualizarlas.
 - Eliminar `/pos` de `omero` tras validar este POS.
 - Idea futura: tabla de sobreventas (hoy el stock se limita a 0 y no queda registro de lo vendido de más).
 - Node 20 (Docker/CI del POS web) está fuera de soporte; el desktop corre en Node 24. Base SQLite sin cifrar (SQLCipher fuera de alcance).
@@ -280,7 +306,6 @@ docker build web/                 # imagen del modo web
 ```
 
 #### TODOs / Technical debt
-- [ ] Migración de datos H2 → Railway de las instalaciones actuales (rama `master`) antes de actualizarlas.
 - [ ] Eliminar `/pos` de `omero` tras validar este POS (PR aparte); `NEXT_PUBLIC_POS_URL` ya está en la rama `feat/pos-external-url` de `omero`.
 - [ ] Verificación manual: instalador Windows/macOS y deploy en Railway (`AiBuild/.../done/manual-checklist.md`).
 - [ ] CI de PR (solo hay workflow por tags); `middleware.ts` usa la convención deprecada de Next 16.
@@ -322,7 +347,7 @@ OMERO_DEFAULT_BACKEND_URL=https://<backend> npm run prepare:app   # arma resourc
 - [ ] Verificación manual: Electron 40 (numpad/F1/foco), aviso en pantalla, instaladores Windows y macOS (arm64 e Intel) — `AiBuild/.../done/manual-checklist.md`.
 - [ ] Fase 3: outbox de ventas/gastos, `mp_offline`, ventas a revisar en admin, stock en 0. Fase 4: sesión de dispositivo de semanas.
 - [ ] Node 20 (Docker/CI del POS web) fuera de soporte; `electron-builder` 25 sin probar empaquetando con Electron 40; base SQLite sin cifrar.
-- [ ] Migración H2 → Railway de instalaciones actuales; eliminar `/pos` de `omero`; `middleware` → `proxy` de Next 16.
+- [ ] Eliminar `/pos` de `omero`; `middleware` → `proxy` de Next 16.
 
 **Archivo de specs:** `AiBuild/feature/pos-sqlite-catalog-cache/done/`
 

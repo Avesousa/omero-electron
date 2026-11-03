@@ -50,7 +50,7 @@ describe('POST /api/_local/session/refresh', () => {
     const res = await refreshPost(req())
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.data).toEqual({ accessToken: 'JWT2', expiresIn: 3600, user })
+    expect(body.data).toEqual({ accessToken: 'JWT2', expiresIn: 3600, user, sessionExpiresAt: null })
     expect(JSON.stringify(body)).not.toMatch(/S2|deviceSecret/)
     expect(JSON.parse(String(f.mock.calls[0][1]!.body))).toEqual({ deviceSecret: 'S1' })
     expect(getDeviceState().get(T)?.secret).toBe('S2')
@@ -109,19 +109,19 @@ describe('POST /api/_local/session/refresh', () => {
 describe('GET /api/_local/session', () => {
   it('desktop con caja: hasDevice + sessionActive, sin secreto', async () => {
     const body = await (await sessionGet(req('GET', bearer(T)))).json()
-    expect(body.data).toEqual({ desktop: true, hasDevice: true, sessionActive: true })
+    expect(body.data).toMatchObject({ desktop: true, hasDevice: true, sessionActive: true })
     expect(JSON.stringify(body)).not.toContain('S1')
   })
   it('sin caja registrada o web → hasDevice=false', async () => {
     boot({})
     expect((await getLocalSession(req('GET'))).status).toBe(200)
-    expect((await (await getLocalSession(req('GET'))).json()).data).toEqual({ desktop: true, hasDevice: false, sessionActive: false })
+    expect((await (await getLocalSession(req('GET'))).json()).data).toMatchObject({ desktop: true, hasDevice: false, sessionActive: false })
     vi.stubEnv('OMERO_RUNTIME', 'web')
-    expect((await (await getLocalSession(req('GET'))).json()).data).toEqual({ desktop: false, hasDevice: false, sessionActive: false })
+    expect((await (await getLocalSession(req('GET'))).json()).data).toMatchObject({ desktop: false, hasDevice: false, sessionActive: false })
   })
   it('tras un logout la caja sigue registrada pero sin sesión activa', async () => {
     boot({ [T]: { secret: 'S1', sessionActive: false } })
-    expect((await (await getLocalSession(req('GET', bearer(T)))).json()).data).toEqual({ desktop: true, hasDevice: true, sessionActive: false })
+    expect((await (await getLocalSession(req('GET', bearer(T)))).json()).data).toMatchObject({ desktop: true, hasDevice: true, sessionActive: false })
   })
 })
 
@@ -152,3 +152,25 @@ describe('DELETE /api/_local/session (logout de la caja)', () => {
 it('getDeviceSession usa el mismo estado que los endpoints', () => {
   expect(getDeviceSession().state).toBe(getDeviceState())
 })
+
+const FUTURE = new Date(Date.now() + 14 * 24 * 3600_000).toISOString()
+describe('fin de sesión detectado en segundo plano y fecha de la sesión', () => {
+  it('refresh devuelve sessionExpiresAt y GET /session lo expone junto con lastCheckedAt (sin secreto)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(ok({ accessToken: 'JWT2', expiresIn: 3600, deviceSecret: 'S2', deviceExpiresAt: FUTURE, user }))
+    const res = await refreshPost(req())
+    expect((await res.json()).data.sessionExpiresAt).toBe(Date.parse(FUTURE))
+    const info = await (await sessionGet(req('GET'))).json()
+    expect(info.data).toMatchObject({ desktop: true, hasDevice: true, sessionActive: true, endedReason: null, sessionExpiresAt: Date.parse(FUTURE) })
+    expect(typeof info.data.lastCheckedAt).toBe('number')
+    expect(JSON.stringify(info)).not.toMatch(/S2|S1/)
+  })
+
+  it('una revocación detectada por la renovación diaria (sin renderer) se expone como endedReason', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(err(403, 'DEVICE_REVOKED'))
+    await getDeviceSession().refresh(T) // lo que haría el programador diario
+    const info = await (await sessionGet(req('GET'))).json()
+    expect(info.data.endedReason).toBe('DEVICE_REVOKED')
+    expect(info.data.hasDevice).toBe(true) // el secreto se conserva para el sync-token
+  })
+})
+

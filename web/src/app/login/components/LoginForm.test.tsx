@@ -45,7 +45,7 @@ describe('<LoginForm /> renovación silenciosa (desktop con caja)', () => {
   })
 
   it.each([
-    ['DEVICE_REVOKED', /revocada/], ['DEVICE_EXPIRED', /venció por inactividad/], ['LOGIN_REQUIRED', /Iniciá sesión para seguir/],
+    ['DEVICE_REVOKED', /revocada/], ['DEVICE_EXPIRED', /14 días sin conectarse/], ['LOGIN_REQUIRED', /Iniciá sesión para seguir/],
   ] as const)('si no se puede renovar (%s) muestra el motivo y deja el formulario', async (code, text) => {
     vi.spyOn(device, 'renewSession').mockResolvedValue({ ok: false, code, message: '' })
     render(<LoginForm />)

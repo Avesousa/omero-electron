@@ -26,6 +26,10 @@ export interface TenantDeviceSecret {
   secret: string
   /** false tras un logout explícito: para renovar hay que volver a iniciar sesión. */
   sessionActive: boolean
+  /** Última renovación exitosa (ms epoch). */
+  lastCheckedAt?: number
+  /** Vencimiento de la sesión de 14 días informado por el backend (ms epoch). */
+  expiresAt?: number
 }
 
 export type DeviceSecrets = Record<string, TenantDeviceSecret>
@@ -109,8 +113,16 @@ export class DeviceStore {
   }
 
   private atomicWrite(file: string, data: Buffer): void {
+    // Temporal + fsync + rename: o queda el archivo viejo completo o el nuevo completo, nunca uno a medias, aun si se
+    // corta la luz justo después. Importa porque el secreto de la caja rota y el anterior ya no sirve en el backend.
     const tmp = `${file}.tmp-${process.pid}`
-    fs.writeFileSync(tmp, data, { mode: 0o600 })
+    const fd = fs.openSync(tmp, 'w', 0o600)
+    try {
+      fs.writeFileSync(fd, data)
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
     fs.renameSync(tmp, file)
   }
 
@@ -125,15 +137,63 @@ export class DeviceStore {
   }
 }
 
+function isTime(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0
+}
+
 /** Solo tenants UUID con secreto de largo razonable; descarta todo lo demás. */
 export function sanitize(input: unknown): DeviceSecrets {
   const out: DeviceSecrets = {}
   if (input === null || typeof input !== 'object' || Array.isArray(input)) return out
   for (const [tenantId, value] of Object.entries(input as Record<string, unknown>)) {
     if (!UUID.test(tenantId) || value === null || typeof value !== 'object') continue
-    const { secret, sessionActive } = value as Record<string, unknown>
+    const { secret, sessionActive, lastCheckedAt, expiresAt } = value as Record<string, unknown>
     if (typeof secret !== 'string' || secret.length === 0 || secret.length > MAX_SECRET_LENGTH) continue
-    out[tenantId.toLowerCase()] = { secret, sessionActive: sessionActive !== false }
+    out[tenantId.toLowerCase()] = {
+      secret,
+      sessionActive: sessionActive !== false,
+      ...(isTime(lastCheckedAt) ? { lastCheckedAt } : {}),
+      ...(isTime(expiresAt) ? { expiresAt } : {}),
+    }
   }
   return out
+}
+
+/**
+ * Persiste los secretos que avisa el Next: con debounce para los cambios normales y SIN espera cuando el Next pide
+ * confirmación (`ackId`, tras una rotación del secreto: el anterior ya no sirve en el backend, así que el nuevo tiene que
+ * estar en disco antes de que el Next siga). `handle` devuelve la respuesta a mandar al Next, si corresponde.
+ */
+export class SecretsPersister {
+  private pending: unknown = null
+  private timer: ReturnType<typeof setTimeout> | null = null
+
+  constructor(
+    private readonly store: Pick<DeviceStore, 'save'>,
+    private readonly debounceMs = 200,
+  ) {}
+
+  handle(message: unknown): { type: 'omero:device-secrets-ack'; ackId: string; ok: boolean } | null {
+    if (message === null || typeof message !== 'object') return null
+    const { type, secrets, ackId } = message as { type?: unknown; secrets?: unknown; ackId?: unknown }
+    if (type !== 'omero:device-secrets') return null
+    this.pending = secrets
+    if (typeof ackId === 'string' && ackId.length > 0 && ackId.length <= 100) {
+      const ok = this.flush()
+      return { type: 'omero:device-secrets-ack', ackId, ok }
+    }
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = setTimeout(() => this.flush(), this.debounceMs)
+    return null
+  }
+
+  /** Escribe lo pendiente ya (también al cerrar la app). Devuelve si quedó guardado (true si no había nada pendiente). */
+  flush(): boolean {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = null
+    if (this.pending === null) return true
+    const secrets = sanitize(this.pending)
+    this.pending = null
+    return this.store.save(secrets)
+  }
 }

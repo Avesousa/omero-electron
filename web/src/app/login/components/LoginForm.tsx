@@ -14,10 +14,11 @@ import {
 } from '@/lib/loginValidation'
 import { OmeroLogo } from '@/app/components/OmeroLogo'
 import type { FieldErrors } from '@/app/login/types'
+import { SessionConflictModal } from './SessionConflictModal'
 import styles from './LoginForm.module.css'
 
 export function LoginForm() {
-  const { login, isLoading, error } = useAuth()
+  const { login, isLoading, error, sessionConflict, confirmReplaceSession, dismissSessionConflict } = useAuth()
   const searchParams = useSearchParams()
   const router = useRouter()
   const redirectTo = searchParams.get('redirectTo') ?? undefined
@@ -285,6 +286,15 @@ export function LoginForm() {
           </button>
         </form>
       </main>
+
+      {/* Solo modo web: en una caja el backend no devuelve 409 SESSION_ACTIVE, así que `sessionConflict` nunca se llena. */}
+      <SessionConflictModal
+        isOpen={!!sessionConflict}
+        lastSeenAt={sessionConflict?.lastSeenAt}
+        loading={isLoading}
+        onCancel={dismissSessionConflict}
+        onConfirm={() => void confirmReplaceSession()}
+      />
     </div>
   )
 }

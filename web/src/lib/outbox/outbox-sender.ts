@@ -1,3 +1,4 @@
+import { reportEndedResponse } from '../device/session-ended'
 import { getBackendUrl } from '../runtime'
 import { getSyncer, type SyncerEvent } from '../catalog/syncer'
 import { tenantFromAuthHeader, tokenExpiry } from '../catalog/tenant'
@@ -41,6 +42,8 @@ export interface SenderDeps {
   /** El backend rechazó el token: olvidar lo cacheado. */
   invalidateAuthorization?: (tenantId: string) => void
   forgetAuthorization?: (tenantId: string) => void
+  /** Un 403 con el JWT pos: si es DEVICE_REVOKED/EXPIRED/LOGIN_REQUIRED, termina la sesión de la caja. */
+  reportEnded?: (tenantId: string, res: Response) => Promise<unknown>
   backendUrl?: () => string
   now?: () => number
   log?: (message: string) => void
@@ -97,6 +100,7 @@ export class OutboxSender {
           : (tenantId) => getTokenProvider().authorize(tenantId)),
       invalidateAuthorization: deps.invalidateAuthorization ?? ((tenantId) => getTokenProvider().invalidate(tenantId)),
       forgetAuthorization: deps.forgetAuthorization ?? ((tenantId) => getSyncer().forget(tenantId)),
+      reportEnded: deps.reportEnded ?? ((tenantId, res) => reportEndedResponse(tenantId, res)),
       backendUrl: deps.backendUrl ?? getBackendUrl,
       now: deps.now ?? Date.now,
       log: deps.log ?? ((m) => console.warn(`[outbox-sender] ${m}`)),
@@ -257,6 +261,9 @@ export class OutboxSender {
     }
 
     if (res.status === 401 || res.status === 403) {
+      // 403 DEVICE_REVOKED/EXPIRED/LOGIN_REQUIRED con el JWT pos: la sesión de la caja terminó. El reintento de abajo ya no
+      // renueva (el token-provider ve la sesión terminada) y pasa al camino sync-token; el scope sync no pasa por esa verificación.
+      if (res.status === 403 && auth.ok && auth.kind === 'pos') await this.deps.reportEnded(tenantId, res)
       if (!q.authRetried) {
         // Puede ser un JWT vencido/rechazado: se renueva con la sesión de la caja y se reintenta UNA vez.
         q.authRetried = true

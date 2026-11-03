@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeviceState, getDeviceState, notifyParent, readIdentity, resetDeviceState } from './device-state'
+import { DURABLE_TIMEOUT_MS, DeviceState, durableParent, getDeviceState, notifyParent, readIdentity, resetDeviceState } from './device-state'
 
 const T1 = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const T2 = '11111111-2222-3333-4444-555555555555'
@@ -118,5 +118,96 @@ describe('notifyParent', () => {
     })
     expect(() => notifyParent({ type: 'omero:device-secrets', secrets: {} })).not.toThrow()
     delete (process as unknown as { parentPort?: unknown }).parentPort
+  })
+})
+
+describe('renovación: metadatos, setDurable y fin de sesión', () => {
+  const msgOf = (n: ReturnType<typeof vi.fn>, i = 0) => n.mock.calls[i][0]
+
+  it('carga lastCheckedAt / expiresAt del env (y descarta basura)', () => {
+    const s = new DeviceState(env({ OMERO_DEVICE_SECRETS: JSON.stringify({ [T1]: { secret: 'S', lastCheckedAt: 1700000000000, expiresAt: 'x' } }) }), vi.fn())
+    expect(s.get(T1)).toEqual({ secret: 'S', sessionActive: true, lastCheckedAt: 1700000000000 })
+  })
+
+  it('set con meta guarda la fecha; sin meta conserva la anterior', () => {
+    const s = new DeviceState(env(), vi.fn())
+    s.set(T1, 'S2', true, { lastCheckedAt: 100, expiresAt: 900 })
+    expect(s.get(T1)).toEqual({ secret: 'S2', sessionActive: true, lastCheckedAt: 100, expiresAt: 900 })
+    s.set(T1, 'S3')
+    expect(s.get(T1)).toMatchObject({ secret: 'S3', lastCheckedAt: 100, expiresAt: 900 })
+  })
+
+  it('setDurable manda el snapshot con ackId y espera la confirmación antes de volver', async () => {
+    const durable = vi.fn(async () => true)
+    const s = new DeviceState(env(), vi.fn(), durable)
+    expect(await s.setDurable(T1, 'S2', { lastCheckedAt: 5 })).toBe(true)
+    const m = durable.mock.calls[0] as unknown as [{ ackId: string; secrets: Record<string, { secret: string }> }, number]
+    expect(m[0].secrets[T1].secret).toBe('S2')
+    expect(m[0].ackId).toBeTruthy()
+    expect(m[1]).toBe(DURABLE_TIMEOUT_MS)
+  })
+
+  it('setDurable sin ack: devuelve false y reencola por el camino normal', async () => {
+    const notify = vi.fn()
+    const s = new DeviceState(env(), notify, async () => false)
+    expect(await s.setDurable(T1, 'S2')).toBe(false)
+    expect(msgOf(notify).secrets[T1].secret).toBe('S2')
+  })
+
+  it('setDurable sin persistencia (sin cifrado del SO) o sin caja: no espera a nadie', async () => {
+    const durable = vi.fn(async () => false)
+    expect(await new DeviceState(env({ OMERO_DEVICE_PERSIST: '0' }), vi.fn(), durable).setDurable(T1, 'S2')).toBe(true)
+    expect(await new DeviceState(env({ OMERO_DEVICE_ID: undefined }), vi.fn(), durable).setDurable(T1, 'S2')).toBe(true)
+    expect(durable).not.toHaveBeenCalled()
+  })
+
+  it('markEnded / endedReason; un set activo lo limpia', () => {
+    const s = new DeviceState(env(), vi.fn())
+    expect(s.endedReason(T1)).toBeNull()
+    s.markEnded(T1.toUpperCase(), 'DEVICE_REVOKED')
+    expect(s.endedReason(T1)).toBe('DEVICE_REVOKED')
+    s.set(T1, 'S9', true)
+    expect(s.endedReason(T1)).toBeNull()
+  })
+
+  it('activeTenants lista solo los que tienen sesión activa', () => {
+    const s = new DeviceState(env({ OMERO_DEVICE_SECRETS: JSON.stringify({ [T1]: { secret: 'a' }, [T2]: { secret: 'b', sessionActive: false } }) }), vi.fn())
+    expect(s.activeTenants()).toEqual([T1])
+  })
+
+  describe('durableParent (IPC real con Electron)', () => {
+    const withPort = (port: unknown) => { (process as unknown as { parentPort?: unknown }).parentPort = port }
+    afterEach(() => { vi.useRealTimers(); withPort(undefined) })
+    const message = { type: 'omero:device-secrets' as const, secrets: {}, ackId: 'a1' }
+
+    it('sin parentPort (web / tests) → false', async () => {
+      expect(await durableParent(message, 100)).toBe(false)
+    })
+    it('espera el ack con el mismo ackId (ignora otros) y resuelve con su ok', async () => {
+      let handler!: (e: { data?: unknown }) => void
+      const port = { postMessage: vi.fn(), on: vi.fn((_ev: string, fn: typeof handler) => { handler = fn }), off: vi.fn() }
+      withPort(port)
+      const p = durableParent(message, 1000)
+      handler({ data: { type: 'omero:device-secrets-ack', ackId: 'otro', ok: true } })
+      handler({ data: { type: 'x' } })
+      handler({ data: { type: 'omero:device-secrets-ack', ackId: 'a1', ok: true } })
+      expect(await p).toBe(true)
+      expect(port.off).toHaveBeenCalled()
+    })
+    it('ack con ok=false → false; sin respuesta → false por timeout', async () => {
+      vi.useFakeTimers()
+      let handler!: (e: { data?: unknown }) => void
+      withPort({ postMessage: vi.fn(), on: (_e: string, fn: typeof handler) => { handler = fn } })
+      const p1 = durableParent(message, 1000)
+      handler({ data: { type: 'omero:device-secrets-ack', ackId: 'a1', ok: false } })
+      expect(await p1).toBe(false)
+      const p2 = durableParent(message, 1000)
+      await vi.advanceTimersByTimeAsync(1001)
+      expect(await p2).toBe(false)
+    })
+    it('si postMessage lanza → false', async () => {
+      withPort({ postMessage: () => { throw new Error('cerrado') }, on: vi.fn() })
+      expect(await durableParent(message, 100)).toBe(false)
+    })
   })
 })

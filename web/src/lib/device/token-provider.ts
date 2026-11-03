@@ -49,7 +49,13 @@ export class TokenProvider {
   async authorize(tenantId: string): Promise<Authorized> {
     const now = this.deps.now()
 
-    const live = this.deps.syncer.getAuthorization(tenantId)
+    // Validación pasiva: cada ciclo del outbox es una "operación de la caja" (como mucho 1 renovación cada 24 h).
+    const device = this.deps.session()
+    if (device.state.enabled) void device.validateIfDue(tenantId)
+
+    // Sesión terminada (revocada / vencida / exige login): el JWT pos ya no se usa, solo el camino sync-token.
+    const ended = device.state.enabled && device.state.endedReason(tenantId) !== null
+    const live = ended ? null : this.deps.syncer.getAuthorization(tenantId)
     if (live && !this.expiresSoon(live, now)) return { ok: true, authorization: live, kind: 'pos' }
 
     const cached = this.syncTokens.get(tenantId)

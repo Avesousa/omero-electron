@@ -1,5 +1,8 @@
 import { proxyToBackend } from '../backend-proxy'
+import { tenantFromAuthHeader } from '../catalog/tenant'
+import { getDeviceSession } from './device-session'
 import { getDeviceState } from './device-state'
+import { wireDevice } from './device-wiring'
 
 /**
  * Login del POS desktop (fase 4): `POST /api/auth/login` (y `/login-key`) se intercepta para registrar la caja.
@@ -48,11 +51,13 @@ export async function handleLogin(request: Request): Promise<Response> {
 
   const text = await upstream.text()
   try {
-    const body = JSON.parse(text) as { data?: { deviceSecret?: unknown; user?: { tenantId?: unknown } } }
+    const body = JSON.parse(text) as { data?: { deviceSecret?: unknown; deviceExpiresAt?: unknown; user?: { tenantId?: unknown } } }
     const secret = body?.data?.deviceSecret
     const tenantId = body?.data?.user?.tenantId
     if (typeof secret === 'string' && typeof tenantId === 'string') {
-      state.set(tenantId, secret, true)
+      const exp = typeof body.data?.deviceExpiresAt === 'string' ? Date.parse(body.data.deviceExpiresAt) : NaN
+      // El login es la primera "renovación": desde acá corren las 24 h de la renovación diaria.
+      state.set(tenantId, secret, true, { lastCheckedAt: Date.now(), expiresAt: Number.isFinite(exp) ? exp : null })
       delete body.data!.deviceSecret // el renderer nunca ve el secreto
       const out = new Headers(upstream.headers)
       out.delete('content-length')
@@ -64,4 +69,21 @@ export async function handleLogin(request: Request): Promise<Response> {
   const out = new Headers(upstream.headers)
   out.delete('content-length')
   return new Response(text, { status: upstream.status, statusText: upstream.statusText, headers: out })
+}
+
+/**
+ * Validación PASIVA de la sesión de la caja: una request al backend de una caja registrada dispara la renovación si pasaron
+ * >= 24 h desde la última validación (single-flight). No espera ni altera la request; nunca lanza.
+ */
+export function validateDeviceOnRequest(request: Request): void {
+  try {
+    const state = getDeviceState()
+    if (!state.enabled) return
+    const tenantId = tenantFromAuthHeader(request.headers.get('authorization')) ?? state.resolveTenant()
+    if (!tenantId) return
+    wireDevice()
+    void getDeviceSession().validateIfDue(tenantId)
+  } catch {
+    /* jamás rompe la request */
+  }
 }

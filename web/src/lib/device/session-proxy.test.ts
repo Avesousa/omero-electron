@@ -52,7 +52,7 @@ describe('handleLogin', () => {
     expect(body.data.accessToken).toBe('JWT')
     expect(JSON.stringify(body)).not.toContain('SECRETO-DE-CAJA')
     expect(body.data).not.toHaveProperty('deviceSecret')
-    expect(getDeviceState().get(T)).toEqual({ secret: 'SECRETO-DE-CAJA', sessionActive: true })
+    expect(getDeviceState().get(T)).toEqual({ secret: 'SECRETO-DE-CAJA', sessionActive: true, lastCheckedAt: expect.any(Number) })
   })
 
   it('el login con clave numérica también registra la caja y oculta el secreto', async () => {
@@ -68,7 +68,7 @@ describe('handleLogin', () => {
     expect(sent).toEqual({ tenantId: T, key: '12345678', device: { deviceId: ID, name: 'MOSTRADOR', platform: 'win32', appVersion: '1.2.3' } })
     expect(String(fetchSpy.mock.calls[0][0])).toBe('http://127.0.0.1:9/api/auth/login-key')
     expect(JSON.stringify(await res.json())).not.toContain('SECRETO-CLAVE')
-    expect(getDeviceState().get(T)).toEqual({ secret: 'SECRETO-CLAVE', sessionActive: true })
+    expect(getDeviceState().get(T)).toEqual({ secret: 'SECRETO-CLAVE', sessionActive: true, lastCheckedAt: expect.any(Number) })
   })
 
   it('un backend viejo (sin deviceSecret) pasa igual y no se registra nada', async () => {
@@ -120,5 +120,58 @@ describe('handleLogin', () => {
     await handleApiRequest(login({ email: 'a@x.com', password: 'pw' }))
     const sent = JSON.parse(await new Response(fetchSpy.mock.calls[0][1]!.body as never).text())
     expect(sent).not.toHaveProperty('device')
+  })
+})
+
+describe('login que responde 409 SESSION_ACTIVE (login web sin `device`)', () => {
+  const conflict = () => new Response(JSON.stringify({ success: false, error: 'Ya hay una sesión activa', code: 'SESSION_ACTIVE' }), { status: 409, headers: { 'content-type': 'application/json' } })
+
+  it('con caja: el 409 pasa tal cual (no se guarda secreto ni se rompe)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(conflict())
+    const res = await handleLogin(login({ email: 'a@x.com', password: 'pw' }))
+    expect(res.status).toBe(409)
+    expect((await res.json()).code).toBe('SESSION_ACTIVE')
+    expect(getDeviceState().hasSecrets).toBe(false)
+  })
+
+  it('sin caja (web / sin Electron): proxy directo, el 409 llega intacto al cliente', async () => {
+    vi.stubEnv('OMERO_DEVICE_ID', '')
+    resetDeviceState()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(conflict())
+    const res = await handleLogin(login({ email: 'a@x.com', password: 'pw' }))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/sesión activa/)
+  })
+})
+
+
+describe('validateDeviceOnRequest (validación pasiva al operar)', () => {
+  const mkReq = (auth?: string) => new Request('http://localhost:3000/api/products', { headers: auth ? { authorization: auth } : {} })
+  const bearer = () => {
+    const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
+    return `Bearer ${b64({ alg: 'x' })}.${b64({ tenantId: T, exp: 1 })}.s`
+  }
+
+  it('con caja: pide al DeviceSession validar al tenant del JWT (aunque esté vencido)', async () => {
+    const { validateDeviceOnRequest } = await import('./session-proxy')
+    const { getDeviceSession, resetDeviceSession } = await import('./device-session')
+    resetDeviceSession()
+    const spy = vi.spyOn(getDeviceSession(), 'validateIfDue').mockResolvedValue()
+    validateDeviceOnRequest(mkReq(bearer()))
+    expect(spy).toHaveBeenCalledWith(T)
+    resetDeviceSession()
+  })
+
+  it('sin caja (web) o sin tenant: no hace nada y nunca lanza', async () => {
+    const { validateDeviceOnRequest } = await import('./session-proxy')
+    const { getDeviceSession, resetDeviceSession } = await import('./device-session')
+    resetDeviceSession()
+    const spy = vi.spyOn(getDeviceSession(), 'validateIfDue').mockResolvedValue()
+    validateDeviceOnRequest(mkReq()) // caja habilitada pero sin secretos ni tenant
+    vi.stubEnv('OMERO_DEVICE_ID', '')
+    resetDeviceState()
+    validateDeviceOnRequest(mkReq(bearer()))
+    expect(spy).not.toHaveBeenCalled()
+    resetDeviceSession()
   })
 })
