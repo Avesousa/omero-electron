@@ -24,6 +24,7 @@ export function matchCatalogRoute(method: string, pathname: string, search: stri
 
   if (path === '/api/products') return { kind: 'products' }
   if (path === '/api/promotions') return { kind: 'promotions' }
+  if (path === '/api/payment-methods/active') return { kind: 'paymentMethods' }
 
   const configPrefix = '/api/business/config/'
   if (path.startsWith(configPrefix)) {

@@ -12,6 +12,7 @@ export type CatalogRoute =
   | { kind: 'product'; code: string } // GET /api/products/{code}
   | { kind: 'promotions' } // GET /api/promotions (lista completa, sin query)
   | { kind: 'setting'; key: string } // GET /api/business/config/{key} (p. ej. mp_offline)
+  | { kind: 'paymentMethods' } // GET /api/payment-methods/active (medios del cobro; se guarda como setting `payment_methods`)
 
 /** Metadatos del último snapshot exitoso de un recurso. */
 export interface CatalogMeta {

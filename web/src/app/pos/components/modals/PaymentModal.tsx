@@ -1,4 +1,5 @@
-import type { PaymentState } from '../../types'
+import type { PaymentState, PaymentMethod } from '../../types'
+import { paymentColor, paymentDescription } from '@/shared/constants/paymentMethods'
 import { STRINGS } from '../../constants/strings'
 import { KeyboardGuide } from '../keyboard/KeyboardGuide'
 import { Modal } from '@/app/components/ui/Modal'
@@ -11,7 +12,9 @@ interface PaymentModalProps {
   mpConnected: boolean
   /** Desktop sin conexión y sin `mp_offline`: el cobro con MercadoPago no está permitido. */
   mpDisabled?: boolean
-  onSelectMethod: (method: 'mercadopago' | 'cash') => void
+  /** Medios activos, en el orden del cobro. */
+  methods: PaymentMethod[]
+  onSelectMethod: (method: PaymentMethod) => void
   onConfirmPayment: () => void
   onBack: () => void
   onCancel: () => void
@@ -24,6 +27,7 @@ export const PaymentModal = ({
   total,
   mpConnected,
   mpDisabled = false,
+  methods,
   onSelectMethod,
   onConfirmPayment,
   onBack,
@@ -40,18 +44,20 @@ export const PaymentModal = ({
     paymentInput,
     isProcessingPayment,
     remainingAmount,
-    mpAmount,
-    cashAmount,
+    payments,
     change,
     showingChange
   } = paymentState
 
   const isPartial = remainingAmount > 0 && remainingAmount < total
 
-  const PaidSoFar = () => (mpAmount > 0 || cashAmount > 0) ? (
+  const PaidSoFar = () => payments.length > 0 ? (
     <div className="flex justify-center gap-2 flex-wrap">
-      {mpAmount > 0 && <span className="pos-chip is-mp">Mercado Pago <b className="pos-num">{formatMoney(mpAmount)}</b></span>}
-      {cashAmount > 0 && <span className="pos-chip is-ok">Efectivo <b className="pos-num">{formatMoney(cashAmount)}</b></span>}
+      {payments.map(p => (
+        <span key={p.methodId} className="pos-chip" style={{ borderColor: paymentColor(p.color).bg, color: paymentColor(p.color).bg }}>
+          {p.name} <b className="pos-num">{formatMoney(p.amount)}</b>
+        </span>
+      ))}
     </div>
   ) : null
 
@@ -82,18 +88,12 @@ export const PaymentModal = ({
               <div className="pos-eyebrow">Recibido</div>
               <div className="text-lg font-extrabold pos-ink pos-num">{formatMoney(total + change)}</div>
             </div>
-            {cashAmount > 0 && (
-              <div>
-                <div className="pos-eyebrow">Efectivo</div>
-                <div className="font-bold pos-success pos-num">{formatMoney(cashAmount)}</div>
+            {payments.map(p => (
+              <div key={p.methodId}>
+                <div className="pos-eyebrow">{p.name}</div>
+                <div className="font-bold pos-num" style={{ color: paymentColor(p.color).bg }}>{formatMoney(p.amount)}</div>
               </div>
-            )}
-            {mpAmount > 0 && (
-              <div>
-                <div className="pos-eyebrow">Mercado Pago</div>
-                <div className="font-bold pos-num" style={{ color: 'var(--pos-mp)' }}>{formatMoney(mpAmount)}</div>
-              </div>
-            )}
+            ))}
           </div>
 
           <button onClick={onConfirmPayment} className="pos-btn is-accent w-full">
@@ -117,29 +117,30 @@ export const PaymentModal = ({
           <PaidSoFar />
 
           <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => onSelectMethod('mercadopago')}
-              disabled={mpDisabled}
-              title={mpDisabled ? 'MercadoPago no está habilitado sin conexión' : undefined}
-              className="pos-method is-mp"
-            >
-              <span className="k">1</span>
-              <span className="ic font-extrabold text-lg">QR</span>
-              <span className="t">Mercado Pago</span>
-              <span className="s">QR o transferencia</span>
-              {mpDisabled && <span className="s pos-danger" data-testid="mp-disabled-msg">No disponible sin conexión</span>}
-            </button>
-
-            <button onClick={() => onSelectMethod('cash')} className="pos-method is-cash">
-              <span className="k">2</span>
-              <span className="ic">$</span>
-              <span className="t">Efectivo</span>
-              <span className="s">Te calculo el vuelto</span>
-            </button>
+            {methods.map(m => {
+              const c = paymentColor(m.color)
+              const blocked = mpDisabled && m.kind === 'MERCADOPAGO'
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectMethod(m)}
+                  disabled={blocked}
+                  title={blocked ? 'MercadoPago no está habilitado sin conexión' : undefined}
+                  className="pos-method"
+                  style={{ borderColor: c.border }}
+                >
+                  <span className="k">{m.shortcutKey}</span>
+                  <span className="ic font-extrabold text-lg" style={{ background: c.bg, color: c.text }}>{m.name.charAt(0).toUpperCase()}</span>
+                  <span className="t">{m.name}</span>
+                  {paymentDescription(m) && <span className="s" data-testid="method-description">{paymentDescription(m)}</span>}
+                  {blocked && <span className="s pos-danger" data-testid="mp-disabled-msg">No disponible sin conexión</span>}
+                </button>
+              )
+            })}
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <MpStatus />
+            {methods.some(m => m.kind === 'MERCADOPAGO') ? <MpStatus /> : <span />}
             <button onClick={onCancel} className="pos-btn is-ghost-danger">
               <span className="pos-kbd is-light">Esc</span> Cancelar
             </button>
@@ -150,10 +151,12 @@ export const PaymentModal = ({
   }
 
   // Ingreso del monto
-  const isMercadoPago = paymentMethod === 'mercadopago'
+  const isMercadoPago = paymentMethod.kind === 'MERCADOPAGO'
+  const isCash = paymentMethod.kind === 'CASH'
+  const mc = paymentColor(paymentMethod.color)
 
   return (
-    <Modal {...shell} title={isMercadoPago ? 'Cobro con Mercado Pago' : 'Pago en efectivo'}>
+    <Modal {...shell} title={isMercadoPago ? 'Cobro con Mercado Pago' : isCash ? 'Pago en efectivo' : `Cobro con ${paymentMethod.name}`}>
       <div className="pos-pay text-center space-y-5">
         <div className="flex justify-center items-center gap-2 flex-wrap text-sm pos-muted">
           <span>Total de la venta <b className="pos-ink pos-num">{formatMoney(total)}</b></span>
@@ -161,9 +164,9 @@ export const PaymentModal = ({
           {isMercadoPago && <MpStatus />}
         </div>
 
-        <div className={`pos-entry ${isMercadoPago ? 'is-mp' : ''}`}>
+        <div className="pos-entry" style={{ borderColor: mc.bg, boxShadow: `0 0 0 6px color-mix(in srgb, ${mc.bg} 18%, transparent)` }}>
           <div className="pos-eyebrow mb-2">
-            {isMercadoPago ? 'Monto a cobrar' : '¿Con cuánto te pagan?'}
+            {isCash ? '¿Con cuánto te pagan?' : 'Monto a cobrar'}
           </div>
           <div className="v pos-num">${paymentInput || '0'}</div>
           <div className="text-xs pos-muted mt-3">Escribí el monto y tocá Enter</div>
@@ -173,19 +176,20 @@ export const PaymentModal = ({
 
         {change > 0 && (
           <div className="pos-chip is-ok text-base">
-            {isMercadoPago ? STRINGS.PAYMENT_RETURN : STRINGS.PAYMENT_CHANGE} <b className="pos-num">{formatMoney(change)}</b>
+            {isCash ? STRINGS.PAYMENT_CHANGE : STRINGS.PAYMENT_RETURN} <b className="pos-num">{formatMoney(change)}</b>
           </div>
         )}
 
         {isProcessingPayment ? (
           <div className="pos-card-2 p-5 flex items-center justify-center gap-3">
-            <div className="animate-spin rounded-full h-7 w-7 border-[3px] border-t-transparent" style={{ borderColor: isMercadoPago ? 'var(--pos-mp)' : 'var(--pos-success)', borderTopColor: 'transparent' }} />
+            <div className="animate-spin rounded-full h-7 w-7 border-[3px] border-t-transparent" style={{ borderColor: mc.bg, borderTopColor: 'transparent' }} />
             <div className="font-bold pos-ink">Procesando pago…</div>
           </div>
         ) : (
           <button
             onClick={onConfirmPayment}
-            className={`pos-btn w-full ${isMercadoPago ? 'is-mp' : 'is-primary'}`}
+            className="pos-btn w-full"
+            style={{ background: mc.bg, color: mc.text, borderColor: mc.border }}
             disabled={!paymentInput || parseFloat(paymentInput) <= 0}
           >
             Confirmar pago <span className="pos-kbd">Enter</span>

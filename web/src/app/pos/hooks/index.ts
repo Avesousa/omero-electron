@@ -1,6 +1,7 @@
 export { useNotifications } from './useNotifications'
 export { useCart } from './useCart'
 export { usePayment } from './usePayment'
+export { usePaymentMethods } from './usePaymentMethods'
 export { useKeyboard } from './useKeyboard.web'
 export { useProducts } from './useProducts'
 export { useSales } from './useSales'

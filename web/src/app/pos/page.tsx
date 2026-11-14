@@ -34,7 +34,9 @@ import {
 //     To activate the Electron hook, set NEXT_PUBLIC_ELECTRON=true at build time and
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
-import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
+import { useNotifications, useCart, usePayment, usePaymentMethods, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
+import type { PaymentValues } from './hooks/usePayment'
+import type { PaymentLine } from './utils/payments'
 import { formatStock, roundKg } from '@/lib/quantity'
 import { looksLikeScaleBarcode } from '@/lib/scale'
 import { isWeightLine, lineQuantityLabel, needsWeightEntry, stockInCart, toQuantityProduct } from './lib/cartLines'
@@ -114,6 +116,8 @@ export default function POSPage() {
     confirmChange,
     resetPayment 
   } = usePayment(showNotification)
+  // Medios activos del cobro: en desktop sin conexión salen de la caché SQLite (catalog/cache-policy)
+  const { methods: paymentMethods, refresh: refreshPaymentMethods } = usePaymentMethods()
   const {
     products,
     loading: productsLoading,
@@ -471,16 +475,16 @@ export default function POSPage() {
       return
     }
 
+    void refreshPaymentMethods() // por si se cambiaron en Configuración (sigue vigente la última lista conocida)
     openPaymentModal(total)
   }
 
   const handleCompleteSale = async (
-    cashAmount: number,
-    mpAmount: number,
+    payments: PaymentLine[],
     change: number
   ): Promise<boolean> => {
     try {
-      const result = await createSale(cart, cashAmount, mpAmount, change)
+      const result = await createSale(cart, payments, change)
 
       if (result.success) {
         if (result.queued && !connection.online) {
@@ -553,17 +557,16 @@ export default function POSPage() {
   // Payment handlers
   const handlePaymentComplete = async (
     saleCompleted: boolean, 
-    paymentValues?: { cashAmount: number, mpAmount: number, change: number }
+    paymentValues?: PaymentValues
   ) => {
     if (saleCompleted) {
       // Usar los valores pasados directamente si están disponibles, 
       // de lo contrario usar los valores del estado (para casos legacy o confirmChange)
-      const cashAmount = paymentValues?.cashAmount ?? paymentState.cashAmount
-      const mpAmount = paymentValues?.mpAmount ?? paymentState.mpAmount
+      const payments = paymentValues?.payments ?? paymentState.payments
       const change = paymentValues?.change ?? paymentState.change
       
       // Guardar la venta en la base de datos
-      const result = await handleCompleteSale(cashAmount, mpAmount, change)
+      const result = await handleCompleteSale(payments, change)
 
       // Solo limpiar y cerrar si la venta se guardó exitosamente
       if (result) {
@@ -580,7 +583,7 @@ export default function POSPage() {
   // Inicia el polling de MP en el momento que el cajero confirma el pago con MP,
   // antes de que la venta se guarde — el backend se encarga de encontrar la transferencia.
   const handleConfirmPayment = () => {
-    if (paymentState.paymentMethod === 'mercadopago') {
+    if (paymentState.paymentMethod?.kind === 'MERCADOPAGO') {
       triggerPollingIfNeeded(parseFloat(paymentState.paymentInput) || 1)
     }
     processPayment(handlePaymentComplete)
@@ -739,15 +742,14 @@ export default function POSPage() {
 
     // Handle payment modal
     if (paymentState.showPaymentModal && !paymentState.paymentMethod) {
-      if (key === '1') {
-        if (mpBlocked) {
-          showNotification('MercadoPago no está habilitado sin conexión. Cobrá en efectivo.', 'error')
+      // Teclas 1-6: eligen el medio de pago que las tiene asignadas (Configuración → Medios de pago)
+      const byKey = /^[1-6]$/.test(key) ? paymentMethods.find(m => m.shortcutKey === Number(key)) : undefined
+      if (byKey) {
+        if (mpBlocked && byKey.kind === 'MERCADOPAGO') {
+          showNotification('MercadoPago no está habilitado sin conexión. Elegí otro medio de pago.', 'error')
           return
         }
-        selectPaymentMethod('mercadopago')
-        return
-      } else if (key === '2') {
-        selectPaymentMethod('cash')
+        selectPaymentMethod(byKey)
         return
       } else if (key === 'Escape') {
         closePaymentModal()
@@ -1020,6 +1022,7 @@ export default function POSPage() {
         total={total}
         mpConnected={mpConnected}
         mpDisabled={mpBlocked}
+        methods={paymentMethods}
         onSelectMethod={selectPaymentMethod}
         onConfirmPayment={
           paymentState.showingChange

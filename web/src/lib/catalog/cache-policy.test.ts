@@ -48,6 +48,12 @@ describe('matchCatalogRoute', () => {
     },
   )
 
+  it('medios de pago activos del cobro', () => {
+    expect(matchCatalogRoute('GET', '/api/payment-methods/active', '')).toEqual({ kind: 'paymentMethods' })
+    expect(matchCatalogRoute('GET', '/api/payment-methods', '')).toBeNull()
+    expect(matchCatalogRoute('POST', '/api/payment-methods/active', '')).toBeNull()
+  })
+
   it('configuración de negocio por clave (p. ej. mp_offline)', () => {
     expect(matchCatalogRoute('GET', '/api/business/config/mp_offline', '')).toEqual({ kind: 'setting', key: 'mp_offline' })
     expect(matchCatalogRoute('GET', '/api/business/config/currency/', '')).toEqual({ kind: 'setting', key: 'currency' })

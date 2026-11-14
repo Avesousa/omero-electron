@@ -36,6 +36,7 @@ const backend = {
   products: [] as { id: number; code: string; name: string; barcode?: number | null }[],
   promotions: [] as { id: string; name: string }[],
   config: {} as Record<string, string>,
+  paymentMethods: [] as { id: string; name: string; kind: string; shortcutKey: number; description?: string | null }[],
 }
 
 const server = http.createServer((req, res) => {
@@ -56,6 +57,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/products') return json({ success: true, data: { id: 99 } }, 201)
   if (url.pathname === '/api/products') return json({ success: true, data: backend.products })
   if (url.pathname === '/api/promotions') return json({ success: true, data: backend.promotions })
+  if (url.pathname === '/api/payment-methods/active') return json({ success: true, data: backend.paymentMethods })
   if (url.pathname === '/api/products/search') return json({ success: true, data: backend.products })
   const cfg = /^\/api\/business\/config\/([A-Za-z0-9_]+)$/.exec(url.pathname)
   if (cfg) return json({ success: true, data: { key: cfg[1], value: backend.config[cfg[1]] ?? 'false', type: 'boolean' } })
@@ -88,6 +90,10 @@ beforeEach(() => {
   ]
   backend.promotions = [{ id: 'promo-1', name: '2x1' }]
   backend.config = { mp_offline: 'true' }
+  backend.paymentMethods = [
+    { id: 'a1', name: 'Efectivo', kind: 'CASH', shortcutKey: 1 },
+    { id: 'b2', name: 'Transferencia', kind: 'CUSTOM', shortcutKey: 3, description: 'CBU o alias' },
+  ]
   vi.stubEnv('OMERO_RUNTIME', 'desktop')
   vi.stubEnv('BACKEND_URL', `http://127.0.0.1:${(server.address() as AddressInfo).port}`)
   vi.stubEnv('OMERO_DATA_DIR', dataDir)
@@ -248,6 +254,46 @@ describe('backend caído → sirve desde SQLite', () => {
   it('sin datos locales y backend inalcanzable → 502 del proxy', async () => {
     backend.mode = 'reset'
     expect((await get('/api/products')).status).toBe(502)
+  })
+})
+
+describe('medios de pago del cobro (/api/payment-methods/active)', () => {
+  it('online pasa tal cual y queda cacheada; sin conexión se sirve desde SQLite con el mismo contenido', async () => {
+    const online = await (await get('/api/payment-methods/active')).json()
+    expect(online.data).toHaveLength(2)
+    expect(getCatalogStore(TENANT_A)!.getSetting('payment_methods')).not.toBeNull()
+
+    backend.mode = 503
+    const res = await get('/api/payment-methods/active')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-omero-cache')).toBe('hit')
+    expect((await res.json()).data).toEqual(online.data)
+  })
+
+  it('la descripción del medio viaja en la caché offline; un medio sin el campo (caché vieja) se sirve igual', async () => {
+    await get('/api/payment-methods/active')
+    backend.mode = 503
+    const data = (await (await get('/api/payment-methods/active')).json()).data
+    expect(data.find((m: { id: string }) => m.id === 'b2').description).toBe('CBU o alias')
+    expect('description' in data.find((m: { id: string }) => m.id === 'a1')).toBe(false)
+  })
+
+  it('sin conexión y sin nada cacheado → 503 original (el POS usa los medios de respaldo)', async () => {
+    backend.mode = 503
+    expect((await get('/api/payment-methods/active')).status).toBe(503)
+  })
+
+  it('una lista vacía o con forma inválida no pisa la caché', async () => {
+    await get('/api/payment-methods/active')
+    backend.paymentMethods = []
+    await get('/api/payment-methods/active')
+    backend.mode = 503
+    expect(((await (await get('/api/payment-methods/active')).json()).data)).toHaveLength(2)
+  })
+
+  it('cada tenant tiene los suyos', async () => {
+    await get('/api/payment-methods/active')
+    expect(getCatalogStore(TENANT_B)!.getSetting('payment_methods')).toBeNull()
   })
 })
 
