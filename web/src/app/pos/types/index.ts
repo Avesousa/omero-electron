@@ -1,5 +1,7 @@
 // Types for POS application
 import type { QuantityUnit, SaleFormat } from '@/lib/quantity'
+import type { PaymentMethod as PaymentMethodConfig } from '@/shared/constants/paymentMethods'
+import type { PaymentLine } from '../utils/payments'
 
 export interface Product {
   id: string
@@ -52,7 +54,8 @@ export interface Sale {
   items: CartItem[]
 }
 
-export type PaymentMethod = 'cash' | 'mercadopago' | null
+/** Medio de pago configurado por el negocio (Configuración → Medios de pago en el admin). */
+export type PaymentMethod = PaymentMethodConfig
 
 export type InputMode = 'code' | 'quantity' | 'payment'
 
@@ -65,12 +68,12 @@ export interface Notification {
 
 export interface PaymentState {
   showPaymentModal: boolean
-  paymentMethod: PaymentMethod
+  paymentMethod: PaymentMethod | null
   paymentInput: string
   isProcessingPayment: boolean
   remainingAmount: number
-  mpAmount: number
-  cashAmount: number
+  /** Pagos ya registrados en este cobro (uno por medio). */
+  payments: PaymentLine[]
   change: number
   showingChange: boolean
 }

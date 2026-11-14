@@ -96,6 +96,34 @@ describe('venta', () => {
     expect(payload).toMatchObject({ cashAmount: 200, mpAmount: 0, change: 0 })
   })
 
+  it('conserva payments por medio (lista blanca) junto a cash/mp, para el backend nuevo y el viejo', async () => {
+    const body = {
+      ...goodSale,
+      payments: [{ paymentMethodId: 'pm-1', amount: 150, extra: 'x' }, { paymentMethodId: 'pm-2', amount: 50 }],
+    }
+    const res = await handleOutboxRequest(post('/api/sales', body), 'SALE')
+    expect(res!.status).toBe(201)
+    const { clientId } = (await res!.json()).data
+    const payload = JSON.parse(getOutboxStore(TENANT)!.getByClientId(clientId)!.payload)
+    expect(payload.payments).toEqual([{ paymentMethodId: 'pm-1', amount: 150 }, { paymentMethodId: 'pm-2', amount: 50 }])
+    expect(payload).toMatchObject({ cashAmount: 200, mpAmount: 0 })
+  })
+
+  it('sin payments el payload es el del formato anterior (sin clave payments)', async () => {
+    const res = await handleOutboxRequest(post('/api/sales', goodSale), 'SALE')
+    const { clientId } = (await res!.json()).data
+    expect(JSON.parse(getOutboxStore(TENANT)!.getByClientId(clientId)!.payload)).not.toHaveProperty('payments')
+  })
+
+  it.each([
+    ['payments no es lista', { payments: 'x' }],
+    ['pago sin medio', { payments: [{ amount: 10 }] }],
+    ['pago con monto negativo', { payments: [{ paymentMethodId: 'pm-1', amount: -1 }] }],
+  ])('rechaza con 400: %s', async (_n, extra) => {
+    const res = await handleOutboxRequest(post('/api/sales', { ...goodSale, ...extra }), 'SALE')
+    expect(res!.status).toBe(400)
+  })
+
   it('venta por peso: kg con hasta 3 decimales, con su unidad y lo que descuenta de stock', async () => {
     const body = {
       ...goodSale,

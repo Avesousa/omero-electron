@@ -91,6 +91,7 @@ describe('sincronización periódica', () => {
       'https://backend.test/api/products',
       'https://backend.test/api/promotions',
       'https://backend.test/api/business/config/mp_offline',
+      'https://backend.test/api/payment-methods/active',
       'https://backend.test/api/business/config/scale_enabled',
       'https://backend.test/api/business/config/scale_brand',
       'https://backend.test/api/business/config/scale_barcode_templates',
@@ -145,7 +146,7 @@ describe('sincronización periódica', () => {
     const b = s.syncAll() // mientras el primero sigue en curso
     release()
     await Promise.all([a, b])
-    expect(fetchFn).toHaveBeenCalledTimes(8) // solo el primer sync: products, promotions, mp_offline y las 5 claves de balanza
+    expect(fetchFn).toHaveBeenCalledTimes(9) // solo el primer sync: products, promotions, mp_offline, medios de pago y las 5 claves de balanza
     s.stop()
   })
 })

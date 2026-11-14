@@ -69,6 +69,7 @@ function summarize(row: OutboxRow): Record<string, unknown> {
       products: items.slice(0, 3).map((i) => String(i.productName ?? i.productId ?? '')),
       cashAmount: p.cashAmount ?? 0,
       mpAmount: p.mpAmount ?? 0,
+      ...(Array.isArray(p.payments) ? { payments: p.payments } : {}),
     }
   }
   return { description: p.description, amount: p.amount }

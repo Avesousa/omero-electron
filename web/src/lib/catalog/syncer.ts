@@ -230,6 +230,9 @@ export class CatalogSyncer {
       // Configuración que el POS necesita sin conexión. No crítica: un 404 (backend viejo) o un error no dispara la
       // recuperación; si la red cayó ya lo detectan products/promotions.
       { path: '/api/business/config/mp_offline', route: { kind: 'setting', key: 'mp_offline' }, optional: true },
+      // Medios de pago del cobro (teclas, colores, nombres) para poder cobrar sin conexión. No crítica: un backend
+      // anterior responde 404 y el POS usa Efectivo/MercadoPago de respaldo.
+      { path: '/api/payment-methods/active', route: { kind: 'paymentMethods' }, optional: true },
       // Balanza: sin estas claves el POS no sabría interpretar una etiqueta estando sin conexión.
       ...SCALE_CONFIG_KEYS.map(key => ({
         path: `/api/business/config/${key}`,

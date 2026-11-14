@@ -18,6 +18,9 @@ export function parseEnvelopeData(text: string): unknown {
   return undefined
 }
 
+/** Clave de `settings` donde se guarda la lista de medios de pago activos (la tabla ya existe: sin migración). */
+export const PAYMENT_METHODS_SETTING = 'payment_methods'
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -47,6 +50,11 @@ export function applyCatalogPayload(store: CatalogStore, route: CatalogRoute, te
     case 'setting':
       if (!isObject(data)) return false
       store.upsertSetting(route.key, JSON.stringify(data))
+      return true
+    case 'paymentMethods':
+      // Lista no vacía de medios con id y nombre; se guarda entera como una sola configuración.
+      if (!Array.isArray(data) || data.length === 0 || !data.every(m => isObject(m) && typeof m.id === 'string' && typeof m.name === 'string')) return false
+      store.upsertSetting(PAYMENT_METHODS_SETTING, JSON.stringify(data))
       return true
   }
 }

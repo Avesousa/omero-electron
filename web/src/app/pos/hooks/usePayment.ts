@@ -2,62 +2,45 @@ import { useState } from 'react'
 import type { PaymentState, PaymentMethod } from '../types'
 import { STRINGS } from '../constants/strings'
 import { formatMoney } from '@/lib/money'
+import { addPaymentLine, type PaymentLine } from '../utils/payments'
+
+/** Valores finales del cobro que recibe la página al completar la venta. */
+export interface PaymentValues {
+  payments: PaymentLine[]
+  change: number
+}
+
+const initialState: PaymentState = {
+  showPaymentModal: false,
+  paymentMethod: null,
+  paymentInput: '',
+  isProcessingPayment: false,
+  remainingAmount: 0,
+  payments: [],
+  change: 0,
+  showingChange: false
+}
 
 export const usePayment = (showNotification?: (message: string, type: 'success' | 'error' | 'info') => void) => {
-  const [paymentState, setPaymentState] = useState<PaymentState>({
-    showPaymentModal: false,
-    paymentMethod: null,
-    paymentInput: '',
-    isProcessingPayment: false,
-    remainingAmount: 0,
-    mpAmount: 0,
-    cashAmount: 0,
-    change: 0,
-    showingChange: false
-  })
+  const [paymentState, setPaymentState] = useState<PaymentState>(initialState)
 
   const openPaymentModal = (total: number) => {
-    setPaymentState(prev => ({
-      ...prev,
-      showPaymentModal: true,
-      paymentMethod: null,
-      paymentInput: '',
-      remainingAmount: total,
-      mpAmount: 0,
-      cashAmount: 0,
-      change: 0,
-      showingChange: false
-    }))
+    setPaymentState({ ...initialState, showPaymentModal: true, remainingAmount: total })
   }
 
   const closePaymentModal = () => {
-    setPaymentState(prev => ({
-      ...prev,
-      showPaymentModal: false,
-      paymentMethod: null,
-      paymentInput: '',
-      isProcessingPayment: false,
-      remainingAmount: 0,
-      mpAmount: 0,
-      cashAmount: 0,
-      change: 0,
-      showingChange: false
-    }))
+    setPaymentState(initialState)
   }
 
-  const selectPaymentMethod = (method: PaymentMethod) => {
+  const selectPaymentMethod = (method: PaymentMethod | null) => {
     setPaymentState(prev => ({
       ...prev,
       paymentMethod: method,
       paymentInput: ''
     }))
-    
-    if (showNotification) {
-      if (method === 'mercadopago') {
-        showNotification(STRINGS.NOTIF_METHOD_MP, 'info')
-      } else if (method === 'cash') {
-        showNotification(STRINGS.NOTIF_METHOD_CASH, 'info')
-      }
+
+    if (method && showNotification) {
+      showNotification(`Método seleccionado: ${method.name}`, 'info')
     }
   }
 
@@ -65,10 +48,12 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
     setPaymentState(prev => ({ ...prev, paymentInput: input }))
   }
 
-  const processPayment = async (onComplete: (saleCompleted: boolean, paymentValues?: { cashAmount: number, mpAmount: number, change: number }) => void) => {
-    const { paymentMethod, paymentInput, remainingAmount, mpAmount, cashAmount } = paymentState
+  const processPayment = async (onComplete: (saleCompleted: boolean, paymentValues?: PaymentValues) => void) => {
+    const { paymentMethod, paymentInput, remainingAmount, payments } = paymentState
     const amount = parseFloat(paymentInput) || 0
     const amountToPay = remainingAmount // Amount still needed to complete the sale
+
+    if (!paymentMethod) return
 
     if (amount <= 0) {
       if (showNotification) {
@@ -79,60 +64,33 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
 
     setPaymentState(prev => ({ ...prev, isProcessingPayment: true }))
 
-    const processingTime = paymentMethod === 'mercadopago' ? 2000 : 1500
-    const processingMessage = paymentMethod === 'mercadopago'
+    const isMp = paymentMethod.kind === 'MERCADOPAGO'
+    const processingTime = isMp ? 2000 : 1500
+    const processingMessage = isMp
       ? STRINGS.PAYMENT_PROCESSING_MP
-      : STRINGS.PAYMENT_PROCESSING_CASH
+      : paymentMethod.kind === 'CASH'
+        ? STRINGS.PAYMENT_PROCESSING_CASH
+        : `Procesando pago con ${paymentMethod.name}...`
 
     if (showNotification) {
       showNotification(processingMessage, 'info')
     }
 
     setTimeout(() => {
-      let newMpAmount = mpAmount
-      let newCashAmount = cashAmount
-      let newChange = 0
-      let newRemainingAmount = 0
-      let saleCompleted = false
-
-      if (amount >= amountToPay) {
-        // SUFFICIENT OR OVERPAYMENT
-        
-        // Add the exact amount entered by user to the selected method
-        if (paymentMethod === 'mercadopago') {
-          newMpAmount += amount
-        } else {
-          newCashAmount += amount
-        }
-
-        // Calculate change if overpayment
-        if (amount > amountToPay) {
-          newChange = amount - amountToPay
-        }
-
-        newRemainingAmount = 0
-        saleCompleted = true
-
-      } else {
-        // PARTIAL PAYMENT (insufficient)
-        if (paymentMethod === 'mercadopago') {
-          newMpAmount += amount
-        } else {
-          newCashAmount += amount
-        }
-        newRemainingAmount = amountToPay - amount
-        saleCompleted = false
-      }
+      // El importe exacto que ingresó el cajero se suma al medio elegido
+      const newPayments = addPaymentLine(payments, paymentMethod, amount)
+      const saleCompleted = amount >= amountToPay
+      const newChange = saleCompleted && amount > amountToPay ? amount - amountToPay : 0
+      const newRemainingAmount = saleCompleted ? 0 : amountToPay - amount
 
       setPaymentState(prev => ({
         ...prev,
-        mpAmount: newMpAmount,
-        cashAmount: newCashAmount,
+        payments: newPayments,
         change: newChange,
         remainingAmount: newRemainingAmount,
         isProcessingPayment: false,
         paymentInput: '',
-        paymentMethod: saleCompleted && newChange === 0 ? null : null, // Only reset method if exact payment
+        paymentMethod: null,
         showingChange: saleCompleted && newChange > 0 // Show change screen if overpaid
       }))
 
@@ -141,12 +99,12 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
           showNotification(STRINGS.NOTIF_SALE_COMPLETED, 'success')
         }
         closePaymentModal()
-        onComplete(true, { cashAmount: newCashAmount, mpAmount: newMpAmount, change: newChange })
+        onComplete(true, { payments: newPayments, change: newChange })
       } else if (saleCompleted && newChange > 0) { // Overpayment with change
         if (showNotification) {
-          const changeMessage = paymentMethod === 'mercadopago'
-            ? `${STRINGS.NOTIF_PAYMENT_SUCCESS_RETURN} ${formatMoney(newChange)}`
-            : `${STRINGS.NOTIF_PAYMENT_SUCCESS_CHANGE} ${formatMoney(newChange)}`
+          const changeMessage = paymentMethod.kind === 'CASH'
+            ? `${STRINGS.NOTIF_PAYMENT_SUCCESS_CHANGE} ${formatMoney(newChange)}`
+            : `${STRINGS.NOTIF_PAYMENT_SUCCESS_RETURN} ${formatMoney(newChange)}`
           showNotification(changeMessage, 'success')
         }
         // Do not call onComplete yet, wait for user to confirm change
@@ -154,15 +112,14 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
         if (showNotification) {
           showNotification(`${STRINGS.NOTIF_SALE_PARTIAL} ${formatMoney(newRemainingAmount)}`, 'info')
         }
-        setPaymentState(prev => ({ ...prev, paymentMethod: null })) // Go back to method selection
       }
     }, processingTime)
   }
 
-  const confirmChange = (onComplete: (saleCompleted: boolean, paymentValues?: { cashAmount: number, mpAmount: number, change: number }) => void) => {
+  const confirmChange = (onComplete: (saleCompleted: boolean, paymentValues?: PaymentValues) => void) => {
     // Pasar los valores del estado actual al callback
-    const { cashAmount, mpAmount, change } = paymentState
-    onComplete(true, { cashAmount, mpAmount, change })
+    const { payments, change } = paymentState
+    onComplete(true, { payments, change })
   }
 
   const resetPayment = () => {
@@ -172,8 +129,7 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
       paymentInput: '',
       isProcessingPayment: false,
       remainingAmount: 0,
-      mpAmount: 0,
-      cashAmount: 0,
+      payments: [],
       change: 0,
       showingChange: false
     }))
@@ -189,4 +145,4 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
     confirmChange,
     resetPayment
   }
-} 
+}

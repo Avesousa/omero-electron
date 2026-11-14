@@ -94,10 +94,23 @@ export function parseSale(body: Record<string, unknown>): Parsed {
       ...(typeof stockQuantity === 'number' ? { stockQuantity } : {}),
     }
   })
+  // Pagos por medio (formato nuevo, importes recibidos): lista blanca por renglón. Ausente = formato viejo (cash/mp).
+  // Se guarda tal cual en el outbox y viaja al backend en /api/sync/batch; el backend la prefiere a cash/mp.
+  let payments: { paymentMethodId: string; amount: number }[] | undefined
+  if (body.payments !== undefined && body.payments !== null) {
+    if (!Array.isArray(body.payments)) throw new InvalidRequest('payments inválido')
+    payments = body.payments.map((raw, i) => {
+      if (!isObj(raw)) throw new InvalidRequest(`Pago ${i + 1} inválido`)
+      const paymentMethodId = typeof raw.paymentMethodId === 'string' ? raw.paymentMethodId.trim() : ''
+      if (!paymentMethodId) throw new InvalidRequest(`Pago ${i + 1}: falta el medio de pago`)
+      return { paymentMethodId, amount: money(raw.amount, `Pago ${i + 1}: amount`) }
+    })
+  }
   const payload = {
     items,
     cashAmount: money(body.cashAmount, 'cashAmount', 0),
     mpAmount: money(body.mpAmount, 'mpAmount', 0),
+    ...(payments && payments.length > 0 ? { payments } : {}),
     change: money(body.change, 'change', 0),
   }
   return { type: 'SALE', payload, echo: { total: items.reduce((s, i) => s + i.total, 0), items } }

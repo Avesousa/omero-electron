@@ -23,6 +23,7 @@ export const POS_ALLOWLIST: Rule[] = [
   { method: 'GET', pattern: '/api/products/search' },
   { method: 'GET', pattern: '/api/products/*' },
   { method: 'GET', pattern: '/api/promotions' },
+  { method: 'GET', pattern: '/api/payment-methods/active' }, // medios de pago del cobro (backend: DeviceScopeFilter.POS)
   { method: 'GET', pattern: '/api/business/config' },
   { method: 'GET', pattern: '/api/business/config/*' },
   { method: 'GET', pattern: '/api/dashboard/daily-summary' },

@@ -1,7 +1,7 @@
 import { proxyToBackend } from '../backend-proxy'
 import { adjustStockBody } from '../outbox/stock-adjust'
 import { matchCatalogRoute } from './cache-policy'
-import { applyCatalogPayload, itemBody, listBody } from './snapshot'
+import { applyCatalogPayload, itemBody, listBody, PAYMENT_METHODS_SETTING } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { rememberSession } from '../outbox/outbox-runtime'
 import { tenantFromAuthHeader } from './tenant'
@@ -44,6 +44,13 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: stri
       const setting = store.getSetting(route.key)
       if (!setting) return null
       body = itemBody(setting.json)
+      syncedAt = setting.syncedAt
+      break
+    }
+    case 'paymentMethods': {
+      const setting = store.getSetting(PAYMENT_METHODS_SETTING)
+      if (!setting) return null
+      body = itemBody(setting.json) // el JSON guardado ya es el array de medios
       syncedAt = setting.syncedAt
       break
     }
