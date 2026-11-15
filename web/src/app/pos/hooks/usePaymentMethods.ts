@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchActivePaymentMethods } from '@/lib/paymentMethodsApi'
-import { FALLBACK_PAYMENT_METHODS, type PaymentMethod } from '@/shared/constants/paymentMethods'
+import { FALLBACK_PAYMENT_METHODS, checkoutMethods, type PaymentMethod } from '@/shared/constants/paymentMethods'
 
 const sorted = (list: readonly PaymentMethod[]) => [...list].sort((a, b) => a.sortOrder - b.sortOrder || a.shortcutKey - b.shortcutKey)
 
@@ -8,8 +8,10 @@ const sorted = (list: readonly PaymentMethod[]) => [...list].sort((a, b) => a.so
  * Medios de pago activos del cobro. Mientras no se pudieron cargar (o si el backend todavía no los soporta) se usan
  * Efectivo y MercadoPago con las teclas de siempre, así el cobro nunca queda sin opciones.
  */
-export function usePaymentMethods() {
-  const [methods, setMethods] = useState<PaymentMethod[]>(() => sorted(FALLBACK_PAYMENT_METHODS))
+export function usePaymentMethods(canCredit = false) {
+  const [all, setMethods] = useState<PaymentMethod[]>(() => sorted(FALLBACK_PAYMENT_METHODS))
+  // Sin POS_CREDITO_USAR el crédito nunca llega a la UI, ni desde un snapshot offline tomado con otro usuario.
+  const methods = useMemo(() => checkoutMethods(all, { canCredit }), [all, canCredit])
 
   const refresh = useCallback(async () => {
     try {

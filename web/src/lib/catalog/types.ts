@@ -13,6 +13,9 @@ export type CatalogRoute =
   | { kind: 'promotions' } // GET /api/promotions (lista completa, sin query)
   | { kind: 'setting'; key: string } // GET /api/business/config/{key} (p. ej. mp_offline)
   | { kind: 'paymentMethods' } // GET /api/payment-methods/active (medios del cobro; se guarda como setting `payment_methods`)
+  | { kind: 'customers' } // GET /api/customers?onlyActive=true (clientes activos con deuda; setting `customers`)
+  | { kind: 'customerFields' } // GET /api/customers/fields (campos extra del cliente; setting `customer_fields`)
+  | { kind: 'customerDetail'; id: string } // GET /api/customers/{uuid}/detail (setting `customer_detail_<uuid>`; solo al consultarse)
 
 /** Metadatos del último snapshot exitoso de un recurso. */
 export interface CatalogMeta {
@@ -62,6 +65,8 @@ export interface CatalogStore {
   /** Configuración de negocio cacheada (JSON crudo del backend) y cuándo se sincronizó. */
   getSetting(key: string): { json: string; syncedAt: string } | null
   upsertSetting(key: string, json: string, now?: Date): void
+  /** Borra las configuraciones cuya clave empieza con `prefix` y no está en `keep`. Devuelve cuántas borró. */
+  deleteSettingsByPrefix(prefix: string, keep?: readonly string[]): number
   close(): void
   /** Cierra y borra los archivos de la base (.sqlite, -wal, -shm). */
   wipe(): void

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FALLBACK_PAYMENT_METHODS, MAX_PAYMENT_METHODS, PAYMENT_COLORS, PAYMENT_SHORTCUT_KEYS, paymentColor } from './paymentMethods'
+import { FALLBACK_PAYMENT_METHODS, MAX_PAYMENT_METHODS, PAYMENT_COLORS, PAYMENT_SHORTCUT_KEYS, checkoutMethods, paymentColor } from './paymentMethods'
 
 describe('constantes de medios de pago', () => {
   it('la paleta tiene 10 colores con claves únicas', () => {
@@ -18,5 +18,16 @@ describe('constantes de medios de pago', () => {
 
   it('los medios de respaldo conservan las teclas de siempre: 1 MercadoPago, 2 Efectivo', () => {
     expect(FALLBACK_PAYMENT_METHODS.map(m => [m.shortcutKey, m.kind])).toEqual([[1, 'MERCADOPAGO'], [2, 'CASH']])
+  })
+})
+
+describe('checkoutMethods (crédito según permiso)', () => {
+  const list = [{ kind: 'CASH' }, { kind: 'MERCADOPAGO' }, { kind: 'CREDIT' }]
+  it('sin POS_CREDITO_USAR oculta el crédito aunque venga de un snapshot offline', () => {
+    expect(checkoutMethods(list, { canCredit: false }).map(m => m.kind)).toEqual(['CASH', 'MERCADOPAGO'])
+  })
+  it('con permiso lo muestra, salvo que no haya una venta nueva que fiar', () => {
+    expect(checkoutMethods(list, { canCredit: true }).map(m => m.kind)).toContain('CREDIT')
+    expect(checkoutMethods(list, { canCredit: true, hasSale: false }).map(m => m.kind)).not.toContain('CREDIT')
   })
 })

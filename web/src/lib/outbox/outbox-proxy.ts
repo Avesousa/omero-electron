@@ -4,6 +4,7 @@ import { readEntitlement } from '../entitlement/store'
 import { getOutboxStore } from './outbox-registry'
 import { getSender } from './outbox-sender'
 import { rememberSession } from './outbox-runtime'
+import { approximateDebt } from '../customers/customers-adjust'
 import type { EnqueueInput, OutboxType } from './types'
 
 /**
@@ -27,13 +28,21 @@ export interface Parsed {
   echo: Record<string, unknown>
 }
 
-export class InvalidRequest extends Error {}
+export class InvalidRequest extends Error {
+  /** Código estable (el front lo traduce a español); sin código solo se muestra el mensaje. */
+  constructor(message: string, readonly code?: string) {
+    super(message)
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function matchOutboxRoute(method: string, pathname: string): OutboxType | null {
   if (method.toUpperCase() !== 'POST') return null
   const path = pathname.replace(/\/+$/, '')
   if (path === '/api/sales') return 'SALE'
   if (path === '/api/expenses') return 'EXPENSE'
+  if (path === '/api/credit/collect') return 'CREDIT_COLLECTION'
   return null
 }
 
@@ -106,14 +115,73 @@ export function parseSale(body: Record<string, unknown>): Parsed {
       return { paymentMethodId, amount: money(raw.amount, `Pago ${i + 1}: amount`) }
     })
   }
+  // Venta a crédito: el cliente al que se le fía (los pagos llevan una línea con el medio CREDIT). Ausente = venta común.
+  let customerId: string | undefined
+  if (body.customerId !== undefined && body.customerId !== null) {
+    if (typeof body.customerId !== 'string' || !UUID.test(body.customerId)) {
+      throw new InvalidRequest('El cliente es inválido', 'CUSTOMER_NOT_FOUND')
+    }
+    customerId = body.customerId.toLowerCase()
+  }
   const payload = {
     items,
+    ...(customerId ? { customerId } : {}),
     cashAmount: money(body.cashAmount, 'cashAmount', 0),
     mpAmount: money(body.mpAmount, 'mpAmount', 0),
     ...(payments && payments.length > 0 ? { payments } : {}),
     change: money(body.change, 'change', 0),
   }
-  return { type: 'SALE', payload, echo: { total: items.reduce((s, i) => s + i.total, 0), items } }
+  return { type: 'SALE', payload, echo: { total: items.reduce((s, i) => s + i.total, 0), items, ...(customerId ? { customerId } : {}) } }
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+/**
+ * Cobro de crédito (`POST /api/credit/collect`). Cuerpo del POS: `{ customerId, payments:[{paymentMethodId, amount}],
+ * expectedDebt?, clientId? }`. `clientId` (UUID) es opcional: si el POS lo manda, reintentar el mismo cobro NO crea otro
+ * (idempotencia también contra un doble clic). `expectedDebt` = deuda que el cajero vio; si falta se toma la última conocida.
+ */
+export function parseCreditCollection(
+  body: Record<string, unknown>,
+  knownDebt: (customerId: string) => number | null,
+): Parsed & { clientId?: string } {
+  const customerId = typeof body.customerId === 'string' ? body.customerId.trim() : ''
+  if (!UUID.test(customerId)) throw new InvalidRequest('Elegí un cliente para cobrar', 'CUSTOMER_NOT_FOUND')
+  if (!Array.isArray(body.payments) || body.payments.length === 0) {
+    throw new InvalidRequest('Indicá cómo se cobra', 'CREDIT_PAYMENT_REQUIRED')
+  }
+  const payments = body.payments.map((raw, i) => {
+    if (!isObj(raw)) throw new InvalidRequest(`Pago ${i + 1} inválido`, 'PAYMENT_AMOUNT_INVALID')
+    const paymentMethodId = typeof raw.paymentMethodId === 'string' ? raw.paymentMethodId.trim() : ''
+    if (!paymentMethodId) throw new InvalidRequest(`Pago ${i + 1}: falta el medio de pago`, 'CREDIT_PAYMENT_REQUIRED')
+    const amount = raw.amount
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new InvalidRequest(`Pago ${i + 1}: el importe debe ser mayor a 0`, 'PAYMENT_AMOUNT_INVALID')
+    }
+    return { paymentMethodId, amount: round2(amount) }
+  })
+  const total = round2(payments.reduce((s, p) => s + p.amount, 0))
+  if (total <= 0) throw new InvalidRequest('El importe a cobrar debe ser mayor a 0', 'CREDIT_AMOUNT_INVALID')
+
+  let expectedDebt: number | null = null
+  if (body.expectedDebt !== undefined && body.expectedDebt !== null) {
+    if (typeof body.expectedDebt !== 'number' || !Number.isFinite(body.expectedDebt) || body.expectedDebt < 0) {
+      throw new InvalidRequest('La deuda esperada es inválida', 'CREDIT_AMOUNT_INVALID')
+    }
+    expectedDebt = round2(body.expectedDebt)
+    // El cajero vio esa deuda: cobrar más que eso es un error del POS (el backend offline lo aceptaría y lo marcaría a revisar).
+    if (total > expectedDebt + 0.005) throw new InvalidRequest('El importe supera la deuda del cliente', 'CREDIT_AMOUNT_EXCEEDS_DEBT')
+  } else {
+    expectedDebt = knownDebt(customerId.toLowerCase())
+  }
+
+  let clientId: string | undefined
+  if (body.clientId !== undefined && body.clientId !== null) {
+    if (typeof body.clientId !== 'string' || !UUID.test(body.clientId)) throw new InvalidRequest('clientId inválido')
+    clientId = body.clientId.toLowerCase()
+  }
+  const payload = { customerId: customerId.toLowerCase(), payments, ...(expectedDebt !== null ? { expectedDebt } : {}) }
+  return { type: 'CREDIT_COLLECTION', payload, echo: { customerId: payload.customerId, amount: total, payments }, clientId }
 }
 
 function parseExpense(body: Record<string, unknown>): Parsed {
@@ -164,20 +232,29 @@ export async function handleOutboxRequest(request: Request, type: OutboxType): P
   try {
     const body: unknown = JSON.parse(text)
     if (!isObj(body)) throw new InvalidRequest('El cuerpo debe ser un objeto JSON')
-    parsed = type === 'SALE' ? parseSale(body) : parseExpense(body)
+    parsed =
+      type === 'SALE'
+        ? parseSale(body)
+        : type === 'EXPENSE'
+          ? parseExpense(body)
+          : parseCreditCollection(body, (customerId) => approximateDebt(tenantId, customerId))
   } catch (err) {
     const message = err instanceof InvalidRequest ? err.message : 'JSON inválido'
-    return json(400, { success: false, error: message })
+    return json(400, { success: false, error: message, ...(err instanceof InvalidRequest && err.code ? { code: err.code } : {}) })
   }
 
   let row
+  let inserted = true
   try {
     const input: EnqueueInput = {
       type: parsed.type,
       payload: JSON.stringify(parsed.payload),
       sourceUserId: userIdFromAuthHeader(authorization),
+      ...('clientId' in parsed && typeof parsed.clientId === 'string' ? { clientId: parsed.clientId } : {}),
     }
-    row = store.enqueue(input).row
+    const result = store.enqueue(input)
+    row = result.row
+    inserted = result.inserted
   } catch (err) {
     console.warn(`[outbox] no se pudo guardar en el outbox (${(err as Error).message}): proxy directo`)
     return null // el disco falló: mejor intentar directo que perder la venta
@@ -191,8 +268,15 @@ export async function handleOutboxRequest(request: Request, type: OutboxType): P
     console.warn(`[outbox] no se pudo iniciar el envío: ${(err as Error).message}`)
   }
 
+  // Cobro de crédito: deuda aproximada del cliente tras este cobro (cache − pendientes; se corrige al sincronizar).
+  const extra: Record<string, unknown> = {}
+  if (parsed.type === 'CREDIT_COLLECTION') {
+    extra.debtAfter = approximateDebt(tenantId, String(parsed.payload.customerId))
+    extra.duplicate = !inserted
+  }
+
   return json(201, {
     success: true,
-    data: { id: null, clientId: row.clientId, queued: true, createdAt: row.createdAt, ...parsed.echo },
+    data: { id: null, clientId: row.clientId, queued: true, createdAt: row.createdAt, ...parsed.echo, ...extra },
   })
 }

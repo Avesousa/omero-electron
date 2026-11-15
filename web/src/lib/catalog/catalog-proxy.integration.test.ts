@@ -20,9 +20,9 @@ import { getSyncer } from './syncer'
 const TENANT_A = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 const TENANT_B = '11111111-2222-3333-4444-555555555555'
 
-function token(tenantId: string | null): string {
+function token(tenantId: string | null, permissions?: string[]): string {
   const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url')
-  const payload = { ...(tenantId ? { tenantId } : {}), exp: Math.floor(Date.now() / 1000) + 3600 }
+  const payload = { ...(tenantId ? { tenantId } : {}), ...(permissions ? { permissions } : {}), exp: Math.floor(Date.now() / 1000) + 3600 }
   return `Bearer ${b64({ alg: 'HS256' })}.${b64(payload)}.sig`
 }
 const authA = token(TENANT_A)
@@ -276,6 +276,21 @@ describe('medios de pago del cobro (/api/payment-methods/active)', () => {
     const data = (await (await get('/api/payment-methods/active')).json()).data
     expect(data.find((m: { id: string }) => m.id === 'b2').description).toBe('CBU o alias')
     expect('description' in data.find((m: { id: string }) => m.id === 'a1')).toBe(false)
+  })
+
+  it('el crédito del snapshot offline solo se sirve a quien tiene POS_CREDITO_USAR (el snapshot es por tenant, no por usuario)', async () => {
+    backend.paymentMethods = [
+      { id: 'a1', name: 'Efectivo', kind: 'CASH', shortcutKey: 1 },
+      { id: 'c9', name: 'Crédito', kind: 'CREDIT', shortcutKey: 3 },
+    ]
+    const withPerm = token(TENANT_A, ['VENTAS_CREAR', 'POS_CREDITO_USAR'])
+    const withoutPerm = token(TENANT_A, ['VENTAS_CREAR'])
+    await get('/api/payment-methods/active', withPerm) // un usuario con permiso deja el snapshot con crédito
+    backend.mode = 503
+    const kinds = async (auth: string) => (await (await get('/api/payment-methods/active', auth)).json()).data.map((m: { kind: string }) => m.kind)
+    expect(await kinds(withPerm)).toEqual(['CASH', 'CREDIT'])
+    expect(await kinds(withoutPerm)).toEqual(['CASH'])
+    expect(await kinds(authA)).toEqual(['CASH']) // token viejo sin claim de permisos: se oculta
   })
 
   it('sin conexión y sin nada cacheado → 503 original (el POS usa los medios de respaldo)', async () => {

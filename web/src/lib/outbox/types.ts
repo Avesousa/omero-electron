@@ -1,9 +1,9 @@
 /**
- * Outbox de ventas y gastos del POS desktop (fase 3). Ver AiBuild/feature/pos-offline-outbox/.
+ * Outbox de ventas, gastos y cobros de crédito del POS desktop (fase 3). Ver AiBuild/feature/pos-offline-outbox/.
  * Toda venta/gasto se guarda primero acá (SQLite, durable) y un sender los sube al backend en segundo plano.
  */
 
-export type OutboxType = 'SALE' | 'EXPENSE'
+export type OutboxType = 'SALE' | 'EXPENSE' | 'CREDIT_COLLECTION'
 
 /**
  * PENDING  = por enviar o reintentando

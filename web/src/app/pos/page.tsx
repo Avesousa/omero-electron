@@ -53,6 +53,7 @@ import { useEntitlement } from '@/lib/useEntitlement'
 import { useTenantTimeZone } from '@/lib/tenantTime'
 import { useMoneyLocale } from '@/lib/useMoneyLocale'
 import { useAuth } from '@/shared/contexts/auth'
+import { useHasPermission } from '@/shared/hooks/useHasPermission'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
@@ -117,7 +118,8 @@ export default function POSPage() {
     resetPayment 
   } = usePayment(showNotification)
   // Medios activos del cobro: en desktop sin conexión salen de la caché SQLite (catalog/cache-policy)
-  const { methods: paymentMethods, refresh: refreshPaymentMethods } = usePaymentMethods()
+  const canCredit = useHasPermission('POS_CREDITO_USAR')
+  const { methods: paymentMethods, refresh: refreshPaymentMethods } = usePaymentMethods(canCredit)
   const {
     products,
     loading: productsLoading,

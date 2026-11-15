@@ -62,6 +62,10 @@ export const PERMISSIONS = [
   { code: 'SUSCRIPCION_GESTIONAR', module: 'Suscripción', scope: 'action', platformOnly: false },
   { code: 'POS_RESUMEN_VER', module: 'Caja (POS)', scope: 'action', platformOnly: false },
   { code: 'POS_MERCADOPAGO_VER', module: 'Caja (POS)', scope: 'action', platformOnly: false },
+  // Crédito/fiado: vender a crédito, listar clientes con deuda, alta rápida y cobrar desde la caja (backend V38)
+  { code: 'POS_CREDITO_USAR', module: 'Caja (POS)', scope: 'action', platformOnly: false },
+  { code: 'CLIENTES_VER', module: 'Clientes', scope: 'screen', platformOnly: false },
+  { code: 'CLIENTES_GESTIONAR', module: 'Clientes', scope: 'action', platformOnly: false },
   { code: 'NEGOCIOS_CROSS_TENANT_VER', module: 'Plataforma', scope: 'screen', platformOnly: true },
   { code: 'PRODUCTOS_CROSS_TENANT', module: 'Plataforma', scope: 'screen', platformOnly: true },
   { code: 'VENTAS_CROSS_TENANT', module: 'Plataforma', scope: 'screen', platformOnly: true },

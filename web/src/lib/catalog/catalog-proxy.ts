@@ -1,10 +1,11 @@
 import { proxyToBackend } from '../backend-proxy'
+import { adjustCustomersBody } from '../customers/customers-adjust'
 import { adjustStockBody } from '../outbox/stock-adjust'
 import { matchCatalogRoute } from './cache-policy'
-import { applyCatalogPayload, itemBody, listBody, PAYMENT_METHODS_SETTING } from './snapshot'
+import { applyCatalogPayload, CUSTOMER_FIELDS_SETTING, CUSTOMERS_SETTING, customerDetailKey, itemBody, listBody, PAYMENT_METHODS_SETTING } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { rememberSession } from '../outbox/outbox-runtime'
-import { tenantFromAuthHeader } from './tenant'
+import { permissionsFromAuthHeader, tenantFromAuthHeader } from './tenant'
 import type { CatalogRoute, CatalogStore } from './types'
 
 /**
@@ -21,7 +22,25 @@ import type { CatalogRoute, CatalogStore } from './types'
 
 const CACHEABLE_FAILURES = new Set([502, 503, 504])
 
-function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: string): Response | null {
+/**
+ * El snapshot de medios de pago es por tenant, no por usuario: puede haberlo tomado alguien con `POS_CREDITO_USAR`.
+ * Al servirlo offline se saca el medio Crédito si el JWT de quien pregunta no trae ese permiso (o no trae permisos).
+ */
+export function filterPaymentMethodsBody(body: string, authorization: string | null | undefined): string {
+  if (permissionsFromAuthHeader(authorization)?.includes('POS_CREDITO_USAR')) return body
+  try {
+    const parsed: unknown = JSON.parse(body)
+    const wrapped = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray((parsed as { data?: unknown }).data)
+    const list = wrapped ? (parsed as { data: unknown[] }).data : Array.isArray(parsed) ? parsed : null
+    if (!list) return body
+    const kept = list.filter(m => (m as { kind?: string } | null)?.kind !== 'CREDIT')
+    return JSON.stringify(wrapped ? { ...(parsed as object), data: kept } : kept)
+  } catch {
+    return body
+  }
+}
+
+function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: string, authorization?: string | null): Response | null {
   let body: string
   let syncedAt: string | null
 
@@ -50,7 +69,19 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: stri
     case 'paymentMethods': {
       const setting = store.getSetting(PAYMENT_METHODS_SETTING)
       if (!setting) return null
-      body = itemBody(setting.json) // el JSON guardado ya es el array de medios
+      body = filterPaymentMethodsBody(itemBody(setting.json), authorization) // el JSON guardado ya es el array de medios
+      syncedAt = setting.syncedAt
+      break
+    }
+    case 'customers':
+    case 'customerFields':
+    case 'customerDetail': {
+      // Clientes (crédito/fiado): lista y detalle se guardan como configuración; el detalle solo existe si se consultó antes.
+      const key =
+        route.kind === 'customers' ? CUSTOMERS_SETTING : route.kind === 'customerFields' ? CUSTOMER_FIELDS_SETTING : customerDetailKey(route.id)
+      const setting = store.getSetting(key)
+      if (!setting) return null
+      body = itemBody(setting.json)
       syncedAt = setting.syncedAt
       break
     }
@@ -65,6 +96,7 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: stri
 
   // La caché guarda el stock crudo del backend; lo vendido sin sincronizar se descuenta recién al responder.
   body = adjustStockBody(tenantId, route, body, { since: syncedAt })
+  body = adjustCustomersBody(tenantId, route, body, { since: syncedAt })
 
   const headers = new Headers({
     'Content-Type': 'application/json',
@@ -102,12 +134,13 @@ export async function proxyWithCatalog(request: Request): Promise<Response> {
     const headers = new Headers(upstream.headers)
     headers.delete('content-length') // el body se re-armó desde texto
     // Respuesta en vivo: el backend ya descontó lo enviado; solo falta restar lo PENDIENTE del outbox.
-    return new Response(adjustStockBody(tenantId, route, text), { status: 200, statusText: upstream.statusText, headers })
+    const adjusted = adjustCustomersBody(tenantId, route, adjustStockBody(tenantId, route, text))
+    return new Response(adjusted, { status: 200, statusText: upstream.statusText, headers })
   }
 
   if (CACHEABLE_FAILURES.has(upstream.status)) {
     try {
-      const cached = serveFromCache(store, route, tenantId)
+      const cached = serveFromCache(store, route, tenantId, authorization)
       if (cached) {
         await upstream.body?.cancel().catch(() => {})
         return cached

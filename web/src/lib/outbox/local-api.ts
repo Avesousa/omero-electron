@@ -1,3 +1,4 @@
+import { cachedCustomerName } from '../customers/customers-adjust'
 import { tenantFromAuthHeader, userIdFromAuthHeader } from '../catalog/tenant'
 import { importLegacyQueue, type LegacyQueuedPurchase } from './legacy-import'
 import { getOutboxStore } from './outbox-registry'
@@ -58,7 +59,7 @@ function safeParse(text: string | null): unknown {
 }
 
 /** Resumen legible para la lista (sin el payload completo). */
-function summarize(row: OutboxRow): Record<string, unknown> {
+function summarize(row: OutboxRow, tenantId: string): Record<string, unknown> {
   const p = safeParse(row.payload) as Record<string, unknown> | null
   if (!p) return {}
   if (row.type === 'SALE') {
@@ -70,12 +71,24 @@ function summarize(row: OutboxRow): Record<string, unknown> {
       cashAmount: p.cashAmount ?? 0,
       mpAmount: p.mpAmount ?? 0,
       ...(Array.isArray(p.payments) ? { payments: p.payments } : {}),
+      ...(typeof p.customerId === 'string' ? { customerId: p.customerId, customerName: cachedCustomerName(tenantId, p.customerId) } : {}),
+    }
+  }
+  if (row.type === 'CREDIT_COLLECTION') {
+    const payments = Array.isArray(p.payments) ? (p.payments as Record<string, unknown>[]) : []
+    const customerId = typeof p.customerId === 'string' ? p.customerId : null
+    return {
+      customerId,
+      customerName: customerId ? cachedCustomerName(tenantId, customerId) : null,
+      amount: payments.reduce((s, x) => s + (Number(x.amount) || 0), 0),
+      payments,
+      expectedDebt: p.expectedDebt ?? null,
     }
   }
   return { description: p.description, amount: p.amount }
 }
 
-function present(row: OutboxRow, withPayload: boolean): Record<string, unknown> {
+function present(row: OutboxRow, withPayload: boolean, tenantId: string): Record<string, unknown> {
   return {
     clientId: row.clientId,
     type: row.type,
@@ -88,7 +101,7 @@ function present(row: OutboxRow, withPayload: boolean): Record<string, unknown> 
     review: safeParse(row.reviewJson),
     error: row.error,
     dismissed: row.dismissedAt !== null,
-    summary: summarize(row),
+    summary: summarize(row, tenantId),
     ...(withPayload ? { payload: safeParse(row.payload) } : {}),
   }
 }
@@ -119,7 +132,7 @@ export function listOutbox(request: Request): Response {
   if (detail !== null) {
     if (!UUID.test(detail)) return json(400, { success: false, error: 'clientId inválido' })
     const row = ctx.store.getByClientId(detail.toLowerCase())
-    return row ? json(200, { success: true, data: present(row, true) }) : json(404, { success: false, error: 'No encontrado' })
+    return row ? json(200, { success: true, data: present(row, true, ctx.tenantId) }) : json(404, { success: false, error: 'No encontrado' })
   }
 
   const requested = (url.searchParams.get('status') ?? '')
@@ -138,7 +151,7 @@ export function listOutbox(request: Request): Response {
       counts: ctx.store.counts(),
       backend: state.backend,
       nextAttemptAt: state.nextAttemptAt,
-      items: rows.map((r) => present(r, false)),
+      items: rows.map((r) => present(r, false, ctx.tenantId)),
     },
   })
 }
