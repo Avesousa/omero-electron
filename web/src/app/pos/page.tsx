@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { InputMode, DeleteModalState, Product } from './types'
 import { STRINGS, MOCK_PRODUCTS } from './constants'
 
@@ -18,6 +18,7 @@ import {
   OutboxListModal,
   FreePriceModal,
   WeightEntryModal,
+  ClientsCreditModal,
   Notification,
   KeyboardGuide
 } from './components'
@@ -34,7 +35,9 @@ import {
 //     To activate the Electron hook, set NEXT_PUBLIC_ELECTRON=true at build time and
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
-import { useNotifications, useCart, usePayment, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
+import { useNotifications, useCart, usePayment, usePaymentMethods, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
+import type { PaymentValues } from './hooks/usePayment'
+import type { PaymentLine } from './utils/payments'
 import { formatStock, roundKg } from '@/lib/quantity'
 import { looksLikeScaleBarcode } from '@/lib/scale'
 import { isWeightLine, lineQuantityLabel, needsWeightEntry, stockInCart, toQuantityProduct } from './lib/cartLines'
@@ -43,6 +46,11 @@ import {
   loadWeightPrefs, openWeightEntry, resolveWeightEntry, saveWeightPrefs, weightEntryKey,
   type WeightEntryState,
 } from './lib/weightEntry'
+import { useCustomers, useCustomerPicker, useCreditCollection } from './hooks'
+import { hasFallbackMethod, round2, splitPaymentsForCollection, toCollectPayments, toCreditCartItems, withDebt } from './utils/credit'
+import type { Customer } from '@/shared/types/credit'
+import { collectCredit } from '@/lib/customersApi'
+import { checkoutMethods } from '@/shared/constants/paymentMethods'
 import { useProducts, useSales, useOfflineQueue, useConnectionStatus, useOutboxStatus, useBusinessFlag, useScaleConfig, useUpdateAvailable } from './hooks'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { UpdateBanner } from './components/UpdateBanner'
@@ -51,6 +59,7 @@ import { useEntitlement } from '@/lib/useEntitlement'
 import { useTenantTimeZone } from '@/lib/tenantTime'
 import { useMoneyLocale } from '@/lib/useMoneyLocale'
 import { useAuth } from '@/shared/contexts/auth'
+import { useHasPermission } from '@/shared/hooks/useHasPermission'
 import { OmeroLogo } from '../components/OmeroLogo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Modal } from '@/app/components/ui/Modal'
@@ -81,6 +90,9 @@ export default function POSPage() {
   const [showOutboxList, setShowOutboxList] = useState(false)
   const mpListRef = useRef<HTMLDivElement>(null)
   const [showFreePrice, setShowFreePrice] = useState(false)
+  // «Clientes con crédito» (tecla C) y alta rápida de cliente en el cobro a crédito
+  const [clientsModal, setClientsModal] = useState({ isOpen: false, selecting: false })
+  const [quickBusy, setQuickBusy] = useState(false)
   // Panel de peso: abierto mientras el cajero carga los kg (o las unidades) de un producto con peso.
   const [weightEntry, setWeightEntry] = useState<WeightEntryState | null>(null)
   const [cacheRefreshing, setCacheRefreshing] = useState(false)
@@ -110,10 +122,29 @@ export default function POSPage() {
     closePaymentModal, 
     selectPaymentMethod, 
     updatePaymentInput, 
+    updateCollectInput,
+    confirmCollectAmount,
+    setCreditCustomer,
     processPayment, 
     confirmChange,
     resetPayment 
   } = usePayment(showNotification)
+  // Medios activos del cobro: en desktop sin conexión salen de la caché SQLite (catalog/cache-policy)
+  const canCredit = useHasPermission('POS_CREDITO_USAR')
+  const { methods: paymentMethods, refresh: refreshPaymentMethods } = usePaymentMethods(canCredit)
+  // Clientes (crédito/fiado): en desktop sin conexión la lista sale de la caché SQLite (catalog/cache-policy)
+  const { customers, loading: customersLoading, error: customersError, refresh: refreshCustomers, quickCreate } = useCustomers(canCredit)
+  const debtors = useMemo(() => withDebt(customers), [customers])
+  const clientsPicker = useCustomerPicker(debtors)
+  const paymentPicker = useCustomerPicker(customers)
+  const { collection: creditCollection, loading: creditLoading, load: loadCreditCollection, clear: clearCreditCollection, getClientId } = useCreditCollection()
+  const creditLines = useMemo(() => toCreditCartItems(creditCollection?.lines ?? []), [creditCollection])
+  const creditDebt = creditCollection?.debt ?? 0
+  // El crédito solo se ofrece con permiso y si hay una venta nueva que fiar (no se fía una cobranza).
+  const visiblePaymentMethods = useMemo(
+    () => checkoutMethods(paymentMethods, { canCredit, hasSale: paymentState.saleTotal > 0 }),
+    [paymentMethods, canCredit, paymentState.saleTotal],
+  )
   const {
     products,
     loading: productsLoading,
@@ -466,23 +497,105 @@ export default function POSPage() {
   }
 
   const handleFinalizeSale = () => {
-    if (cart.length === 0) {
+    if (cart.length === 0 && !creditCollection) {
       showNotification(STRINGS.NOTIF_NO_PRODUCTS, 'error')
       return
     }
 
-    openPaymentModal(total)
+    void refreshPaymentMethods() // por si se cambiaron en Configuración (sigue vigente la última lista conocida)
+    paymentPicker.reset()
+    if (canCredit) void refreshCustomers()
+    openPaymentModal(total, creditCollection ? { creditDebt: creditCollection.debt, creditCustomer: creditCollection.customer } : {})
+  }
+
+  // Clientes con crédito: abrir, elegir (carga sus líneas pendientes al proceso de venta) y cerrar
+  const handleOpenClientsModal = () => {
+    if (!canCredit) {
+      showNotification('No tenés permiso para usar el crédito en la caja.', 'error')
+      return
+    }
+    clientsPicker.reset()
+    void refreshCustomers()
+    setClientsModal({ isOpen: true, selecting: false })
+  }
+
+  const handleCloseClientsModal = () => {
+    clientsPicker.reset()
+    setClientsModal({ isOpen: false, selecting: false })
+  }
+
+  const handlePickDebtor = async (customer: Customer) => {
+    setClientsModal(prev => ({ ...prev, selecting: true }))
+    const err = await loadCreditCollection(customer)
+    if (err) {
+      showNotification(err, 'error')
+      setClientsModal(prev => ({ ...prev, selecting: false }))
+      return
+    }
+    showNotification(`Deuda de ${customer.name} cargada`, 'success')
+    handleCloseClientsModal()
+  }
+
+  // Alta rápida desde el cobro a crédito: solo nombre (opcional), el backend asigna el código.
+  // Sin conexión NO hay alta (el código lo asigna el backend): `quickCreate` devuelve el error en español.
+  const handleQuickCreateCustomer = async (name: string) => {
+    if (quickBusy) return
+    setQuickBusy(true)
+    const r = await quickCreate(name)
+    setQuickBusy(false)
+    if (r.customer) {
+      paymentPicker.reset()
+      setCreditCustomer(r.customer)
+      showNotification(`Cliente ${r.customer.name} creado (#${r.customer.code})`, 'success')
+    } else {
+      showNotification(r.error ?? 'No se pudo crear el cliente.', 'error')
+    }
   }
 
   const handleCompleteSale = async (
-    cashAmount: number,
-    mpAmount: number,
-    change: number
+    payments: PaymentLine[],
+    change: number,
+    collectAmount = 0,
+    creditCustomer: Customer | null = null
   ): Promise<boolean> => {
     try {
-      const result = await createSale(cart, cashAmount, mpAmount, change)
+      // Cobro de deuda + venta nueva en un mismo pago: son DOS registros. Los pagos ingresados van primero al
+      // cobro del crédito (en orden) y el resto a la venta.
+      const hasCollection = !!creditCollection && collectAmount > 0
+      const { collect, sale } = hasCollection
+        ? splitPaymentsForCollection(payments, collectAmount)
+        : { collect: [], sale: payments }
+
+      if (hasCollection && creditCollection) {
+        if (hasFallbackMethod(collect)) {
+          showNotification('No se pudieron cargar los medios de pago: reintentá en unos segundos para cobrar la deuda.', 'error')
+          return false
+        }
+        const r = await collectCredit({
+          customerId: creditCollection.customer.id,
+          clientId: getClientId(),
+          payments: toCollectPayments(collect),
+          expectedDebt: creditCollection.debt,
+        })
+        if (!r.success) {
+          showNotification(r.error, 'error')
+          return false
+        }
+        const left = r.data.debtAfter
+        const base = left === null || left === undefined
+          ? 'Cobro registrado.'
+          : left > 0 ? `Cobro registrado. Deuda restante: ${formatMoney(left)}` : 'Cobro registrado. El cliente quedó sin deuda.'
+        showNotification(r.data.queued && !connection.online ? `${base} Se sincronizará al volver la conexión.` : base, r.data.queued && !connection.online ? 'offline_saved' : 'success')
+        clearCreditCollection()
+        void outbox.refresh()
+        void refreshCustomers()
+        if (cart.length === 0) return true
+      }
+
+      const result = await createSale(cart, sale, change, creditCustomer?.id)
 
       if (result.success) {
+        if (creditCustomer) void refreshCustomers()
         if (result.queued && !connection.online) {
           // Desktop sin conexión: la venta ya está guardada en el outbox local y se sube sola al volver la red.
           showNotification('Venta guardada sin conexión. Se sincronizará automáticamente.', 'offline_saved')
@@ -553,21 +666,22 @@ export default function POSPage() {
   // Payment handlers
   const handlePaymentComplete = async (
     saleCompleted: boolean, 
-    paymentValues?: { cashAmount: number, mpAmount: number, change: number }
+    paymentValues?: PaymentValues
   ) => {
     if (saleCompleted) {
       // Usar los valores pasados directamente si están disponibles, 
       // de lo contrario usar los valores del estado (para casos legacy o confirmChange)
-      const cashAmount = paymentValues?.cashAmount ?? paymentState.cashAmount
-      const mpAmount = paymentValues?.mpAmount ?? paymentState.mpAmount
+      const payments = paymentValues?.payments ?? paymentState.payments
       const change = paymentValues?.change ?? paymentState.change
       
       // Guardar la venta en la base de datos
-      const result = await handleCompleteSale(cashAmount, mpAmount, change)
+      const collectAmount = paymentValues?.collectAmount ?? paymentState.collectAmount
+      const creditCustomer = paymentValues ? paymentValues.creditCustomer : paymentState.creditCustomer
+      const result = await handleCompleteSale(payments, change, collectAmount, creditCustomer)
 
       // Solo limpiar y cerrar si la venta se guardó exitosamente
       if (result) {
-        clearCart()
+        if (cart.length > 0) clearCart()
         setMode('code')
         setCurrentInput('')
         setCashReceived('')
@@ -580,7 +694,7 @@ export default function POSPage() {
   // Inicia el polling de MP en el momento que el cajero confirma el pago con MP,
   // antes de que la venta se guarde — el backend se encarga de encontrar la transferencia.
   const handleConfirmPayment = () => {
-    if (paymentState.paymentMethod === 'mercadopago') {
+    if (paymentState.paymentMethod?.kind === 'MERCADOPAGO') {
       triggerPollingIfNeeded(parseFloat(paymentState.paymentInput) || 1)
     }
     processPayment(handlePaymentComplete)
@@ -663,6 +777,19 @@ export default function POSPage() {
       return
     }
 
+    // Handle clients (credit) modal
+    if (clientsModal.isOpen) {
+      if (key === 'Escape') {
+        handleCloseClientsModal()
+      } else if (clientsModal.selecting) {
+        // cargando las líneas del cliente elegido: se ignoran las teclas
+      } else {
+        const picked = clientsPicker.pressKey(key)
+        if (picked) void handlePickDebtor(picked)
+      }
+      return
+    }
+
     // Handle expense modal
     if (expenseState.showExpenseModal) {
       if (key === 'Enter') {
@@ -737,17 +864,42 @@ export default function POSPage() {
       return
     }
 
+    // Paso previo del cobro de deuda: cuánto se cobra (Enter sin escribir = toda la deuda)
+    if (paymentState.showPaymentModal && paymentState.collectStep) {
+      if (key === 'Enter') confirmCollectAmount()
+      else if (key === 'Escape') closePaymentModal()
+      else if (/^\d$/.test(key) || key === '.') updateCollectInput(paymentState.collectInput + key)
+      else if (key === 'Backspace') updateCollectInput(paymentState.collectInput.slice(0, -1))
+      return
+    }
+
+    // Medio Crédito sin cliente elegido: selector por código (dígitos filtran, Enter elige, + alta rápida)
+    if (paymentState.showPaymentModal && paymentState.paymentMethod?.kind === 'CREDIT' && !paymentState.creditCustomer && !paymentState.isProcessingPayment) {
+      if (key === 'Escape') {
+        paymentPicker.reset()
+        selectPaymentMethod(null)
+      } else if (key === '+') {
+        void handleQuickCreateCustomer('')
+      } else {
+        const picked = paymentPicker.pressKey(key)
+        if (picked) {
+          paymentPicker.reset()
+          setCreditCustomer(picked)
+        }
+      }
+      return
+    }
+
     // Handle payment modal
     if (paymentState.showPaymentModal && !paymentState.paymentMethod) {
-      if (key === '1') {
-        if (mpBlocked) {
-          showNotification('MercadoPago no está habilitado sin conexión. Cobrá en efectivo.', 'error')
+      // Teclas 1-6: eligen el medio de pago que las tiene asignadas (Configuración → Medios de pago)
+      const byKey = /^[1-6]$/.test(key) ? visiblePaymentMethods.find(m => m.shortcutKey === Number(key)) : undefined
+      if (byKey) {
+        if (mpBlocked && byKey.kind === 'MERCADOPAGO') {
+          showNotification('MercadoPago no está habilitado sin conexión. Elegí otro medio de pago.', 'error')
           return
         }
-        selectPaymentMethod('mercadopago')
-        return
-      } else if (key === '2') {
-        selectPaymentMethod('cash')
+        selectPaymentMethod(byKey)
         return
       } else if (key === 'Escape') {
         closePaymentModal()
@@ -805,11 +957,16 @@ export default function POSPage() {
         setPreviousCartQuantity(0)
         localStorage.removeItem('currentProductCode')
         showNotification(STRINGS.NOTIF_BACK_TO_CODE, 'info')
+      } else if (creditCollection && !currentInput) {
+        clearCreditCollection()
+        showNotification('Se quitó la deuda del proceso de venta', 'info')
       }
     } else if (key === '-') {
       handleOpenDeleteModal()
     } else if (key === 't' || key === 'T') {
       setShowMpTransactions(true)
+    } else if (key === 'c' || key === 'C') {
+      handleOpenClientsModal()
     } else if (key === '/') {
       handleOpenProductsModal()
     } else if (key === '*') {
@@ -990,7 +1147,7 @@ export default function POSPage() {
 
               {/* Cart Items - Scrollable area */}
               <div className="flex-1 overflow-y-auto min-h-0 mb-4">
-                <CartList cart={cart} />
+                <CartList cart={cart} creditLines={creditLines} creditCustomerName={creditCollection?.customer.name} />
               </div>
 
               {/* Cart Summary - Fixed at bottom */}
@@ -998,6 +1155,7 @@ export default function POSPage() {
                 <CartSummary 
                   total={total}
                   itemCount={cart.length}
+                  creditDebt={creditDebt}
                   onFinalizeSale={handleFinalizeSale}
                 />
               </div>
@@ -1017,15 +1175,27 @@ export default function POSPage() {
       <PaymentModal
         show={paymentState.showPaymentModal}
         paymentState={paymentState}
-        total={total}
+        total={paymentState.showPaymentModal ? round2(paymentState.saleTotal + paymentState.collectAmount) : total}
         mpConnected={mpConnected}
         mpDisabled={mpBlocked}
+        methods={visiblePaymentMethods}
         onSelectMethod={selectPaymentMethod}
         onConfirmPayment={
           paymentState.showingChange
             ? () => confirmChange(handlePaymentComplete)
-            : handleConfirmPayment
+            : paymentState.collectStep
+              ? () => { confirmCollectAmount() }
+              : handleConfirmPayment
         }
+        customerPicker={{
+          customers: paymentPicker.matches,
+          query: paymentPicker.query,
+          loading: customersLoading,
+          error: customersError,
+          onSelect: c => { paymentPicker.reset(); setCreditCustomer(c) },
+          onQuickCreate: name => { void handleQuickCreateCustomer(name) },
+          quickBusy,
+        }}
         onBack={() => selectPaymentMethod(null)}
         onCancel={closePaymentModal}
         onKeyPress={handleKeyPress}
@@ -1060,6 +1230,18 @@ export default function POSPage() {
         products={products}
         searchQuery={productsModal.searchQuery}
         onClose={handleCloseProductsModal}
+        onKeyPress={handleKeyPress}
+      />
+
+      <ClientsCreditModal
+        show={clientsModal.isOpen}
+        customers={clientsPicker.matches}
+        searchQuery={clientsPicker.query}
+        loading={customersLoading || creditLoading}
+        error={customersError}
+        selecting={clientsModal.selecting}
+        onSelect={c => { void handlePickDebtor(c) }}
+        onClose={handleCloseClientsModal}
         onKeyPress={handleKeyPress}
       />
 

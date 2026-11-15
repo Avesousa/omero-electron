@@ -226,6 +226,20 @@ export class SqliteCatalogStore implements CatalogStore {
       .run(key, json, now.toISOString())
   }
 
+  deleteSettingsByPrefix(prefix: string, keep: readonly string[] = []): number {
+    // LIKE con escape: el prefijo contiene `_` (comodín de un carácter).
+    const like = `${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+    const rows = this.conn.prepare(`SELECT key FROM settings WHERE key LIKE ? ESCAPE '\\'`).all(like) as { key: string }[]
+    const keepSet = new Set(keep)
+    const drop = rows.map((r) => r.key).filter((k) => !keepSet.has(k))
+    if (drop.length === 0) return 0
+    const stmt = this.conn.prepare('DELETE FROM settings WHERE key = ?')
+    this.conn.transaction(() => {
+      for (const k of drop) stmt.run(k)
+    })()
+    return drop.length
+  }
+
   getProducts(): string[] {
     return (this.conn.prepare('SELECT json FROM products ORDER BY rowid').all() as { json: string }[]).map((r) => r.json)
   }

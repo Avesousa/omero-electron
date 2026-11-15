@@ -17,6 +17,10 @@ import { useEffect } from 'react'
 export const useKeyboard = (onKeyPress: (key: string) => void) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Campos de texto del POS (ej. nombre del cliente nuevo): se deja escribir normalmente.
+      const target = e.target as HTMLElement | null
+      if (target?.hasAttribute?.('data-pos-text-input')) return
+
       // Map physical keys to logical equivalents — same keyMap as the web variant.
       const keyMap: Record<string, string> = {
         'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4',

@@ -1,13 +1,55 @@
-import type { CartItem as CartItemType } from '../../types'
+import type { CartItem as CartItemType, CreditCartItem } from '../../types'
 import { STRINGS } from '../../constants/strings'
 import { isWeightLine, lineQuantityLabel } from '../../lib/cartLines'
 import { formatMoney } from '@/lib/money'
 
 interface CartListProps {
   cart: CartItemType[]
+  /** Líneas de crédito pendientes del cliente cargado (no son productos nuevos). */
+  creditLines?: CreditCartItem[]
+  creditCustomerName?: string
 }
 
-export const CartList = ({ cart }: CartListProps) => {
+const fmtDate = (iso: string) => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+}
+
+/** Líneas de deuda del cliente: se muestran aparte, con su estado y la deuda actual. */
+export const CreditLinesList = ({ lines, customerName }: { lines: CreditCartItem[]; customerName?: string }) => {
+  if (lines.length === 0) return null
+  return (
+    <div className="mb-4" data-testid="credit-lines">
+      <div className="text-xs font-bold text-center mb-2 pos-primary">
+        Deuda de {customerName ?? 'cliente'} · {lines.length} {lines.length === 1 ? 'línea pendiente' : 'líneas pendientes'}
+      </div>
+      <div className="space-y-2.5 pr-1">
+        {lines.map(l => (
+          <div key={l.saleItemId} className="pos-line" data-testid="credit-line">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="font-bold text-[17px] pos-ink truncate">{l.name}</div>
+                <span className="pos-tag is-promo">{l.status === 'PENDING' ? 'Pendiente' : 'Pagado'}</span>
+              </div>
+              <div className="text-sm pos-muted mt-0.5">
+                <span className="font-mono">#{l.code}</span> · {l.quantity} u. · Venta #{l.saleId} {fmtDate(l.soldAt)}
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <div className="text-xs pos-muted">Deuda actual</div>
+              <div className="text-xl font-extrabold pos-ink pos-num">{formatMoney(l.debt)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export const CartList = ({ cart, creditLines = [], creditCustomerName }: CartListProps) => {
+  if (cart.length === 0 && creditLines.length > 0) {
+    return <CreditLinesList lines={creditLines} customerName={creditCustomerName} />
+  }
   if (cart.length === 0) {
     return (
       <div className="pos-empty py-8">
@@ -19,6 +61,8 @@ export const CartList = ({ cart }: CartListProps) => {
   }
 
   return (
+    <div>
+    <CreditLinesList lines={creditLines} customerName={creditCustomerName} />
     <div className="space-y-2.5 pr-1">
       {[...cart].reverse().map((item, reverseIndex) => {
         const displayIndex = reverseIndex + 1
@@ -64,6 +108,7 @@ export const CartList = ({ cart }: CartListProps) => {
           </div>
         )
       })}
+    </div>
     </div>
   )
 }

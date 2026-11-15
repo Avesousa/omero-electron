@@ -23,6 +23,7 @@ export const POS_ALLOWLIST: Rule[] = [
   { method: 'GET', pattern: '/api/products/search' },
   { method: 'GET', pattern: '/api/products/*' },
   { method: 'GET', pattern: '/api/promotions' },
+  { method: 'GET', pattern: '/api/payment-methods/active' }, // medios de pago del cobro (backend: DeviceScopeFilter.POS)
   { method: 'GET', pattern: '/api/business/config' },
   { method: 'GET', pattern: '/api/business/config/*' },
   { method: 'GET', pattern: '/api/dashboard/daily-summary' },
@@ -30,6 +31,12 @@ export const POS_ALLOWLIST: Rule[] = [
   { method: 'POST', pattern: '/api/mercadopago/events/ticket' }, // ticket SSE (backend: agregar a DeviceScopeFilter.POS)
   { method: 'GET', pattern: '/api/mercadopago/transactions' },
   { method: 'POST', pattern: '/api/mercadopago/polling/start' },
+  // Crédito/fiado (backend: DeviceScopeFilter.POS). El detalle por cliente es `/api/customers/{id}/detail`.
+  { method: 'GET', pattern: '/api/customers' },
+  { method: 'GET', pattern: '/api/customers/fields' },
+  { method: 'GET', pattern: '/api/customers/*/detail' },
+  { method: 'POST', pattern: '/api/customers/quick' },
+  { method: 'POST', pattern: '/api/credit/collect' },
   { method: 'POST', pattern: '/api/sales' },
   { method: 'POST', pattern: '/api/expenses' },
   { method: 'POST', pattern: '/api/sync/batch' },
@@ -104,6 +111,15 @@ describe('extractRoutes / matcher (el detector funciona)', () => {
     expect(isAllowed('/api/auth/device/refresh')).toBe(true)
     expect(isAllowed('/api/expenses')).toBe(true)
     expect(isAllowed('/api/expenses/1')).toBe(false)
+  })
+
+  it('crédito: solo las rutas del POS; el resto de clientes (alta completa, edición) queda fuera', () => {
+    for (const ok of ['/api/customers', '/api/customers/fields', '/api/customers/abc-123/detail', '/api/customers/quick', '/api/credit/collect']) {
+      expect(isAllowed(ok), ok).toBe(true)
+    }
+    for (const no of ['/api/customers/abc-123', '/api/credit/collections/review', '/api/credit/collect/1', '/api/customers/a/b/detail']) {
+      expect(isAllowed(no), no).toBe(false)
+    }
   })
 })
 

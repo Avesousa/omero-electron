@@ -18,6 +18,15 @@ export function parseEnvelopeData(text: string): unknown {
   return undefined
 }
 
+/** Clave de `settings` donde se guarda la lista de medios de pago activos (la tabla ya existe: sin migración). */
+export const PAYMENT_METHODS_SETTING = 'payment_methods'
+
+/** Claves de `settings` de la caché de clientes (crédito/fiado). Sin migración: la tabla ya existe. */
+export const CUSTOMERS_SETTING = 'customers'
+export const CUSTOMER_FIELDS_SETTING = 'customer_fields'
+export const CUSTOMER_DETAIL_PREFIX = 'customer_detail_'
+export const customerDetailKey = (id: string): string => `${CUSTOMER_DETAIL_PREFIX}${id.toLowerCase()}`
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -47,6 +56,28 @@ export function applyCatalogPayload(store: CatalogStore, route: CatalogRoute, te
     case 'setting':
       if (!isObject(data)) return false
       store.upsertSetting(route.key, JSON.stringify(data))
+      return true
+    case 'paymentMethods':
+      // Lista no vacía de medios con id y nombre; se guarda entera como una sola configuración.
+      if (!Array.isArray(data) || data.length === 0 || !data.every(m => isObject(m) && typeof m.id === 'string' && typeof m.name === 'string')) return false
+      store.upsertSetting(PAYMENT_METHODS_SETTING, JSON.stringify(data))
+      return true
+    case 'customers': {
+      // Lista de clientes activos (puede estar vacía: un negocio sin clientes es un estado válido). Se guarda entera y,
+      // como el snapshot es completo, se descartan los detalles de clientes que ya no están (borrados/inactivos).
+      if (!Array.isArray(data) || !data.every(c => isObject(c) && typeof c.id === 'string')) return false
+      store.upsertSetting(CUSTOMERS_SETTING, JSON.stringify(data))
+      store.deleteSettingsByPrefix(CUSTOMER_DETAIL_PREFIX, data.map(c => customerDetailKey((c as { id: string }).id)))
+      return true
+    }
+    case 'customerFields':
+      if (!Array.isArray(data)) return false
+      store.upsertSetting(CUSTOMER_FIELDS_SETTING, JSON.stringify(data))
+      return true
+    case 'customerDetail':
+      // El detalle solo se guarda si es de ESE cliente y trae las líneas (la forma `{customer, lines, collections}`).
+      if (!isObject(data) || !isObject(data.customer) || String(data.customer.id).toLowerCase() !== route.id || !Array.isArray(data.lines)) return false
+      store.upsertSetting(customerDetailKey(route.id), JSON.stringify(data))
       return true
   }
 }

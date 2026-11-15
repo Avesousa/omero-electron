@@ -14,8 +14,10 @@
 import { useState } from 'react'
 import type { CartItem } from '../types'
 import { apiFetch } from '@/lib/apiClient'
+import { creditError } from '@/lib/creditErrors'
 import type { QuantityUnit } from '@/lib/quantity'
 import { isWeightLine, lineStockQuantity } from '../lib/cartLines'
+import { buildSalePayments, type PaymentLine, type SalePaymentsPayload } from '../utils/payments'
 
 export interface SalePayloadItem {
   productId: string
@@ -35,11 +37,15 @@ export interface SalePayloadItem {
   stockQuantity: number
 }
 
-export interface SalePayload {
+/**
+ * `cashAmount`/`mpAmount` (formato viejo) y `payments` (por medio, formato nuevo) viajan juntos: el backend nuevo usa
+ * `payments`; un backend anterior sigue leyendo efectivo/MP. Ver `buildSalePayments`.
+ */
+export interface SalePayload extends SalePaymentsPayload {
   items: SalePayloadItem[]
-  cashAmount: number
-  mpAmount: number
   change: number
+  /** Cliente al que se le fía: solo viaja si algún pago es del medio Crédito. */
+  customerId?: string
 }
 
 export type SaleResult =
@@ -50,7 +56,7 @@ export type SaleResult =
  * Arma el cuerpo de la venta. Los ítems de precio libre (código '000-xxx') se agrupan en un único ítem '000'.
  * Cada ítem lleva `productName` (snapshot: la venta sigue siendo legible aunque el producto se elimine después).
  */
-export function buildSalePayload(items: CartItem[], cashAmount: number, mpAmount: number, change: number): SalePayload {
+export function buildSalePayload(items: CartItem[], payments: PaymentLine[], change: number, customerId?: string): SalePayload {
   const freePriceItems = items.filter(i => i.code.startsWith('000'))
   const regularItems = items.filter(i => !i.code.startsWith('000'))
 
@@ -78,9 +84,9 @@ export function buildSalePayload(items: CartItem[], cashAmount: number, mpAmount
       saleUnit: isWeightLine(item) ? 'KG' : 'UNIT',
       stockQuantity: lineStockQuantity(item),
     })),
-    cashAmount,
-    mpAmount,
+    ...buildSalePayments(payments),
     change,
+    ...(customerId && payments.some(p => p.kind === 'CREDIT') ? { customerId } : {}),
   }
 }
 
@@ -89,20 +95,22 @@ export const useSales = () => {
 
   const createSale = async (
     items: CartItem[],
-    cashAmount: number = 0,
-    mpAmount: number = 0,
-    change: number = 0
+    payments: PaymentLine[] = [],
+    change: number = 0,
+    /** Cliente de la venta: obligatorio si algún pago es del medio Crédito. */
+    customerId?: string
   ): Promise<SaleResult> => {
     setIsProcessing(true)
     try {
       const result = await apiFetch<{ queued?: boolean } | null>('/api/sales', {
         method: 'POST',
-        body: JSON.stringify(buildSalePayload(items, cashAmount, mpAmount, change)),
+        body: JSON.stringify(buildSalePayload(items, payments, change, customerId)),
       })
       if (result.success) {
         return { success: true, sale: result.data, queued: result.data?.queued === true }
       }
-      return { success: false, error: result.error || 'Error al procesar la venta' }
+      // Los `code` estables del backend (crédito, medios de pago) se traducen a español; el resto pasa tal cual.
+      return { success: false, error: creditError(result as { error?: string; code?: string }, result.error || 'Error al procesar la venta') }
     } catch {
       // fetch lanzó: el servidor (local o remoto) no respondió
       return { success: false, error: 'No se pudo conectar. La venta no se registró.' }

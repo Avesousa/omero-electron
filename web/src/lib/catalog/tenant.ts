@@ -44,3 +44,13 @@ export function userIdFromAuthHeader(authHeader: string | null | undefined): str
   const claim = payloadOf(authHeader)?.userId
   return typeof claim === 'string' && UUID.test(claim) ? claim.toLowerCase() : null
 }
+
+/**
+ * Permisos del claim `permissions` del JWT (sin verificar la firma: SOLO para ocultar cosas en la UI/caché offline,
+ * nunca para autorizar). null si no hay token o el claim no es una lista de strings (token viejo): quien lo use debe
+ * tratarlo como "sin permisos" para lo que oculta.
+ */
+export function permissionsFromAuthHeader(authHeader: string | null | undefined): string[] | null {
+  const claim = payloadOf(authHeader)?.permissions
+  return Array.isArray(claim) && claim.every(p => typeof p === 'string') ? (claim as string[]) : null
+}

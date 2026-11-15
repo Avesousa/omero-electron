@@ -1,5 +1,8 @@
 // Types for POS application
 import type { QuantityUnit, SaleFormat } from '@/lib/quantity'
+import type { PaymentMethod as PaymentMethodConfig } from '@/shared/constants/paymentMethods'
+import type { PaymentLine } from '../utils/payments'
+import type { Customer } from '@/shared/types/credit'
 
 export interface Product {
   id: string
@@ -42,6 +45,23 @@ export interface CartItem {
   fixedTotal?: boolean
 }
 
+/**
+ * Línea PENDIENTE de crédito cargada al proceso de venta: NO es un producto nuevo (no descuenta stock ni viaja como
+ * item de venta). Se muestra con su estado y la deuda actual; se cobra con `POST /api/credit/collect`.
+ */
+export interface CreditCartItem {
+  kind: 'CREDIT_LINE'
+  saleItemId: string
+  saleId: number
+  soldAt: string
+  code: string
+  name: string
+  quantity: number
+  /** Deuda actual de la línea (precios vigentes). */
+  debt: number
+  status: 'PENDING' | 'PAID'
+}
+
 export interface Sale {
   id: number  // Changed from string to number for autoincrement
   total: number
@@ -52,7 +72,8 @@ export interface Sale {
   items: CartItem[]
 }
 
-export type PaymentMethod = 'cash' | 'mercadopago' | null
+/** Medio de pago configurado por el negocio (Configuración → Medios de pago en el admin). */
+export type PaymentMethod = PaymentMethodConfig
 
 export type InputMode = 'code' | 'quantity' | 'payment'
 
@@ -65,14 +86,25 @@ export interface Notification {
 
 export interface PaymentState {
   showPaymentModal: boolean
-  paymentMethod: PaymentMethod
+  paymentMethod: PaymentMethod | null
   paymentInput: string
   isProcessingPayment: boolean
   remainingAmount: number
-  mpAmount: number
-  cashAmount: number
+  /** Pagos ya registrados en este cobro (uno por medio). */
+  payments: PaymentLine[]
   change: number
   showingChange: boolean
+  /** Total de la venta NUEVA (sin la deuda que se cobra). `remainingAmount` incluye también lo que se cobra de deuda. */
+  saleTotal: number
+  /** Deuda del cliente cargada para cobrar (0 = no hay cobro de deuda). */
+  collectDebt: number
+  /** Monto de deuda que se cobra en esta operación (≤ collectDebt). */
+  collectAmount: number
+  /** Paso previo al cobro: el cajero elige cuánto de la deuda cobra (Enter sin escribir = toda). */
+  collectStep: boolean
+  collectInput: string
+  /** Cliente al que se le fía (medio Crédito) o del que se cobra la deuda. */
+  creditCustomer: Customer | null
 }
 
 export interface DeleteModalState {

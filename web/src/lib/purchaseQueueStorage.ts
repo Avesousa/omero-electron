@@ -29,6 +29,8 @@ interface PurchaseRequestPayload {
   }>
   cashAmount: number
   mpAmount: number
+  /** Formato nuevo por medio de pago (ausente en ventas encoladas antes de los medios configurables). */
+  payments?: Array<{ paymentMethodId: string; amount: number }>
   change: number
 }
 

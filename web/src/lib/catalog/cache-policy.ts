@@ -16,14 +16,27 @@ const PRODUCT_CODE = /^\d{1,20}$/
 /** Claves de business_config (p. ej. `mp_offline`): solo alfanuméricas y guion bajo. */
 const SETTING_KEY = /^[A-Za-z0-9_]{1,64}$/
 
+const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** La única variante cacheada de la lista de clientes: los activos (la que usa la caja). */
+const CUSTOMERS_ACTIVE_QUERY = '?onlyActive=true'
+
 export function matchCatalogRoute(method: string, pathname: string, search: string): CatalogRoute | null {
   if (method.toUpperCase() !== 'GET') return null
-  if (search !== '' && search !== '?') return null
 
   const path = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
 
+  // Clientes (crédito/fiado): la lista cacheada es SOLO `?onlyActive=true`; otras variantes (`onlyActive=false`) no se cachean.
+  if (path === '/api/customers') return search === CUSTOMERS_ACTIVE_QUERY ? { kind: 'customers' } : null
+
+  if (search !== '' && search !== '?') return null
+
+  if (path === '/api/customers/fields') return { kind: 'customerFields' }
+  const detail = /^\/api\/customers\/([^/]+)\/detail$/.exec(path)
+  if (detail) return UUID_SEGMENT.test(detail[1]) ? { kind: 'customerDetail', id: detail[1].toLowerCase() } : null
+
   if (path === '/api/products') return { kind: 'products' }
   if (path === '/api/promotions') return { kind: 'promotions' }
+  if (path === '/api/payment-methods/active') return { kind: 'paymentMethods' }
 
   const configPrefix = '/api/business/config/'
   if (path.startsWith(configPrefix)) {
