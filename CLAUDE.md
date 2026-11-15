@@ -418,3 +418,10 @@ Backend: ver `omero-backend/CLAUDE.md` ("Login con clave numérica"). La primera
 ## Crédito/fiado y permiso `POS_CREDITO_USAR`
 
 El snapshot SQLite de medios de pago es por tenant, no por usuario: `catalog-proxy.filterPaymentMethodsBody` saca el medio `CREDIT` al servirlo offline si el JWT (claim `permissions`, sin verificar firma: solo UX) no trae `POS_CREDITO_USAR`, y la UI (`usePaymentMethods(canCredit)` + `checkoutMethods`) lo vuelve a filtrar. El backend es quien rechaza de verdad (403 `CREDIT_PERMISSION_REQUIRED`; en outbox la venta queda a revisar con `CREDIT_NOT_ALLOWED`/`CREDIT_METHOD_DISABLED`).
+
+### UI de clientes y crédito en el POS (portada de `omero`)
+
+`CustomerPicker`/`CustomerList`/`ClientsCreditModal`, `PaymentModal` (paso "elegí el cliente", `collectStep`), `useCustomers`/`useCustomerPicker`/`useCreditCollection`, `usePayment` (`collect*`, `creditCustomer`), tecla `C` ("Clientes con crédito", exige `POS_CREDITO_USAR`) y bloque de crédito en el resumen del día. `lib/customersApi.ts` tiene SOLO las rutas permitidas a la caja (lista `?onlyActive=true`, detalle, `quick`, `credit/collect`); el resto de la API de clientes es del admin.
+- **Offline**: lista y detalle salen de la caché SQLite (el detalle solo si el cliente se consultó antes con conexión; si no, error claro). El cobro de deuda va SIEMPRE al outbox (`CREDIT_COLLECTION`, responde `queued` con `debtAfter` aproximada). La venta a crédito lleva `customerId` y va por el outbox como cualquier venta.
+- **Sin soporte offline: alta rápida de cliente** (`POST /api/customers/quick`): el código lo asigna el backend, así que sin conexión se muestra "Sin conexión: no se puede crear un cliente nuevo ahora…". Decisión: no se inventa un alta local.
+- Tests: `app/pos/__tests__/creditFlow.test.tsx` (pantalla completa con teclas), `PaymentModal.test`, `utils/credit.test`, `lib/customersApi.test`, `hooks/__tests__/useCustomers.test`.

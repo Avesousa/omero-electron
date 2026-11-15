@@ -4,6 +4,19 @@ import { STRINGS } from '../../constants/strings'
 import { KeyboardGuide } from '../keyboard/KeyboardGuide'
 import { Modal } from '@/app/components/ui/Modal'
 import { formatMoney } from '@/lib/money'
+import type { Customer } from '@/shared/types/credit'
+import { CustomerPicker } from './CustomerPicker'
+
+/** Selector de cliente para el medio Crédito (lo arma la página con `useCustomerPicker` + `useCustomers`). */
+export interface PaymentCustomerPicker {
+  customers: Customer[]
+  query: string
+  loading?: boolean
+  error?: string
+  onSelect: (customer: Customer) => void
+  onQuickCreate: (name: string) => void
+  quickBusy?: boolean
+}
 
 interface PaymentModalProps {
   show: boolean
@@ -19,6 +32,7 @@ interface PaymentModalProps {
   onBack: () => void
   onCancel: () => void
   onKeyPress?: (key: string) => void
+  customerPicker?: PaymentCustomerPicker
 }
 
 export const PaymentModal = ({
@@ -32,7 +46,8 @@ export const PaymentModal = ({
   onConfirmPayment,
   onBack,
   onCancel,
-  onKeyPress
+  onKeyPress,
+  customerPicker
 }: PaymentModalProps) => {
   if (!show) return null
 
@@ -46,8 +61,15 @@ export const PaymentModal = ({
     remainingAmount,
     payments,
     change,
-    showingChange
+    showingChange,
+    collectStep,
+    collectInput,
+    collectDebt,
+    collectAmount,
+    saleTotal,
+    creditCustomer
   } = paymentState
+  const hasCollection = collectDebt > 0
 
   const isPartial = remainingAmount > 0 && remainingAmount < total
 
@@ -104,6 +126,35 @@ export const PaymentModal = ({
     )
   }
 
+  // Paso previo: cuánto de la deuda del cliente se cobra (Enter sin escribir = toda)
+  if (collectStep) {
+    return (
+      <Modal {...shell} accent="brand" title="Cobro de deuda">
+        <div className="pos-pay text-center space-y-5" data-testid="collect-step">
+          <div className="pos-muted">
+            Cliente: <b className="pos-ink">{creditCustomer ? `#${creditCustomer.code} ${creditCustomer.name}` : ''}</b>
+          </div>
+          <div className="pos-pay-amount">
+            <div className="pos-eyebrow">Deuda actual</div>
+            <div className="v pos-num">{formatMoney(collectDebt)}</div>
+          </div>
+          <div className="pos-entry">
+            <div className="pos-eyebrow mb-2">Monto a cobrar (vacío = toda la deuda)</div>
+            <div className="v pos-num">{collectInput ? `$${collectInput}` : formatMoney(collectDebt)}</div>
+          </div>
+          {saleTotal > 0 && (
+            <div className="text-sm pos-muted">Además, venta nueva de {formatMoney(saleTotal)}: se cobra en el mismo pago, como registros separados.</div>
+          )}
+          <div className="flex justify-center gap-3">
+            <button onClick={onConfirmPayment} className="pos-btn is-primary">Continuar <span className="pos-kbd">Enter</span></button>
+            <button onClick={onCancel} className="pos-btn is-ghost-danger"><span className="pos-kbd is-light">Esc</span> Cancelar</button>
+          </div>
+          <KeyboardGuide variant="collect" onKeyPress={onKeyPress} />
+        </div>
+      </Modal>
+    )
+  }
+
   // Elección del medio de pago
   if (!paymentMethod) {
     return (
@@ -113,6 +164,13 @@ export const PaymentModal = ({
             <div className="pos-eyebrow">{isPartial ? 'Resta cobrar' : 'Total a cobrar'}</div>
             <div className="v pos-num">{formatMoney(remainingAmount > 0 ? remainingAmount : total)}</div>
           </div>
+
+          {hasCollection && (
+            <div className="text-sm text-center pos-muted" data-testid="collect-breakdown">
+              {saleTotal > 0 && <span>Venta nueva {formatMoney(saleTotal)} · </span>}
+              <b className="pos-ink">Cobro de deuda {formatMoney(collectAmount)}</b>
+            </div>
+          )}
 
           <PaidSoFar />
 
@@ -150,7 +208,23 @@ export const PaymentModal = ({
     )
   }
 
+  // Medio Crédito sin cliente: primero se elige a quién se le fía
+  if (paymentMethod.kind === 'CREDIT' && !creditCustomer && customerPicker) {
+    return (
+      <Modal {...shell} accent="brand" title={`${paymentMethod.name} · elegí el cliente`}>
+        <div className="pos-pay space-y-4" data-testid="credit-customer-step">
+          <CustomerPicker {...customerPicker} />
+          <div className="flex justify-center">
+            <button onClick={onBack} className="pos-btn"><span className="pos-kbd is-light">Esc</span> Volver</button>
+          </div>
+          <KeyboardGuide variant="customer" onKeyPress={onKeyPress} />
+        </div>
+      </Modal>
+    )
+  }
+
   // Ingreso del monto
+  const isCredit = paymentMethod.kind === 'CREDIT'
   const isMercadoPago = paymentMethod.kind === 'MERCADOPAGO'
   const isCash = paymentMethod.kind === 'CASH'
   const mc = paymentColor(paymentMethod.color)
@@ -164,6 +238,12 @@ export const PaymentModal = ({
           {isMercadoPago && <MpStatus />}
         </div>
 
+        {isCredit && (
+          <div className="text-sm pos-muted" data-testid="credit-note">
+            Fiado a <b className="pos-ink">#{creditCustomer?.code} {creditCustomer?.name}</b> · no es dinero cobrado y no da vuelto (máximo {formatMoney(Math.min(remainingAmount, saleTotal))}).
+          </div>
+        )}
+
         <div className="pos-entry" style={{ borderColor: mc.bg, boxShadow: `0 0 0 6px color-mix(in srgb, ${mc.bg} 18%, transparent)` }}>
           <div className="pos-eyebrow mb-2">
             {isCash ? '¿Con cuánto te pagan?' : 'Monto a cobrar'}
@@ -174,7 +254,7 @@ export const PaymentModal = ({
 
         <PaidSoFar />
 
-        {change > 0 && (
+        {change > 0 && !isCredit && (
           <div className="pos-chip is-ok text-base">
             {isCash ? STRINGS.PAYMENT_CHANGE : STRINGS.PAYMENT_RETURN} <b className="pos-num">{formatMoney(change)}</b>
           </div>
