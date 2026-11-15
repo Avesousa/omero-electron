@@ -34,6 +34,14 @@ export const PAYMENT_COLORS: readonly PaymentColor[] = [
   { key: 'slate', label: 'Gris', bg: '#475569', border: '#94a3b8', text: '#ffffff' },
 ]
 
+/**
+ * Medios que el cobro del POS puede ofrecer. Crédito (fiado) solo con el permiso `POS_CREDITO_USAR` (aunque el medio
+ * esté activo en el servidor o venga de un snapshot offline viejo) y solo si hay una venta nueva que fiar.
+ */
+export function checkoutMethods<T extends { kind?: string }>(methods: readonly T[], opts: { canCredit: boolean; hasSale?: boolean }): T[] {
+  return methods.filter(m => m.kind !== 'CREDIT' || (opts.canCredit && opts.hasSale !== false))
+}
+
 export function paymentColor(key: string | null | undefined): PaymentColor {
   return PAYMENT_COLORS.find(c => c.key === key) ?? PAYMENT_COLORS[0]
 }

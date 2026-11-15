@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { tenantFromAuthHeader, tokenExpiry } from './tenant'
+import { permissionsFromAuthHeader, tenantFromAuthHeader, tokenExpiry } from './tenant'
 
 const TENANT = '724c4579-ea83-4cef-9f37-bcfbfcc12268'
 
@@ -59,5 +59,14 @@ describe('tokenExpiry', () => {
   it('sin header → null', () => {
     expect(tokenExpiry(null)).toBeNull()
     expect(tokenExpiry('Bearer x')).toBeNull()
+  })
+})
+
+describe('permissionsFromAuthHeader', () => {
+  it('devuelve el claim permissions', () => {
+    expect(permissionsFromAuthHeader(bearer({ permissions: ['A', 'POS_CREDITO_USAR'] }))).toEqual(['A', 'POS_CREDITO_USAR'])
+  })
+  it.each([null, '', 'Bearer a.b', bearer({}), bearer({ permissions: 'A' }), bearer({ permissions: [1] })])('sin lista válida (%j) → null', (h) => {
+    expect(permissionsFromAuthHeader(h as string | null)).toBeNull()
   })
 })

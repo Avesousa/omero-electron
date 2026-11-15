@@ -38,6 +38,37 @@ export const OUTBOX_MIGRATIONS: readonly OutboxMigration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    description: 'tipo CREDIT_COLLECTION (cobro de crédito offline): se amplía el CHECK de type',
+    // SQLite no puede modificar un CHECK: se reconstruye la tabla conservando TODAS las filas (incluidas las PENDING) y su `seq`.
+    sql: `
+      CREATE TABLE outbox_v2 (
+        seq             INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id       TEXT    NOT NULL UNIQUE,
+        type            TEXT    NOT NULL CHECK (type IN ('SALE','EXPENSE','CREDIT_COLLECTION')),
+        payload         TEXT    NOT NULL,
+        created_at      TEXT    NOT NULL,
+        source_user_id  TEXT,
+        status          TEXT    NOT NULL DEFAULT 'PENDING'
+                        CHECK (status IN ('PENDING','SENT','REVIEW','FAILED')),
+        attempts        INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        sent_at         TEXT,
+        server_id       TEXT,
+        review_json     TEXT,
+        error           TEXT,
+        dismissed_at    TEXT
+      );
+      INSERT INTO outbox_v2 (seq, client_id, type, payload, created_at, source_user_id, status, attempts,
+                             last_attempt_at, sent_at, server_id, review_json, error, dismissed_at)
+        SELECT seq, client_id, type, payload, created_at, source_user_id, status, attempts,
+               last_attempt_at, sent_at, server_id, review_json, error, dismissed_at FROM outbox;
+      DROP TABLE outbox;
+      ALTER TABLE outbox_v2 RENAME TO outbox;
+      CREATE INDEX idx_outbox_status ON outbox(status, seq);
+    `,
+  },
 ]
 
 export const LATEST_OUTBOX_SCHEMA_VERSION = OUTBOX_MIGRATIONS[OUTBOX_MIGRATIONS.length - 1].version

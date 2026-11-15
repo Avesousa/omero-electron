@@ -8,6 +8,7 @@ import type {
   OutboxCounts,
   OutboxRow,
   OutboxStatus,
+  OutboxType,
   SendResultSent,
 } from './types'
 
@@ -61,7 +62,7 @@ function isCorruption(err: unknown): boolean {
 interface RawRow {
   seq: number
   client_id: string
-  type: 'SALE' | 'EXPENSE'
+  type: OutboxType
   payload: string
   created_at: string
   source_user_id: string | null
@@ -195,7 +196,7 @@ export class OutboxStore {
   /** Próximos ítems por enviar, del más viejo al más nuevo. */
   nextBatch(limit: number): OutboxRow[] {
     return (
-      this.conn.prepare(`SELECT * FROM outbox WHERE status = 'PENDING' ORDER BY seq ASC LIMIT ?`).all(limit) as RawRow[]
+      this.conn.prepare(`SELECT * FROM outbox WHERE status = 'PENDING' ORDER BY created_at ASC, seq ASC LIMIT ?`).all(limit) as RawRow[]
     ).map(toRow)
   }
 
@@ -313,6 +314,40 @@ export class OutboxStore {
       }
     }
     return totals
+  }
+
+  /**
+   * Payloads (ya parseados) de los ítems de los `types` indicados que el dato cacheado todavía NO refleja: mismas
+   * reglas que `activeSaleQuantities` (PENDING siempre; SENT/REVIEW solo si `since` está definido y se enviaron después
+   * del snapshot). Lo usa el ajuste local de deuda de clientes.
+   */
+  activePayloads(types: OutboxType[], options: { since?: string | null } = {}): { type: OutboxType; payload: Record<string, unknown>; createdAt: string }[] {
+    const marks = types.map(() => '?').join(',')
+    const rows = this.conn
+      .prepare(
+        `SELECT type, payload, status, sent_at, created_at FROM outbox
+         WHERE type IN (${marks}) AND (status = 'PENDING' OR (status IN ('SENT','REVIEW') AND sent_at IS NOT NULL))
+         ORDER BY created_at ASC, seq ASC`,
+      )
+      .all(...types) as { type: OutboxType; payload: string; status: OutboxStatus; sent_at: string | null; created_at: string }[]
+
+    const sinceMs = options.since ? Date.parse(options.since) : null
+    const out: { type: OutboxType; payload: Record<string, unknown>; createdAt: string }[] = []
+    for (const r of rows) {
+      if (r.status !== 'PENDING') {
+        if (options.since === undefined) continue
+        if (sinceMs !== null && !Number.isNaN(sinceMs) && Date.parse(r.sent_at!) <= sinceMs - SNAPSHOT_MARGIN_MS) continue
+      }
+      try {
+        const payload = JSON.parse(r.payload) as unknown
+        if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+          out.push({ type: r.type, payload: payload as Record<string, unknown>, createdAt: r.created_at })
+        }
+      } catch {
+        /* payload ilegible: se ignora */
+      }
+    }
+    return out
   }
 
   /** Elimina lo que ya cumplió su retención. Devuelve cuántas filas borró. */

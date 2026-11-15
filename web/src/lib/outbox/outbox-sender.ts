@@ -352,7 +352,7 @@ export class OutboxSender {
           clientId: row.clientId,
           createdAt: row.createdAt,
           sourceUserId: row.sourceUserId,
-          ...(row.type === 'SALE' ? { sale: payload } : { expense: payload }),
+          ...(row.type === 'SALE' ? { sale: payload } : row.type === 'EXPENSE' ? { expense: payload } : { creditCollection: payload }),
         })
       } catch {
         unreadable.push(row)

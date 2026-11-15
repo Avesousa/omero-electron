@@ -5,7 +5,7 @@ import { applyCatalogPayload } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { tokenExpiry } from './tenant'
 import { SCALE_CONFIG_KEYS } from '../scale'
-import { reportEndedResponse } from '../device/session-ended'
+import { endedCodeOf, reportEndedResponse } from '../device/session-ended'
 import type { CatalogRoute, CatalogStore } from './types'
 
 /**
@@ -224,7 +224,7 @@ export class CatalogSyncer {
     const store = this.deps.getStore(tenantId)
     if (!store) return 'ok' // sin caché no hay nada que refrescar
 
-    const routes: { path: string; route: CatalogRoute; optional?: boolean }[] = [
+    const routes: { path: string; route: CatalogRoute; optional?: boolean; permissioned?: boolean }[] = [
       { path: '/api/products', route: { kind: 'products' } },
       { path: '/api/promotions', route: { kind: 'promotions' } },
       // Configuración que el POS necesita sin conexión. No crítica: un 404 (backend viejo) o un error no dispara la
@@ -233,6 +233,10 @@ export class CatalogSyncer {
       // Medios de pago del cobro (teclas, colores, nombres) para poder cobrar sin conexión. No crítica: un backend
       // anterior responde 404 y el POS usa Efectivo/MercadoPago de respaldo.
       { path: '/api/payment-methods/active', route: { kind: 'paymentMethods' }, optional: true },
+      // Clientes activos con su deuda (crédito/fiado) y sus campos extra. Requieren permiso (CLIENTES_VER o POS_CREDITO_USAR):
+      // un 403 de permiso NO es "no autorizado" (no se olvida el token); un 404 (backend viejo) tampoco es un fallo.
+      { path: '/api/customers?onlyActive=true', route: { kind: 'customers' }, optional: true, permissioned: true },
+      { path: '/api/customers/fields', route: { kind: 'customerFields' }, optional: true, permissioned: true },
       // Balanza: sin estas claves el POS no sabría interpretar una etiqueta estando sin conexión.
       ...SCALE_CONFIG_KEYS.map(key => ({
         path: `/api/business/config/${key}`,
@@ -242,7 +246,7 @@ export class CatalogSyncer {
     ]
 
     let failed = false
-    for (const { path, route, optional } of routes) {
+    for (const { path, route, optional, permissioned } of routes) {
       try {
         const res = await this.deps.fetchFn(`${this.deps.backendUrl()}${path}`, {
           headers: { Authorization: authorization, Accept: 'application/json' },
@@ -250,6 +254,7 @@ export class CatalogSyncer {
           signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
         })
         if (res.status === 403 && (await isSubscriptionInactive(res))) return 'ok' // token válido: no se olvida (el outbox lo necesita)
+        if (res.status === 403 && permissioned && !(await endedCodeOf(res))) continue // sin permiso para esta lectura: la sesión sigue válida
         if (res.status === 403) await reportEndedResponse(tenantId, res) // caja revocada/vencida: la sesión termina ya
         if (res.status === 401 || res.status === 403) return 'unauthorized'
         if (!res.ok) {
