@@ -14,6 +14,9 @@ export { ProductsModal } from './modals/ProductsModal'
 export { DailySummaryModal } from './modals/DailySummaryModal'
 export { FreePriceModal } from './modals/FreePriceModal'
 export { WeightEntryModal } from './modals/WeightEntryModal'
+export { ClientsCreditModal } from './modals/ClientsCreditModal'
+export { CustomerPicker } from './modals/CustomerPicker'
+export { CustomerList } from './modals/CustomerList'
 export { MpTransactionsModal } from './modals/MpTransactionsModal'
 
 // Keyboard components
