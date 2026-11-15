@@ -11,6 +11,10 @@ import { useEffect } from 'react'
 export const useKeyboard = (onKeyPress: (key: string) => void) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Campos de texto del POS (ej. nombre del cliente nuevo): se deja escribir normalmente.
+      const target = e.target as HTMLElement | null
+      if (target?.hasAttribute?.('data-pos-text-input')) return
+
       // Map numpad physical keys to their logical equivalents so numpad works
       // in the web app too — but we do NOT restrict to numpad-only keys.
       const keyMap: Record<string, string> = {

@@ -3,11 +3,17 @@ import type { PaymentState, PaymentMethod } from '../types'
 import { STRINGS } from '../constants/strings'
 import { formatMoney } from '@/lib/money'
 import { addPaymentLine, type PaymentLine } from '../utils/payments'
+import { creditAmountError, creditPaid, parseCollectAmount, round2 } from '../utils/credit'
+import type { Customer } from '@/shared/types/credit'
 
 /** Valores finales del cobro que recibe la página al completar la venta. */
 export interface PaymentValues {
   payments: PaymentLine[]
   change: number
+  /** Deuda cobrada en esta operación (0 = solo venta). */
+  collectAmount: number
+  /** Cliente del crédito / de la deuda (null = ninguno). */
+  creditCustomer: Customer | null
 }
 
 const initialState: PaymentState = {
@@ -18,14 +24,61 @@ const initialState: PaymentState = {
   remainingAmount: 0,
   payments: [],
   change: 0,
-  showingChange: false
+  showingChange: false,
+  saleTotal: 0,
+  collectDebt: 0,
+  collectAmount: 0,
+  collectStep: false,
+  collectInput: '',
+  creditCustomer: null,
+}
+
+export interface OpenPaymentOptions {
+  /** Deuda del cliente cargada para cobrar: abre primero el paso «monto a cobrar de la deuda». */
+  creditDebt?: number
+  /** Cliente de esa deuda (también será el del crédito si además se fía parte de la venta nueva). */
+  creditCustomer?: Customer | null
 }
 
 export const usePayment = (showNotification?: (message: string, type: 'success' | 'error' | 'info') => void) => {
   const [paymentState, setPaymentState] = useState<PaymentState>(initialState)
 
-  const openPaymentModal = (total: number) => {
-    setPaymentState({ ...initialState, showPaymentModal: true, remainingAmount: total })
+  /** `total` = total de la venta NUEVA (puede ser 0 si solo se cobra deuda). */
+  const openPaymentModal = (total: number, opts: OpenPaymentOptions = {}) => {
+    const debt = round2(opts.creditDebt ?? 0)
+    setPaymentState({
+      ...initialState,
+      showPaymentModal: true,
+      saleTotal: total,
+      collectDebt: debt,
+      collectAmount: debt,
+      collectStep: debt > 0,
+      creditCustomer: opts.creditCustomer ?? null,
+      remainingAmount: round2(total + debt),
+    })
+  }
+
+  const updateCollectInput = (input: string) => {
+    setPaymentState(prev => ({ ...prev, collectInput: input }))
+  }
+
+  /** Confirma cuánto de la deuda se cobra (vacío = toda) y pasa a elegir los medios. */
+  const confirmCollectAmount = (): boolean => {
+    const { collectInput, collectDebt, saleTotal } = paymentState
+    const r = parseCollectAmount(collectInput, collectDebt)
+    if (r.error) { showNotification?.(r.error, 'error'); return false }
+    setPaymentState(prev => ({
+      ...prev,
+      collectAmount: r.amount,
+      collectStep: false,
+      remainingAmount: round2(saleTotal + r.amount),
+    }))
+    return true
+  }
+
+  /** Elige (o quita) el cliente del crédito. */
+  const setCreditCustomer = (customer: Customer | null) => {
+    setPaymentState(prev => ({ ...prev, creditCustomer: customer }))
   }
 
   const closePaymentModal = () => {
@@ -49,7 +102,7 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
   }
 
   const processPayment = async (onComplete: (saleCompleted: boolean, paymentValues?: PaymentValues) => void) => {
-    const { paymentMethod, paymentInput, remainingAmount, payments } = paymentState
+    const { paymentMethod, paymentInput, remainingAmount, payments, saleTotal, collectAmount, creditCustomer } = paymentState
     const amount = parseFloat(paymentInput) || 0
     const amountToPay = remainingAmount // Amount still needed to complete the sale
 
@@ -60,6 +113,19 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
         showNotification(STRINGS.NOTIF_INVALID_AMOUNT, 'error')
       }
       return
+    }
+
+    // El crédito (fiado) no es dinero entrante: exige cliente, no supera el total de la venta y no da vuelto.
+    if (paymentMethod.kind === 'CREDIT') {
+      if (!creditCustomer) {
+        showNotification?.('Elegí el cliente al que se le fía.', 'error')
+        return
+      }
+      const err = creditAmountError(amount, saleTotal, creditPaid(payments), amountToPay)
+      if (err) {
+        showNotification?.(err, 'error')
+        return
+      }
     }
 
     setPaymentState(prev => ({ ...prev, isProcessingPayment: true }))
@@ -79,9 +145,9 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
     setTimeout(() => {
       // El importe exacto que ingresó el cajero se suma al medio elegido
       const newPayments = addPaymentLine(payments, paymentMethod, amount)
-      const saleCompleted = amount >= amountToPay
-      const newChange = saleCompleted && amount > amountToPay ? amount - amountToPay : 0
-      const newRemainingAmount = saleCompleted ? 0 : amountToPay - amount
+      const saleCompleted = round2(amount) >= round2(amountToPay)
+      const newChange = saleCompleted && round2(amount) > round2(amountToPay) ? round2(amount - amountToPay) : 0
+      const newRemainingAmount = saleCompleted ? 0 : round2(amountToPay - amount)
 
       setPaymentState(prev => ({
         ...prev,
@@ -99,7 +165,7 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
           showNotification(STRINGS.NOTIF_SALE_COMPLETED, 'success')
         }
         closePaymentModal()
-        onComplete(true, { payments: newPayments, change: newChange })
+        onComplete(true, { payments: newPayments, change: newChange, collectAmount, creditCustomer })
       } else if (saleCompleted && newChange > 0) { // Overpayment with change
         if (showNotification) {
           const changeMessage = paymentMethod.kind === 'CASH'
@@ -118,8 +184,8 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
 
   const confirmChange = (onComplete: (saleCompleted: boolean, paymentValues?: PaymentValues) => void) => {
     // Pasar los valores del estado actual al callback
-    const { payments, change } = paymentState
-    onComplete(true, { payments, change })
+    const { payments, change, collectAmount, creditCustomer } = paymentState
+    onComplete(true, { payments, change, collectAmount, creditCustomer })
   }
 
   const resetPayment = () => {
@@ -131,7 +197,13 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
       remainingAmount: 0,
       payments: [],
       change: 0,
-      showingChange: false
+      showingChange: false,
+      saleTotal: 0,
+      collectDebt: 0,
+      collectAmount: 0,
+      collectStep: false,
+      collectInput: '',
+      creditCustomer: null,
     }))
   }
 
@@ -140,6 +212,9 @@ export const usePayment = (showNotification?: (message: string, type: 'success' 
     openPaymentModal,
     closePaymentModal,
     selectPaymentMethod,
+    updateCollectInput,
+    confirmCollectAmount,
+    setCreditCustomer,
     updatePaymentInput,
     processPayment,
     confirmChange,

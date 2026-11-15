@@ -13,6 +13,17 @@ const mpPay = (amount: number): PaymentLine[] => addPaymentLine([], FB_MP, amoun
 
 const cartItem = (o: Partial<CartItem> = {}): CartItem => ({ id: 'i1', code: '001', name: 'Coca 2L', price: 100, quantity: 2, total: 200, ...o })
 
+describe('buildSalePayload: crédito', () => {
+  const credit: PaymentLine = { methodId: '22222222-2222-2222-2222-222222222222', kind: 'CREDIT', name: 'Crédito', color: 'violet', amount: 200 }
+  it('con un pago del medio Crédito lleva el customerId', () => {
+    expect(buildSalePayload([cartItem()], [credit], 0, 'cust-1').customerId).toBe('cust-1')
+  })
+  it('sin pago a crédito el customerId no viaja; sin cliente tampoco', () => {
+    expect(buildSalePayload([cartItem()], cash(200), 0, 'cust-1')).not.toHaveProperty('customerId')
+    expect(buildSalePayload([cartItem()], [credit], 0)).not.toHaveProperty('customerId')
+  })
+})
+
 describe('buildSalePayload', () => {
   it('incluye productName (snapshot), sin costo, y null en promoción ausente', () => {
     const p = buildSalePayload([cartItem()], cash(200), 0)

@@ -4,7 +4,7 @@
  * (`web/src/shared/constants/paymentMethods.ts`): mantener los tres sincronizados.
  */
 
-/** CASH = Efectivo, MERCADOPAGO = medio especial, CUSTOM = los agrega el usuario, CREDIT = reservado (fase 2, aún sin usar). */
+/** CASH = Efectivo, MERCADOPAGO = medio especial, CUSTOM = los agrega el usuario, CREDIT = Crédito/fiado (único por negocio, no es dinero entrante ni genera gasto). */
 export type PaymentMethodKind = 'CASH' | 'MERCADOPAGO' | 'CUSTOM' | 'CREDIT'
 
 export const MAX_PAYMENT_METHODS = 6
@@ -33,6 +33,9 @@ export const PAYMENT_COLORS: readonly PaymentColor[] = [
   { key: 'teal', label: 'Turquesa', bg: '#0d9488', border: '#2dd4bf', text: '#ffffff' },
   { key: 'slate', label: 'Gris', bg: '#475569', border: '#94a3b8', text: '#ffffff' },
 ]
+
+/** El medio Crédito (fiado) no es dinero cobrado: no entra en el vuelto, ni en lo cobrado, ni genera gasto. */
+export const isCreditMethod = (m: { kind?: string } | null | undefined): boolean => m?.kind === 'CREDIT'
 
 /**
  * Medios que el cobro del POS puede ofrecer. Crédito (fiado) solo con el permiso `POS_CREDITO_USAR` (aunque el medio

@@ -1,7 +1,7 @@
 import { STRINGS } from '../../constants/strings'
 
 interface KeyboardGuideProps {
-  variant?: 'main' | 'payment' | 'delete' | 'expense' | 'products'
+  variant?: 'main' | 'payment' | 'delete' | 'expense' | 'products' | 'clients' | 'collect' | 'customer'
   onKeyPress?: (key: string) => void
 }
 
@@ -38,6 +38,25 @@ const GUIDES: Record<NonNullable<KeyboardGuideProps['variant']>, GuideKey[]> = {
     { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
     { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
   ],
+  clients: [
+    { key: '0-9', label: 'Código', tone: 'blue' },
+    { key: 'Enter', label: 'Elegir', tone: 'green' },
+    { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
+  ],
+  customer: [
+    { key: '0-9', label: 'Código', tone: 'blue' },
+    { key: 'Enter', label: 'Elegir', tone: 'green' },
+    { key: '+', label: 'Nuevo', tone: 'green' },
+    { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
+  ],
+  collect: [
+    { key: '0-9', label: 'Monto', tone: 'blue' },
+    { key: 'Enter', label: 'Seguir', tone: 'green' },
+    { key: 'Esc', label: 'Cancelar', tone: 'gray' },
+    { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'red' },
+  ],
   main: [
     { key: '+', label: STRINGS.KEY_ADD, tone: 'green' },
     { key: 'Enter', label: 'Cobrar', tone: 'orange' },
@@ -47,6 +66,7 @@ const GUIDES: Record<NonNullable<KeyboardGuideProps['variant']>, GuideKey[]> = {
     { key: '-', label: STRINGS.KEY_DELETE, tone: 'red' },
     { key: 'Tab', label: 'Resumen', tone: 'blue' },
     { key: 'T', label: 'Mercado Pago', tone: 'mp' },
+    { key: 'C', label: 'Crédito', tone: 'violet' },
     { key: 'Esc', label: STRINGS.KEY_BACK, tone: 'gray' },
     { key: '⌫', label: STRINGS.KEY_BACKSPACE, tone: 'gray' },
   ],
