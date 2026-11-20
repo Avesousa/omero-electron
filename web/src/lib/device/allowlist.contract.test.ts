@@ -113,6 +113,13 @@ describe('extractRoutes / matcher (el detector funciona)', () => {
     expect(isAllowed('/api/expenses/1')).toBe(false)
   })
 
+  it('conciliación MercadoPago: la caja solo lee transacciones; conciliar es del admin (rutas fuera de la lista)', () => {
+    expect(isAllowed('/api/mercadopago/transactions')).toBe(true)
+    for (const no of ['/api/mercadopago/sales', '/api/mercadopago/credit-payments', '/api/mercadopago/links', '/api/mercadopago/links/42', '/api/mercadopago/sales/7/validate', '/api/mercadopago/credit-payments/abc/reset', '/api/mercadopago/transactions/abc/link']) {
+      expect(isAllowed(no), no).toBe(false)
+    }
+  })
+
   it('crédito: solo las rutas del POS; el resto de clientes (alta completa, edición) queda fuera', () => {
     for (const ok of ['/api/customers', '/api/customers/fields', '/api/customers/abc-123/detail', '/api/customers/quick', '/api/credit/collect']) {
       expect(isAllowed(ok), ok).toBe(true)
