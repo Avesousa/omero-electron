@@ -396,6 +396,14 @@ npm --prefix web run check     # typecheck + tests con cobertura
 
 Ojo: `POST /api/mercadopago/events/ticket` debe estar en la lista blanca del backend (`DeviceScopeFilter.POS`), si no la caja (scope=pos) recibe 403 y el SSE nunca conecta. Espejado en `allowlist.contract.test.ts`.
 
+### Conciliación MercadoPago N↔N: el POS es SOLO LECTURA (branch: feature/mp-conciliacion-multiple)
+
+El backend (V40) concilia N↔N con montos (una venta o cobro de crédito con varias transacciones y una transacción repartida entre varios destinos, cada vínculo con su monto). **Conciliar (vincular, quitar, validar, reiniciar) se hace solo desde el admin de `omero`; la caja no concilia.**
+- `MpTransactionsModal` (tecla `T`) lee únicamente `GET /api/mercadopago/transactions` (permiso `POS_MERCADOPAGO_VER`, ya permitido a la caja) y muestra por transacción: vínculos (`Venta #id` / `Cobro de crédito` con su monto), `Vinculado` y `Sin repartir` (`links`, `linkedAmount`, `unallocatedAmount`), y el chip `Sin relacionar` / `Parcial` / `Relacionada`. Sin acciones ni pestañas; el teclado es el de siempre (↑/↓ desplazan, Esc cierra). Con un backend viejo (sin `links`) cae a `saleId`/`saleTotal`.
+- **Allowlist de la caja**: no incluye `/api/mercadopago/sales`, `/credit-payments`, `/links` ni `validate`/`reset` (test en `allowlist.contract.test.ts`). No hay cliente HTTP de conciliación en el POS ni permisos `MERCADOPAGO_VER`/`MERCADOPAGO_CONCILIACION_GESTIONAR` usados en la caja.
+- Las rutas de MP no se cachean ni van al outbox (la lectura siempre es en vivo).
+- Tests: `MpTransactionsModal.test.tsx`.
+
 ### Formato de importes (lib/money.ts, added 2026-10-11)
 
 Todo importe se muestra con **dos decimales** y los separadores de la región del negocio: `$ 1.234.567,89` en
