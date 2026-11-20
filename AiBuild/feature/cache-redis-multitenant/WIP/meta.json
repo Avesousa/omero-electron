@@ -1,0 +1,19 @@
+{
+  "project": "omero-electron",
+  "feature": "cache-redis-multitenant",
+  "ticket_id": null,
+  "raw_input": "POS: usar ETag/304 del backend en catálogo, promociones, config y entitlement, y stock en vivo por SSE + delta",
+  "type": "feature",
+  "branch": "feature/cache-redis-multitenant",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "functional-spec-done",
+  "created_at": "2026-11-21T00:00:00Z",
+  "updated_at": "2026-11-21T00:00:00Z",
+  "git": true,
+  "depends_on": "omero-backend: feature/cache-redis-multitenant",
+  "steps": {"functional_spec": "done","technical_spec": "pending","plan": "pending","build": "pending","finish": "pending"},
+  "open_questions": []
+}
