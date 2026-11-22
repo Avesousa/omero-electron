@@ -1,0 +1,634 @@
+{
+  "project": "omero",
+  "feature": "caja-apertura-cierre",
+  "ticket_id": null,
+  "type": "feature",
+  "tests_required": true,
+  "language": "es",
+  "branch": "feature/caja-apertura-cierre",
+  "main_branch": "develop",
+  "base_branch": "develop",
+  "repos": [
+    "omero-backend",
+    "omero",
+    "omero-electron"
+  ],
+  "worktrees": {
+    "omero-backend": ".wt/caja-backend",
+    "omero": ".wt/caja-admin",
+    "omero-electron": ".wt/caja-pos"
+  },
+  "base_commits": {
+    "omero-backend": "dda69b3",
+    "omero": "5d80f37",
+    "omero-electron": "1b050a6"
+  },
+  "migration": "V43",
+  "git": true,
+  "status": "plan-done",
+  "created_at": "2026-11-22T18:30:00Z",
+  "updated_at": "2026-11-22T19:40:00Z",
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "done",
+    "build": "pending",
+    "finish": "pending"
+  },
+  "open_questions": [
+    "Supuesto: 'Transferencia' = medio de sistema Mercado Pago; medios personalizados van a 'Otros'."
+  ],
+  "decisions": [
+    "Diferencia sobre umbral: confirma el cajero, el admin revisa con confirmación + observación",
+    "Umbrales separados faltante/sobrante, opcionales, detrás de switch; sin configurar no hay pantalla",
+    "Asiento por grupo de medio: Efectivo / Transferencia / Crédito / Otros (ventas y gastos)",
+    "Desactivar conserva historial; POS vuelve al comportamiento anterior; reactivar completa huecos"
+  ],
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 0,
+      "repo": "all",
+      "description": "Línea de base de los 3 worktrees",
+      "detail": "En .wt/caja-backend `./mvnw clean test` (JDK 21); en .wt/caja-admin `yarn test` + `tsc --noEmit`; en .wt/caja-pos `npm --prefix web run check`. Registrar totales en meta.json.",
+      "done_when": "Los tres en verde (o fallas previas documentadas) con el total de tests anotado.",
+      "depends_on": [],
+      "can_parallelize_with": [],
+      "files_affected": [],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T002",
+      "phase": 0,
+      "repo": "omero-backend",
+      "description": "Migración V43 (esquema de caja)",
+      "detail": "Tablas cash_sessions, cash_closings, cash_closing_breakdown, cash_movements, cash_purchase_allocations, cash_set_aside_rules, cash_closing_audit (tenant_id + FK + índices, únicos parciales OPEN/CLOSING por terminal+usuario). Columnas cash_session_id en sales/expenses/credit_payments, expenses.payment_method_id, purchases.money_source/cash_session_id. Seed de 7 claves business_config_key y de 5 permisos (POS_CAJA_ABRIR, POS_CAJA_CERRAR, CAJAS_VER, CAJAS_REVISAR, CAJAS_CORREGIR) para los roles existentes.",
+      "done_when": "FlywayMigrationTest con caso V43 sobre una base en V42 con datos: aplica limpio, columnas nullable, defaults correctos.",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "src/main/resources/db/migration/V43__cash_register.sql",
+        "FlywayMigrationTest.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T003",
+      "phase": 1,
+      "repo": "omero-backend",
+      "description": "Entidades y repositorios de caja",
+      "detail": "CashSession, CashClosing, CashClosingBreakdown, CashMovement, CashPurchaseAllocation, CashSetAsideRule, CashClosingAudit con @TenantId, sin Lombok, setters con Amounts. Enums CashSessionStatus/Kind, PaymentGroup (de PaymentMethodKind, D10), ReviewStatus. Campos nuevos en Sale, Expense, CreditPayment, Purchase.",
+      "done_when": "La app arranca con ddl-auto=validate contra V43 (test de contexto verde).",
+      "depends_on": [
+        "T002"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "model/Cash*.java",
+        "repository/Cash*Repository.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T004",
+      "phase": 1,
+      "repo": "omero-backend",
+      "description": "CashMath (puro) + fixtures compartidos",
+      "detail": "Esperado, diferencia, distribución/restante, identidad del asiento, needsReview(diferencia, enabled, umbralFaltante, umbralSobrante) con umbral vacío = no controla. Fixtures src/test/resources/cash-cases.json con el ejemplo de R5/R6 (91.500) y casos de umbral.",
+      "done_when": "CashMathTest verde con todos los casos del JSON.",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T002",
+        "T003"
+      ],
+      "files_affected": [
+        "service/cash/CashMath.java",
+        "cash-cases.json"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T005",
+      "phase": 1,
+      "repo": "omero-backend",
+      "description": "Permisos y configuración",
+      "detail": "Permission.java + RoleSeeds (admin todo; operador POS_CAJA_*), DeviceScopeFilter (rutas pos de caja), SubscriptionAccessFilter (GET de lectura), validación de claves `number` en BusinessConfigService (vacío permitido).",
+      "done_when": "PermissionEnforcementTest, DeviceScopeFilterTest y RoleMigrationTest verdes con los códigos nuevos.",
+      "depends_on": [
+        "T003"
+      ],
+      "can_parallelize_with": [
+        "T004"
+      ],
+      "files_affected": [
+        "security/Permission.java",
+        "security/RoleSeeds.java",
+        "security/DeviceScopeFilter.java",
+        "service/BusinessConfigService.java"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T006",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "CashSessionService: abrir / iniciar cierre",
+      "detail": "open idempotente (devuelve la OPEN existente), fondo = remaining del último CLOSED (NULL si hay CLOSING), startClosing con 409 CASH_CLOSING_PENDING, 409 CASH_CONTROL_DISABLED con el flag apagado. TransactionTemplate por operación.",
+      "done_when": "Tests de integración: apertura doble, fondo encadenado, bloqueo de segundo cierre, flag apagado, aislamiento de tenants.",
+      "depends_on": [
+        "T003",
+        "T004",
+        "T005"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "service/cash/CashSessionService.java",
+        "CashSessionTest.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T007",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Resumen de caja + apartados sugeridos",
+      "detail": "CashSummaryService (ventas/gastos/cobros por medio y grupo, salidas previas, esperado oculto si cash_show_expected=false) y CashSetAsideCalculator con HQL agrupado (ITEM_REVENUE / LINE_COST_SUM) por negocio/categoría. Sin N+1: una consulta por concepto.",
+      "done_when": "Tests: resumen de una caja de 2 días con crédito y huérfanos; sugeridos por SALE_TOTAL/COST/PERCENT; cantidad de queries acotada (Hibernate statistics).",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T008"
+      ],
+      "files_affected": [
+        "service/cash/CashSummaryService.java",
+        "service/cash/CashSetAsideCalculator.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T008",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Confirmar cierre (asiento)",
+      "detail": "confirmClosing: recalcula con CashMath, persiste closing + breakdown + movimientos (gastos al cierre crean Expense con payment_method_id y cash_session_id), columnas por grupo (D10), accounting_date en zona del tenant, completa opening_amount de la sesión siguiente, review PENDING según umbrales con snapshot. Idempotente por clientId. Restante negativo → 400 CASH_REMAINING_NEGATIVE.",
+      "done_when": "Test con el ejemplo de R5: faltante 500, identidad 91.500, columnas por grupo; umbral faltante 1000 / sin umbral sobrante; reintento con el mismo clientId no duplica.",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "service/cash/CashSessionService.java",
+        "CashClosingTest.java"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T009",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Ventas/gastos/cobros asociados a la caja + D7",
+      "detail": "cashSessionId opcional en POST /sales, /expenses (+ paymentMethodId), /credit/collect, validado por tenant (404). Con flag activo y sin caja → caja AUTO_DAILY del usuario. Con flag apagado no se aplica (D9).",
+      "done_when": "Tests: venta con caja, venta sin caja con flag on/off, caja de otro tenant 404, gasto con medio MP.",
+      "depends_on": [
+        "T006"
+      ],
+      "can_parallelize_with": [
+        "T007",
+        "T008"
+      ],
+      "files_affected": [
+        "service/SaleService.java",
+        "service/ExpenseService.java",
+        "service/CreditService.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T010",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Revisión y corrección desde el admin",
+      "detail": "review (nota obligatoria, idempotente, 409 CASH_REVIEW_NOT_PENDING), correct (auditoría before/after, recalcula, propaga restante a la sesión siguiente, no reabre revisión), cerrar desde el admin OPEN/CLOSING aun con flag apagado.",
+      "done_when": "Tests: revisar, revisar dos veces, corregir con propagación del fondo, auditoría registrada, permisos.",
+      "depends_on": [
+        "T008"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "service/cash/CashSessionService.java",
+        "CashReviewTest.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T011",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Compras con plata de la caja",
+      "detail": "moneySource/cashSessionId/cashAllocations en POST /purchases; cash_purchase_allocations; disponible = monto − asignado; 409 CASH_ALLOCATION_EXCEEDS; GET /cash-movements/unallocated-purchases. Respeta preview (rollback).",
+      "done_when": "Tests: asignación total y parcial, exceso, preview no persiste, alerta lista saldo.",
+      "depends_on": [
+        "T008"
+      ],
+      "can_parallelize_with": [
+        "T010"
+      ],
+      "files_affected": [
+        "service/PurchaseService.java",
+        "service/cash/CashPurchaseService.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T012",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Asiento diario (ledger) + export",
+      "detail": "CashLedgerService: GROUP BY accounting_date [+ terminal|user|session], columnas por grupo, restante solo fuera de GENERAL, CSV.",
+      "done_when": "Tests: dos cierres el mismo día suman; restante ausente en GENERAL y presente por caja; CSV con encabezados en español.",
+      "depends_on": [
+        "T008"
+      ],
+      "can_parallelize_with": [
+        "T010",
+        "T011"
+      ],
+      "files_affected": [
+        "service/cash/CashLedgerService.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T013",
+      "phase": 2,
+      "repo": "omero-backend",
+      "description": "Backfill LEGACY_DAILY (activar/reactivar)",
+      "detail": "Job @Async con TenantContext.runAs, por lotes de días, idempotente por (día, usuario); se dispara al PUT de cash_control_enabled=true y por endpoint admin. Cubre reactivación (solo días sin caja).",
+      "done_when": "Tests: activar crea cajas cerradas sin arqueo y asigna ventas; correr dos veces no duplica; desactivar/reactivar completa solo el hueco.",
+      "depends_on": [
+        "T009"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "service/cash/CashBackfillJob.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T014",
+      "phase": 3,
+      "repo": "omero-backend",
+      "description": "Controllers REST de caja",
+      "detail": "CashSessionController, CashLedgerController, CashSetAsideRuleController, TerminalController según tabla del spec técnico; ApiResponse + errores con code.",
+      "done_when": "Tests HTTP por endpoint (200/400/403/404/409) y aislamiento de tenants.",
+      "depends_on": [
+        "T007",
+        "T010",
+        "T011",
+        "T012"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "controller/Cash*.java",
+        "controller/TerminalController.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T015",
+      "phase": 3,
+      "repo": "omero-backend",
+      "description": "Outbox: tipos de caja + cashSessionId",
+      "detail": "CASH_SESSION_OPEN / CLOSING_START / CLOSE en /api/sync/batch, idempotentes; SALE/EXPENSE/CREDIT_COLLECTION con cashSessionId; sesión perezosa si la venta llega antes que la apertura; caja revocada igual que ventas.",
+      "done_when": "SyncControllerTest: secuencia offline completa, lote partido, duplicados, caja revocada.",
+      "depends_on": [
+        "T008",
+        "T009"
+      ],
+      "can_parallelize_with": [
+        "T014"
+      ],
+      "files_affected": [
+        "service/SyncItemProcessor.java",
+        "dto/sync/*"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T016",
+      "phase": 3,
+      "repo": "omero-backend",
+      "description": "Filtro por caja en dashboard/estadísticas",
+      "detail": "cashSessionIds en overview, stats, daily-series, /stats/sales, /sales, /sales/summary (ReportAggregationRepository). Sin filtro no cambia nada.",
+      "done_when": "Goldens de DashboardStatsCharacterizationTest sin regrabar + test nuevo con filtro de una y de varias cajas.",
+      "depends_on": [
+        "T009"
+      ],
+      "can_parallelize_with": [
+        "T014",
+        "T015"
+      ],
+      "files_affected": [
+        "repository/ReportAggregationRepository.java",
+        "service/DashboardService.java"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T017",
+      "phase": 3,
+      "repo": "omero-backend",
+      "description": "Perfil local H2",
+      "detail": "LocalSchemaMigrator.migrateCashSchema (columnas en tablas existentes + claves), AdminService.cleanupTransactionalData borra tablas de caja.",
+      "done_when": "LocalSchemaMigratorTest verde con el caso de caja.",
+      "depends_on": [
+        "T003"
+      ],
+      "can_parallelize_with": [
+        "T006"
+      ],
+      "files_affected": [
+        "config/LocalSchemaMigrator.java",
+        "service/AdminService.java"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T018",
+      "phase": 1,
+      "repo": "omero-electron",
+      "description": "lib/cash: cashMath espejo + terminal key",
+      "detail": "cashMath.ts con los mismos fixtures (copia de cash-cases.json), terminal.ts (desktop: identidad de la caja vía endpoint local; web: localStorage omero_terminal_id con try/catch), tipos.",
+      "done_when": "Tests de cashMath con los fixtures y de terminal en web/desktop.",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "web/src/lib/cash/*"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T019",
+      "phase": 2,
+      "repo": "omero-electron",
+      "description": "Outbox y borrador de cierre (desktop) + interceptación",
+      "detail": "Migración del outbox con tabla cash_drafts; data-layer intercepta POST /api/cash-sessions* (lista blanca) → tipos nuevos del batch; endpoints locales del borrador. Web: borrador en localStorage.",
+      "done_when": "outbox.integration.test: apertura→ventas→cierre offline, reinicio conserva el borrador, idempotencia.",
+      "depends_on": [
+        "T015",
+        "T018"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "web/src/lib/outbox/*",
+        "web/src/lib/data-layer.ts"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T020",
+      "phase": 2,
+      "repo": "omero-electron",
+      "description": "useCashSession + apertura (I y automática)",
+      "detail": "Hook con estados none/open/closing-pending, tecla I (useKeyboard.electron/web, KeyboardGuide), apertura automática al escanear/tipear código, cashSessionId en useSales/useExpenses/useCreditCollection, config cash_* cacheada en settings, todo oculto con el flag apagado.",
+      "done_when": "Tests: I abre con fondo propuesto, escaneo abre y agrega el producto, flag apagado = comportamiento actual (tests existentes verdes).",
+      "depends_on": [
+        "T014",
+        "T018"
+      ],
+      "can_parallelize_with": [
+        "T019"
+      ],
+      "files_affected": [
+        "web/src/app/pos/hooks/useCashSession.ts",
+        "useKeyboard.*.ts",
+        "page.tsx"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T021",
+      "phase": 3,
+      "repo": "omero-electron",
+      "description": "Badge de caja + resumen por caja (TAB)",
+      "detail": "CashStatusBadge (abierta desde, fondo, aviso +24 h, cierre pendiente); CashSummaryModal con /cash-sessions/{id}/summary + pendientes del outbox; apartados con show_in_summary reemplazan el cableado de cigarrillo.",
+      "done_when": "Tests de render y del cálculo con pendientes; DailySummaryModal intacto con flag apagado.",
+      "depends_on": [
+        "T020"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "web/src/app/pos/components/cash/*"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T022",
+      "phase": 3,
+      "repo": "omero-electron",
+      "description": "Asistente de cierre",
+      "detail": "CashClosingWizard: pasos R4, teclado, borrador por paso, bloqueo R3, restante negativo, a ciegas, pantalla de diferencia solo si control activo y umbral superado.",
+      "done_when": "Tests: flujo feliz, retomar borrador, bloqueo, a ciegas, con/sin control de diferencias, offline.",
+      "depends_on": [
+        "T019",
+        "T021"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "web/src/app/pos/components/cash/CashClosingWizard.tsx"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T023",
+      "phase": 4,
+      "repo": "omero-electron",
+      "description": "Contrato de allowlist y permisos del POS",
+      "detail": "allowlist.contract.test.ts con las rutas nuevas; permissions.ts + test de contrato.",
+      "done_when": "`npm --prefix web run check` verde (umbral 85 % en lib/cash y outbox).",
+      "depends_on": [
+        "T020"
+      ],
+      "can_parallelize_with": [
+        "T021",
+        "T022"
+      ],
+      "files_affected": [
+        "web/src/lib/device/allowlist.contract.test.ts",
+        "web/src/shared/permissions.ts"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T024",
+      "phase": 1,
+      "repo": "omero",
+      "description": "Clientes API + tipos + permisos",
+      "detail": "lib/cashApi.ts, cashRulesApi.ts, cashLedger.ts (lógica pura: columnas, agrupación, export), tipos; permissions.ts + contract test; navConfig (Caja → Asientos / Cierres a revisar).",
+      "done_when": "Tests de lógica pura y de contrato de permisos verdes.",
+      "depends_on": [
+        "T014"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "src/lib/cash*.ts",
+        "src/shared/permissions.ts",
+        "navConfig.ts"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    },
+    {
+      "id": "T025",
+      "phase": 3,
+      "repo": "omero",
+      "description": "Configuración → Caja + apartados",
+      "detail": "Sección caja en configSections: claves R10 (switch de diferencias oculta umbrales; umbrales vacíos con DecimalInput), ABM de apartados con negocio/categoría y base.",
+      "done_when": "Smoke tests + test de payload (vacío vs 0).",
+      "depends_on": [
+        "T024"
+      ],
+      "can_parallelize_with": [
+        "T026",
+        "T027"
+      ],
+      "files_affected": [
+        "src/app/admin/configuracion/caja/*"
+      ],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T026",
+      "phase": 3,
+      "repo": "omero",
+      "description": "Asientos (tabla tipo planilla)",
+      "detail": "Pantalla /admin/caja/asientos: General/Dispositivo/Usuario/Caja, rango de fechas, columnas por grupo, filas expandibles, totales, CSV.",
+      "done_when": "Smoke test + tests de cashLedger con dos cierres del mismo día.",
+      "depends_on": [
+        "T024"
+      ],
+      "can_parallelize_with": [
+        "T025",
+        "T027"
+      ],
+      "files_affected": [
+        "src/app/admin/caja/asientos/*"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T027",
+      "phase": 3,
+      "repo": "omero",
+      "description": "Detalle, revisión y corrección de cierres",
+      "detail": "/admin/caja/[id] (movimientos, sistema vs cajero, auditoría, Corregir, cerrar pendiente), /admin/caja/revision (Pendientes/Revisados, Confirmar revisión con observación), contador en el menú.",
+      "done_when": "Smoke tests + flujo de revisión y corrección con API mockeada.",
+      "depends_on": [
+        "T024"
+      ],
+      "can_parallelize_with": [
+        "T025",
+        "T026"
+      ],
+      "files_affected": [
+        "src/app/admin/caja/[id]/*",
+        "src/app/admin/caja/revision/*"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T028",
+      "phase": 3,
+      "repo": "omero",
+      "description": "Cajas/terminales, compras, gastos y filtro de dashboard",
+      "detail": "Configuración → Cajas con caja actual/pendientes/+24 h y terminales web; Compras: origen del dinero + alerta + asignación parcial; Gastos: medio de pago; Dashboard: filtro de cajas propagado a overview.",
+      "done_when": "Smoke tests de cada pantalla tocada + test de asignación en usePurchasePage.",
+      "depends_on": [
+        "T024",
+        "T016"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "src/app/admin/devices/*",
+        "src/app/admin/purchases/*",
+        "src/app/dashboard/*"
+      ],
+      "complexity": "L",
+      "status": "pending"
+    },
+    {
+      "id": "T029",
+      "phase": 4,
+      "repo": "all",
+      "description": "Prueba punta a punta y performance",
+      "detail": "Backend completo verde; flujo manual POS desktop offline→online contra backend local; EXPLAIN del ledger y del resumen con 50k ventas (usar índices de V43).",
+      "done_when": "Las 3 suites verdes; consultas del ledger y del resumen < 200 ms con 50k ventas.",
+      "depends_on": [
+        "T013",
+        "T015",
+        "T016",
+        "T017",
+        "T022",
+        "T023",
+        "T025",
+        "T026",
+        "T027",
+        "T028"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [],
+      "complexity": "M",
+      "status": "pending"
+    },
+    {
+      "id": "T030",
+      "phase": 5,
+      "repo": "all",
+      "description": "Documentación (CLAUDE.md de los 3 repos)",
+      "detail": "Sección 'Apertura y cierre de caja (V43)' con contrato, decisiones D1–D10, orden de despliegue y deuda técnica.",
+      "done_when": "Secciones agregadas y revisadas.",
+      "depends_on": [
+        "T029"
+      ],
+      "can_parallelize_with": [],
+      "files_affected": [
+        "CLAUDE.md"
+      ],
+      "complexity": "S",
+      "status": "pending"
+    }
+  ]
+}
