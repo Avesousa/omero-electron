@@ -18,7 +18,7 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 | 7 | `onboarding-guias` | omero-backend → omero → omero-electron | 1 | asistente, Primeros pasos, framework de guías + guías P1 |
 | 8 | `retencion-datos` | omero-backend | 1, 2 | borrado a los 60 días (en dry-run hasta validar) |
 | 9 | `metricas-negocio` | omero-backend | 1, 2 | schema analytics, snapshots, health score, tableros Grafana |
-| 10 | `consola-omero` | omero-backend → omero | 1, 3, 9 | sección `/plataforma` dentro del admin (o `app.omero.ar/admin` por dominio en el mismo servicio de Railway) para plantillas, journeys, envíos, clientes, métricas |
+| 10 | `consola-omero` | omero-backend → omero | 1, 3 | **v1 solo correo** en `panel.omero.ar` (sección `/plataforma` del admin, mismo servicio de Railway): plantillas de email, journeys, envíos, estado del canal. v2: clientes, métricas, otros canales |
 | 11 | `notificaciones-whatsapp` | omero-backend | 1 | cuando se elija proveedor |
 | — | Adaptador de email por API | omero-backend | 3 | cuando se elija proveedor (seguimiento de entregas/rebotes) |
 
@@ -28,7 +28,7 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 - Plantillas de email: layout y bloques en el repo, contenido en base editable desde la consola, render propio (no del proveedor).
 - Retención: datos del negocio 60 días después de la baja; contacto se conserva salvo supresión. TyC y privacidad actualizados.
 - Suspensión por falta de pago: 30 días (configurable) antes de la baja.
-- Consola interna **dentro de `omero`** (sin app nueva): `app.omero.ar/admin` como segundo dominio del mismo servicio, o `/plataforma` con acceso desde el menú; roles `OMERO_ADMIN` / `OMERO_OPERADOR` en el mismo login.
+- Consola interna **dentro de `omero`** (sin app nueva) en **`panel.omero.ar`**, dominio extra del mismo servicio de Railway que entra directo a la consola (respaldo: `/plataforma` + acceso en el menú); roles `OMERO_ADMIN` / `OMERO_OPERADOR` en el mismo login. **v1 solo correo.**
 - Motivos de baja según `motivos-de-baja.md`.
 
 ## Migraciones reservadas (renumerar al mergear si chocan)

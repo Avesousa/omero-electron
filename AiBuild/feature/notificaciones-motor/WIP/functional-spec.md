@@ -21,7 +21,7 @@ Un único motor que recibe **eventos** de negocio ("pago aprobado", "cobro recha
 2. **Conexión email** (`notificaciones-email`): render de plantillas HTML con marca + adaptador SMTP genérico + adaptadores por API.
 3. **Conexión WhatsApp** (`notificaciones-whatsapp`).
 4. **Primer flujo** (`flujo-cobro-exitoso-bienvenida`): recibo de cobro + bienvenida/onboarding.
-5. **Consola Omero** (`consola-omero`): app.omero.ar/admin para editar plantillas, reglas y ver envíos.
+5. **Consola Omero** (`consola-omero`): `panel.omero.ar` (dentro de la app omero) para editar plantillas, reglas y ver envíos; v1 solo correo.
 
 ## Detailed description
 
@@ -176,7 +176,7 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 - Motor dentro de omero-backend; billing solo emite eventos.
 - Proveedores de email y WhatsApp a definir: el motor se construye completo con adaptadores intercambiables y modo `log`.
 - Retención: datos del negocio 60 días después de la baja; contacto hasta pedido de supresión.
-- Configuración de plantillas/reglas desde una consola propia en `app.omero.ar/admin` (roles `OMERO_ADMIN` y `OMERO_OPERADOR`).
+- Configuración de plantillas/reglas desde la consola en `panel.omero.ar`, dentro de la app omero (roles `OMERO_ADMIN` y `OMERO_OPERADOR`).
 
 ## Open questions
 - Ventana de suspensión antes de la baja definitiva: se deja configurable con **30 días** por defecto (`BILLING_SUSPENSION_DAYS`).
