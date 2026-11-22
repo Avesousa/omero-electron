@@ -64,6 +64,37 @@ describe('adjustStockBody', () => {
     ])
   })
 
+  it('forma del delta (data.items[]): misma resta, piso 0, sin tocar la versión ni el código 000', () => {
+    const store = getOutboxStore(TENANT)!
+    store.enqueue({ type: 'SALE', payload: sale([['001', 2], ['002', 10]]) })
+    const body = JSON.stringify({
+      success: true,
+      data: { version: 12, items: [{ code: '001', stock: 10 }, { code: '002', stock: 4 }, { code: '003', stock: 7 }, { code: '000', stock: 0 }] },
+    })
+    const out = JSON.parse(adjustStockBody(TENANT, { kind: 'stockDelta', since: 5 }, body))
+    expect(out.data).toEqual({
+      version: 12,
+      items: [{ code: '001', stock: 8 }, { code: '002', stock: 0 }, { code: '003', stock: 7 }, { code: '000', stock: 0 }],
+    })
+  })
+
+  it('delta sin pendientes devuelve el MISMO texto', () => {
+    getOutboxStore(TENANT)
+    const body = JSON.stringify({ success: true, data: { version: 1, items: [{ code: '001', stock: 3 }] } })
+    expect(adjustStockBody(TENANT, { kind: 'stockDelta', since: 0 }, body)).toBe(body)
+  })
+
+  it.each([
+    ['sin items', { success: true, data: { version: 1 } }],
+    ['items no es lista', { success: true, data: { version: 1, items: 'x' } }],
+    ['data nulo', { success: true, data: null }],
+  ])('delta con forma inesperada (%s) devuelve el mismo texto', (_n, payload) => {
+    const store = getOutboxStore(TENANT)!
+    store.enqueue({ type: 'SALE', payload: sale([['001', 2]]) })
+    const body = JSON.stringify(payload)
+    expect(adjustStockBody(TENANT, { kind: 'stockDelta', since: 0 }, body)).toBe(body)
+  })
+
   it('producto por peso: resta kilos y no deja ruido de punto flotante', () => {
     const store = getOutboxStore(TENANT)!
     const items = [

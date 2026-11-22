@@ -24,6 +24,10 @@ function makeStore(): CatalogStore & { replaceProducts: ReturnType<typeof vi.fn>
     upsertProduct: vi.fn(),
     getSetting: vi.fn(() => null),
     upsertSetting: vi.fn(),
+    getEtag: vi.fn(() => null),
+    setEtag: vi.fn(),
+    touch: vi.fn(),
+    applyStockDelta: vi.fn(() => 0),
     getProducts: vi.fn(() => []),
     getPromotions: vi.fn(() => []),
     findProduct: vi.fn(() => null),
@@ -101,8 +105,8 @@ describe('sincronización periódica', () => {
       'https://backend.test/api/business/config/scale_weight_decimals',
     ])
     expect((fetchFn.mock.calls[0][1] as RequestInit).headers).toMatchObject({ Authorization: auth })
-    expect(store.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data)
-    expect(store.replacePromotions).toHaveBeenCalledWith(PROMOS.data)
+    expect(store.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data, expect.any(Date), null)
+    expect(store.replacePromotions).toHaveBeenCalledWith(PROMOS.data, expect.any(Date), null)
     expect(s.online).toBe(true)
     expect(s.inRecovery).toBe(false)
     s.stop()
@@ -283,7 +287,7 @@ describe('configuración de negocio (mp_offline)', () => {
     const s = syncer(makeFetch({ health: 200, products: 200 }))
     s.remember(TENANT, validAuth())
     await vi.advanceTimersByTimeAsync(INTERVAL)
-    expect(store.upsertSetting).toHaveBeenCalledWith('mp_offline', JSON.stringify({ key: 'mp_offline', value: 'true' }))
+    expect(store.upsertSetting).toHaveBeenCalledWith('mp_offline', JSON.stringify({ key: 'mp_offline', value: 'true' }), expect.any(Date), null)
     s.stop()
   })
 
@@ -291,8 +295,8 @@ describe('configuración de negocio (mp_offline)', () => {
     const s = syncer(makeFetch({ health: 200, products: 200 }))
     s.remember(TENANT, validAuth())
     await vi.advanceTimersByTimeAsync(INTERVAL)
-    expect(store.upsertSetting).toHaveBeenCalledWith('scale_enabled', JSON.stringify({ key: 'scale_enabled', value: 'true' }))
-    expect(store.upsertSetting).toHaveBeenCalledWith('scale_barcode_templates', JSON.stringify({ key: 'scale_barcode_templates', value: null }))
+    expect(store.upsertSetting).toHaveBeenCalledWith('scale_enabled', JSON.stringify({ key: 'scale_enabled', value: 'true' }), expect.any(Date), null)
+    expect(store.upsertSetting).toHaveBeenCalledWith('scale_barcode_templates', JSON.stringify({ key: 'scale_barcode_templates', value: null }), expect.any(Date), null)
     expect(store.upsertSetting).toHaveBeenCalledTimes(6)
     s.stop()
   })
@@ -502,5 +506,189 @@ describe('renovador de sesión (caja de dispositivo)', () => {
     await s.syncAll()
     expect(s.hasTenant(TENANT)).toBe(false)
     s.stop()
+  })
+})
+
+
+describe('caché condicional (ETag) y delta de stock', () => {
+  const ETAG = { products: '"3-10"', promotions: '"7"', mp: '"cfg-1"' }
+  type Call = { url: string; inm: string | undefined }
+
+  /** Estado del backend falso: ETags actuales, respuesta del delta y qué pasa con las demás rutas. */
+  function backendFake(state: { etags: boolean; delta?: number | 'error'; deltaVersion?: number; products?: string }) {
+    const calls: Call[] = []
+    const fn = vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input)
+      const inm = (init?.headers as Record<string, string> | undefined)?.['If-None-Match']
+      calls.push({ url: url.replace('https://backend.test', ''), inm })
+      const reply = (etag: string | null, body: unknown) => {
+        if (state.etags && etag && inm === etag) return new Response(null, { status: 304, headers: { ETag: etag } })
+        return new Response(JSON.stringify(body), { status: 200, headers: etag && state.etags ? { ETag: etag } : {} })
+      }
+      if (url.includes('/api/products/stock')) {
+        if (state.delta === 'error') throw new TypeError('fetch failed')
+        if ((state.delta ?? 200) !== 200) return new Response('{}', { status: state.delta as number })
+        return new Response(JSON.stringify({ success: true, data: { version: state.deltaVersion ?? 12, items: [{ code: '001', stock: 4 }] } }), { status: 200 })
+      }
+      if (url.endsWith('/api/products')) return reply(state.products ?? ETAG.products, PRODUCTS)
+      if (url.endsWith('/api/promotions')) return reply(ETAG.promotions, PROMOS)
+      if (url.endsWith('/api/business/config/mp_offline')) return reply(ETAG.mp, { success: true, data: { key: 'mp_offline', value: 'true' } })
+      if (url.includes('/api/business/config/scale_')) return new Response(JSON.stringify({ success: true, data: { key: 'k', value: null } }), { status: 200 })
+      return new Response('nope', { status: 404 })
+    })
+    return { fn, calls }
+  }
+
+  /** Store con snapshot y ETags ya guardados. */
+  function storeWithEtags(etags: Record<string, string | null>) {
+    const st = makeStore()
+    ;(st.getEtag as ReturnType<typeof vi.fn>).mockImplementation((k: string) => etags[k] ?? null)
+    ;(st.setEtag as ReturnType<typeof vi.fn>).mockImplementation((k: string, v: string | null) => {
+      etags[k] = v
+    })
+    ;(st.getMeta as ReturnType<typeof vi.fn>).mockImplementation((r: string) => ({ resource: r, lastSyncAt: '', itemCount: 1 }))
+    ;(st.getSetting as ReturnType<typeof vi.fn>).mockImplementation((k: string) => (k === 'mp_offline' ? { json: '{}', syncedAt: '' } : null))
+    return st
+  }
+
+  async function runCycle(s: CatalogSyncer) {
+    s.remember(TENANT, validAuth())
+    await vi.advanceTimersByTimeAsync(INTERVAL)
+    s.stop()
+  }
+  const mk = (fn: ReturnType<typeof vi.fn>, st: CatalogStore) => syncer(fn as never, () => st)
+  const syncCalls = (calls: Call[]) => calls.filter((c) => !c.url.includes('scale_') && !c.url.includes('payment') && !c.url.includes('customers'))
+
+  it('primer ciclo (sin ETag guardado): sin If-None-Match, sin delta, y guarda el ETag del 200', async () => {
+    const etags: Record<string, string | null> = {}
+    const st = storeWithEtags(etags)
+    ;(st.getMeta as ReturnType<typeof vi.fn>).mockReturnValue(null)
+    ;(st.getSetting as ReturnType<typeof vi.fn>).mockReturnValue(null)
+    const { fn, calls } = backendFake({ etags: true })
+    await runCycle(mk(fn, st))
+    expect(syncCalls(calls).map((c) => c.url)).toEqual(['/api/products', '/api/promotions', '/api/business/config/mp_offline'])
+    expect(calls.every((c) => c.inm === undefined)).toBe(true)
+    expect(st.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data, expect.any(Date), ETAG.products)
+    expect(st.replacePromotions).toHaveBeenCalledWith(PROMOS.data, expect.any(Date), ETAG.promotions)
+    expect(st.upsertSetting).toHaveBeenCalledWith('mp_offline', expect.any(String), expect.any(Date), ETAG.mp)
+  })
+
+  it('un ETag sin snapshot local no se manda nunca', async () => {
+    const st = storeWithEtags({ promotions: ETAG.promotions })
+    ;(st.getMeta as ReturnType<typeof vi.fn>).mockReturnValue(null)
+    const { fn, calls } = backendFake({ etags: true })
+    await runCycle(mk(fn, st))
+    expect(calls.find((c) => c.url === '/api/promotions')!.inm).toBeUndefined()
+  })
+
+  it('con ETag y snapshot: 304 → touch y éxito, sin reescribir ni activar la recuperación', async () => {
+    const st = storeWithEtags({ products: ETAG.products, promotions: ETAG.promotions, 'setting:mp_offline': ETAG.mp })
+    const { fn, calls } = backendFake({ etags: true, deltaVersion: 10 })
+    const s = mk(fn, st)
+    await runCycle(s)
+    expect(calls.find((c) => c.url === '/api/promotions')!.inm).toBe(ETAG.promotions)
+    expect(calls.find((c) => c.url === '/api/business/config/mp_offline')!.inm).toBe(ETAG.mp)
+    expect(st.touch).toHaveBeenCalledWith('products')
+    expect(st.touch).toHaveBeenCalledWith('promotions')
+    expect(st.touch).toHaveBeenCalledWith('setting:mp_offline')
+    expect(st.replaceProducts).not.toHaveBeenCalled()
+    expect(st.replacePromotions).not.toHaveBeenCalled()
+    expect(s.inRecovery).toBe(false)
+    expect(s.online).toBe(true)
+  })
+
+  it('no manda If-None-Match a medios de pago ni clientes', async () => {
+    const st = storeWithEtags({ products: ETAG.products })
+    const { fn, calls } = backendFake({ etags: true })
+    await runCycle(mk(fn, st))
+    for (const c of calls.filter((x) => x.url.includes('payment') || x.url.includes('customers'))) expect(c.inm).toBeUndefined()
+  })
+
+  it('delta primero: con versión de stock pide ?since=, aplica los items y recompone el ETag; luego products da 304', async () => {
+    const etags: Record<string, string | null> = { products: '"3-10"' }
+    const st = storeWithEtags(etags)
+    const { fn, calls } = backendFake({ etags: true, deltaVersion: 12, products: '"3-12"' })
+    await runCycle(mk(fn, st))
+    expect(calls[0].url).toBe('/api/products/stock?since=10')
+    expect(calls[0].inm).toBeUndefined()
+    expect(st.applyStockDelta).toHaveBeenCalledWith([{ code: '001', stock: 4 }])
+    expect(etags.products).toBe('"3-12"')
+    expect(calls.find((c) => c.url === '/api/products')!.inm).toBe('"3-12"')
+    expect(st.touch).toHaveBeenCalledWith('products')
+    expect(st.replaceProducts).not.toHaveBeenCalled()
+  })
+
+  it.each([410, 400, 404, 500])('delta con %i: borra el ETag de products y baja el catálogo completo', async (status) => {
+    const etags: Record<string, string | null> = { products: '"3-10"' }
+    const st = storeWithEtags(etags)
+    const { fn, calls } = backendFake({ etags: true, delta: status })
+    await runCycle(mk(fn, st))
+    expect(st.applyStockDelta).not.toHaveBeenCalled()
+    expect(calls.find((c) => c.url === '/api/products')!.inm).toBeUndefined()
+    expect(st.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data, expect.any(Date), ETAG.products)
+    expect(log).toHaveBeenCalled()
+  })
+
+  it('delta con cuerpo inválido borra el ETag', async () => {
+    const etags: Record<string, string | null> = { products: '"3-10"' }
+    const st = storeWithEtags(etags)
+    const { fn } = backendFake({ etags: true })
+    fn.mockImplementationOnce(async () => new Response('{"success":true,"data":{"version":"x"}}', { status: 200 }))
+    await runCycle(mk(fn, st))
+    expect(st.setEtag).toHaveBeenCalledWith('products', null)
+  })
+
+  it('delta con versión menor a la guardada (backend reiniciado): borra el ETag', async () => {
+    const etags: Record<string, string | null> = { products: '"3-10"' }
+    const st = storeWithEtags(etags)
+    const { fn, calls } = backendFake({ etags: true, deltaVersion: 2 })
+    await runCycle(mk(fn, st))
+    expect(etags.products).toBeNull()
+    expect(calls.find((c) => c.url === '/api/products')!.inm).toBeUndefined()
+  })
+
+  it('un ETag con otro formato no pide delta', async () => {
+    const st = storeWithEtags({ products: 'W/"abc"' })
+    const { fn, calls } = backendFake({ etags: true })
+    await runCycle(mk(fn, st))
+    expect(calls.some((c) => c.url.includes('/stock'))).toBe(false)
+  })
+
+  it('falla de red en el delta se ignora (no borra el ETag); la ruta de productos decide el resultado', async () => {
+    const etags: Record<string, string | null> = { products: '"3-10"' }
+    const st = storeWithEtags(etags)
+    const { fn } = backendFake({ etags: true, delta: 'error', deltaVersion: 10 })
+    const s = mk(fn, st)
+    await runCycle(s)
+    expect(etags.products).toBe('"3-10"')
+    expect(s.inRecovery).toBe(false)
+  })
+
+  it('backend viejo: 200 sin ETag borra el guardado (se pasa null a replaceProducts)', async () => {
+    const st = storeWithEtags({ products: '"3-10"' })
+    const { fn } = backendFake({ etags: false, delta: 404 })
+    await runCycle(mk(fn, st))
+    expect(st.replaceProducts).toHaveBeenCalledWith(PRODUCTS.data, expect.any(Date), null)
+  })
+
+  it('un 304 sin haber mandado validador cuenta como fallo de la ruta crítica', async () => {
+    const st = makeStore()
+    const fn = vi.fn(async (input: string) =>
+      String(input).endsWith('/api/health') ? new Response('{}', { status: 200 }) : new Response(null, { status: 304 }),
+    )
+    const s = syncer(fn as never, () => st)
+    await runCycle(s)
+    expect(s.online).toBe(false)
+  })
+
+  it('un fallo de SQLite en el delta no rompe el ciclo', async () => {
+    const st = storeWithEtags({ products: '"3-10"' })
+    ;(st.applyStockDelta as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('disco')
+    })
+    const { fn } = backendFake({ etags: true, deltaVersion: 12 })
+    const s = mk(fn, st)
+    await runCycle(s)
+    expect(s.online).toBe(true)
   })
 })

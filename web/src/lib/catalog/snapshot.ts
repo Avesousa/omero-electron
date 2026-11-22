@@ -35,19 +35,74 @@ const isProduct = (v: unknown): v is ProductLike =>
   isObject(v) && v.id != null && typeof v.code === 'string'
 const isPromotion = (v: unknown): v is PromotionLike => isObject(v) && v.id != null
 
-/** true si se actualizó la caché. */
-export function applyCatalogPayload(store: CatalogStore, route: CatalogRoute, text: string): boolean {
+/**
+ * Clave de `etags` de un recurso condicional (`products` | `promotions` | `setting:<key>`), o null si la ruta no usa
+ * validador (el resto de las lecturas se piden siempre completas).
+ */
+export function etagKeyOf(route: CatalogRoute): string | null {
+  switch (route.kind) {
+    case 'products':
+      return 'products'
+    case 'promotions':
+      return 'promotions'
+    case 'setting':
+      return `setting:${route.key}`
+    default:
+      return null
+  }
+}
+
+/**
+ * ETag propio a mandar al backend (`If-None-Match`): solo si hay snapshot local del recurso. Un 304 sin datos locales
+ * no se podría servir, así que sin snapshot (o sin ETag guardado) devuelve null.
+ */
+export function storedValidatorOf(store: CatalogStore, route: CatalogRoute): string | null {
+  const key = etagKeyOf(route)
+  if (!key) return null
+  try {
+    const hasSnapshot =
+      route.kind === 'products' || route.kind === 'promotions'
+        ? store.getMeta(route.kind) !== null
+        : route.kind === 'setting'
+          ? store.getSetting(route.key) !== null
+          : false
+    return hasSnapshot ? store.getEtag(key) : null
+  } catch (err) {
+    console.warn(`[catalog] no se pudo leer el ETag: ${(err as Error).message}`)
+    return null
+  }
+}
+
+/** Forma del delta del backend: `{ version, items: [{ code, stock }] }`; null si no es válida. */
+export function parseStockDelta(text: string): { version: number; items: { code: string; stock: number }[] } | null {
+  const data = parseEnvelopeData(text) as { version?: unknown; items?: unknown } | null | undefined
+  if (!data || typeof data !== 'object' || !Number.isSafeInteger(data.version) || (data.version as number) < 0) return null
+  if (!Array.isArray(data.items)) return null
+  const items: { code: string; stock: number }[] = []
+  for (const item of data.items as unknown[]) {
+    const it = item as { code?: unknown; stock?: unknown } | null
+    if (!it || typeof it.code !== 'string' || typeof it.stock !== 'number' || !Number.isFinite(it.stock)) return null
+    items.push({ code: it.code, stock: it.stock })
+  }
+  return { version: data.version as number, items }
+}
+
+/**
+ * true si se actualizó la caché. `etag` (el del 200 del backend) se guarda en la misma transacción que los datos de
+ * products/promotions/setting; sin `etag` se borra el guardado (backend viejo: no hay validador).
+ */
+export function applyCatalogPayload(store: CatalogStore, route: CatalogRoute, text: string, etag?: string | null): boolean {
   const data = parseEnvelopeData(text)
   if (data === undefined) return false
 
   switch (route.kind) {
     case 'products':
       if (!Array.isArray(data) || !data.every(isProduct)) return false
-      store.replaceProducts(data)
+      store.replaceProducts(data, new Date(), etag)
       return true
     case 'promotions':
       if (!Array.isArray(data) || !data.every(isPromotion)) return false
-      store.replacePromotions(data)
+      store.replacePromotions(data, new Date(), etag)
       return true
     case 'product':
       if (!isProduct(data)) return false
@@ -55,8 +110,10 @@ export function applyCatalogPayload(store: CatalogStore, route: CatalogRoute, te
       return true
     case 'setting':
       if (!isObject(data)) return false
-      store.upsertSetting(route.key, JSON.stringify(data))
+      store.upsertSetting(route.key, JSON.stringify(data), new Date(), etag)
       return true
+    case 'stockDelta':
+      return false // el delta no es un snapshot: lo fusiona `catalog-proxy`/`syncer` con `applyStockDelta`
     case 'paymentMethods':
       // Lista no vacía de medios con id y nombre; se guarda entera como una sola configuración.
       if (!Array.isArray(data) || data.length === 0 || !data.every(m => isObject(m) && typeof m.id === 'string' && typeof m.name === 'string')) return false

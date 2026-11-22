@@ -36,6 +36,22 @@ describe('matchCatalogRoute', () => {
     expect(matchCatalogRoute('GET', '/api/products/001', '?x=1')).toBeNull()
   })
 
+  it('delta de stock: solo con ?since=<dígitos>', () => {
+    expect(matchCatalogRoute('GET', '/api/products/stock', '?since=345')).toEqual({ kind: 'stockDelta', since: 345 })
+    expect(matchCatalogRoute('GET', '/api/products/stock/', '?since=0')).toEqual({ kind: 'stockDelta', since: 0 })
+  })
+
+  it.each(['', '?', '?since=abc', '?since=', '?since=-1', '?since=1&x=2', '?x=2&since=1', '?since=1234567890123456789'])(
+    'delta de stock con query inválida no matchea: %j',
+    (search) => {
+      expect(matchCatalogRoute('GET', '/api/products/stock', search)).toBeNull()
+    },
+  )
+
+  it('delta de stock: otros métodos no matchean', () => {
+    expect(matchCatalogRoute('POST', '/api/products/stock', '?since=1')).toBeNull()
+  })
+
   it.each(['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])('solo GET: %s no aplica', (method) => {
     expect(matchCatalogRoute(method, '/api/products', '')).toBeNull()
     expect(matchCatalogRoute(method, '/api/products/001', '')).toBeNull()

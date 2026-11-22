@@ -20,11 +20,24 @@ afterEach(() => {
   Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true })
 })
 
+describe('apiFetch: headers en el resultado exitoso', () => {
+  it('suma los headers de la respuesta (ETag) sin tocar data', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: [1] }), { status: 200, headers: { ETag: '"3-17"' } }))
+    const r = await apiFetch<number[]>('/api/products')
+    expect(r).toMatchObject({ success: true, data: [1] })
+    expect(r.success && r.headers?.get('ETag')).toBe('"3-17"')
+  })
+  it('un resultado con error no lleva headers', async () => {
+    fetchMock.mockResolvedValueOnce(json(400, { success: false, error: 'mal' }))
+    expect(await apiFetch('/api/products')).toEqual({ success: false, error: 'mal' })
+  })
+})
+
 describe('apiFetch: renovación OBLIGATORIA ante 401 (JWT de caja vencido)', () => {
   it('con caja y conexión: renueva y reintenta UNA vez; la venta no se frena', async () => {
     fetchMock.mockResolvedValueOnce(new Response('', { status: 401 })).mockResolvedValueOnce(json(200, { success: true, data: { id: 1 } }))
     const renew = vi.spyOn(device, 'renewSession').mockResolvedValue({ ok: true, user: {} as never })
-    expect(await apiFetch('/api/sales', { method: 'POST' })).toEqual({ success: true, data: { id: 1 } })
+    expect(await apiFetch('/api/sales', { method: 'POST' })).toMatchObject({ success: true, data: { id: 1 } })
     expect(renew).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(window.location.href).toBe('')

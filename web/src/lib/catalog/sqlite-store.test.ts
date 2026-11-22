@@ -274,6 +274,129 @@ describe('settings (configuración de negocio)', () => {
   })
 })
 
+describe('ETag, touch y delta de stock (migración v3)', () => {
+  it('una base v2 con datos migra a v3 conservando productos, promociones y configuración', () => {
+    const file = path.join(dir, `${TENANT}.sqlite`)
+    const v2 = new Database(file)
+    v2.exec(MIGRATIONS[0].sql)
+    v2.exec(MIGRATIONS[1].sql)
+    v2.pragma('user_version = 2')
+    v2.prepare('INSERT INTO products (id, code, barcode, json) VALUES (?, ?, ?, ?)').run('1', '001', null, '{"id":1,"code":"001"}')
+    v2.prepare('INSERT INTO settings (key, json, synced_at) VALUES (?, ?, ?)').run('mp_offline', '{"v":1}', '2026-01-01T00:00:00.000Z')
+    v2.close()
+
+    const s = open()
+    expect(s.getProducts()).toEqual(['{"id":1,"code":"001"}'])
+    expect(s.getSetting('mp_offline')!.json).toBe('{"v":1}')
+    expect(s.getEtag('products')).toBeNull()
+    s.setEtag('products', '"1-2"')
+    expect(s.getEtag('products')).toBe('"1-2"')
+  })
+
+  it('setEtag guarda, reemplaza y con null borra', () => {
+    const s = open()
+    expect(s.getEtag('products')).toBeNull()
+    s.setEtag('products', '"1-1"')
+    s.setEtag('products', '"1-2"')
+    expect(s.getEtag('products')).toBe('"1-2"')
+    s.setEtag('products', null)
+    expect(s.getEtag('products')).toBeNull()
+  })
+
+  it('replaceProducts guarda el ETag junto a los datos y sin ETag lo borra (backend viejo)', () => {
+    const s = open()
+    s.replaceProducts([product(1, '001')], new Date(), '"3-4"')
+    expect(s.getEtag('products')).toBe('"3-4"')
+    s.replaceProducts([product(1, '001'), product(2, '002')], new Date())
+    expect(s.getEtag('products')).toBeNull()
+  })
+
+  it('con el mismo contenido (hash idéntico) también actualiza el ETag', () => {
+    const s = open()
+    s.replaceProducts([product(1, '001')], new Date(), '"3-4"')
+    const r = s.replaceProducts([product(1, '001')], new Date(), '"3-5"')
+    expect(r.written).toBe(false)
+    expect(s.getEtag('products')).toBe('"3-5"')
+  })
+
+  it('replacePromotions guarda el ETag bajo `promotions`', () => {
+    const s = open()
+    s.replacePromotions([{ id: 1 }], new Date(), '"7"')
+    expect(s.getEtag('promotions')).toBe('"7"')
+    s.replacePromotions([{ id: 1 }, { id: 2 }])
+    expect(s.getEtag('promotions')).toBeNull()
+  })
+
+  it('si el reemplazo falla, el ETag anterior queda (misma transacción)', () => {
+    const s = open()
+    s.replaceProducts([product(1, '001')], new Date(), '"1-1"')
+    const circular: Record<string, unknown> = { id: 2, code: '002' }
+    circular.self = circular // JSON.stringify lanza a mitad del reemplazo
+    expect(() => s.replaceProducts([circular as never], new Date(), '"9-9"')).toThrow()
+    expect(s.getEtag('products')).toBe('"1-1"')
+    expect(s.getProducts()).toHaveLength(1)
+  })
+
+  it('upsertSetting guarda el ETag bajo `setting:<key>` y sin ETag lo borra', () => {
+    const s = open()
+    s.upsertSetting('mp_offline', '{"v":1}', new Date(), '"5"')
+    expect(s.getEtag('setting:mp_offline')).toBe('"5"')
+    s.upsertSetting('mp_offline', '{"v":2}')
+    expect(s.getEtag('setting:mp_offline')).toBeNull()
+  })
+
+  it('touch actualiza la fecha de products/promotions sin reescribir datos', () => {
+    const s = open()
+    s.replaceProducts([product(1, '001')], new Date('2026-01-01T00:00:00Z'))
+    s.replacePromotions([{ id: 1 }], new Date('2026-01-01T00:00:00Z'))
+    s.touch('products', new Date('2026-02-02T00:00:00Z'))
+    s.touch('promotions', new Date('2026-03-03T00:00:00Z'))
+    expect(s.getMeta('products')!.lastSyncAt).toBe('2026-02-02T00:00:00.000Z')
+    expect(s.getMeta('promotions')!.lastSyncAt).toBe('2026-03-03T00:00:00.000Z')
+    expect(s.getProducts()).toHaveLength(1)
+  })
+
+  it('touch de una configuración actualiza synced_at; sin fila previa o clave desconocida no hace nada', () => {
+    const s = open()
+    s.upsertSetting('mp_offline', '{"v":1}', new Date('2026-01-01T00:00:00Z'))
+    s.touch('setting:mp_offline', new Date('2026-04-04T00:00:00Z'))
+    expect(s.getSetting('mp_offline')!.syncedAt).toBe('2026-04-04T00:00:00.000Z')
+    s.touch('setting:otra')
+    s.touch('products')
+    s.touch('cualquiera')
+    expect(s.getSetting('otra')).toBeNull()
+    expect(s.getMeta('products')).toBeNull()
+  })
+
+  it('applyStockDelta actualiza solo el stock, ignora códigos desconocidos y números inválidos', () => {
+    const s = open()
+    s.replaceProducts([product(1, '001', { stock: 5, price: 10 }), product(2, '002', { stock: 1 })])
+    const n = s.applyStockDelta([
+      { code: '001', stock: 2.5 },
+      { code: '999', stock: 7 },
+      { code: '002', stock: Number.NaN },
+    ])
+    expect(n).toBe(1)
+    const [p1, p2] = s.getProducts().map((j) => JSON.parse(j))
+    expect(p1).toMatchObject({ code: '001', stock: 2.5, price: 10, name: 'P1' })
+    expect(p2.stock).toBe(1)
+    s.applyStockDelta([{ code: '001', stock: 3 }])
+    expect(s.getProducts()[0]).toContain('"stock":3')
+    expect(s.getProducts()[0]).not.toContain('3.0')
+  })
+
+  it('applyStockDelta con lista vacía devuelve 0', () => {
+    expect(open().applyStockDelta([])).toBe(0)
+  })
+
+  it('wipe deja sin ETag (la base nueva arranca limpia)', () => {
+    const s = open()
+    s.setEtag('products', '"1-1"')
+    s.wipe()
+    expect(open().getEtag('products')).toBeNull()
+  })
+})
+
 describe('aislamiento, cierre y borrado', () => {
   it('cada tenant tiene su propia base', () => {
     const a = open(TENANT)

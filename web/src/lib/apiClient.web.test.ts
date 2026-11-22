@@ -38,7 +38,7 @@ describe('apiFetch: modo web (refresh token) — 401 → renovar → reintentar 
     })
     fetchMock.mockResolvedValueOnce(resp(401)).mockResolvedValueOnce(resp(200, { success: true, data: 1 }))
     const renewDevice = vi.spyOn(device, 'renewSession')
-    expect(await apiFetch('/api/products')).toEqual({ success: true, data: 1 })
+    expect(await apiFetch('/api/products')).toMatchObject({ success: true, data: 1 })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect((fetchMock.mock.calls[1][1].headers as Record<string, string>).Authorization).toBe(`Bearer ${nuevo}`)
     expect(renewDevice).not.toHaveBeenCalled() // NO se usa el flujo de la caja
@@ -101,7 +101,7 @@ describe('apiFetch: coexistencia — con caja registrada NO se usa el refresh we
     const refresh = vi.spyOn(session, 'refreshSession')
     const renew = vi.spyOn(device, 'renewSession').mockResolvedValue({ ok: true, user: {} as never })
     fetchMock.mockResolvedValueOnce(resp(401)).mockResolvedValueOnce(resp(200, { success: true, data: 2 }))
-    expect(await apiFetch('/api/products')).toEqual({ success: true, data: 2 })
+    expect(await apiFetch('/api/products')).toMatchObject({ success: true, data: 2 })
     expect(renew).toHaveBeenCalledTimes(1)
     expect(refresh).not.toHaveBeenCalled()
     expect(fetchMock.mock.calls.every(c => !String(c[0]).includes('/api/auth/refresh'))).toBe(true)

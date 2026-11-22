@@ -24,6 +24,8 @@ export interface CachedEntitlement {
   entitlement: Entitlement
   /** ISO-8601 del momento en que el backend respondió. */
   fetchedAt: string
+  /** ETag del backend con el que se obtuvo (para `If-None-Match`); ausente en archivos viejos o backend sin ETag. */
+  etag?: string
 }
 
 export const SUBSCRIPTION_INACTIVE_CODE = 'SUBSCRIPTION_INACTIVE'
@@ -56,7 +58,8 @@ export function parseEntitlement(raw: unknown): Entitlement | null {
 export function parseCached(raw: unknown): CachedEntitlement | null {
   if (!isObj(raw) || typeof raw.fetchedAt !== 'string' || Number.isNaN(Date.parse(raw.fetchedAt))) return null
   const entitlement = parseEntitlement(raw.entitlement)
-  return entitlement ? { entitlement, fetchedAt: raw.fetchedAt } : null
+  if (!entitlement) return null
+  return typeof raw.etag === 'string' && raw.etag !== '' ? { entitlement, fetchedAt: raw.fetchedAt, etag: raw.etag } : { entitlement, fetchedAt: raw.fetchedAt }
 }
 
 /**

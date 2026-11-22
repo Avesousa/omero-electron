@@ -163,6 +163,17 @@ La sesión de la caja dura 14 días; cada `/refresh` la vuelve a extender 14 dí
 - **Regla** (`rule.isAccessBlocked`, pura): `enforced && status != ADMIN_APPROVED && (!accessGranted || now > accessUntil)`; sin caché → permite. `outbox-proxy` la aplica a `POST /api/sales` ANTES de encolar (también offline) y responde 403 `SUBSCRIPTION_INACTIVE`; los gastos y lo ya encolado no se tocan.
 - **403 `SUBSCRIPTION_INACTIVE`** (`apiClient` → `subscriptionGate`): pantalla bloqueante; NO cierra sesión ni revoca la caja. El outbox sigue subiendo (`/api/sync/batch` siempre se permite) y el `syncer` no olvida el token ante ese 403. Se desbloquea solo cuando una consulta EN VIVO del entitlement vuelve con acceso.
 
+### Caché con ETag y stock en vivo (branch: feature/cache-redis-multitenant)
+
+Consume el ETag/304 y el delta de stock de `omero-backend` (caché Redis multi-tenant). Specs en `AiBuild/feature/cache-redis-multitenant/`.
+
+- **Quién posee el ETag:** en **web** el navegador (revalida solo; `useEntitlement` ya no usa `no-store`). En **desktop** el Next local: guarda el ETag por tenant en SQLite (migración v3, tabla `etags`; el entitlement lo guarda en su JSON), manda su propio `If-None-Match`, **descarta el del navegador** y **no deja salir** el `ETag` (el body se ajusta con pendientes del outbox, un 304 del navegador mostraría stock viejo).
+- **304 en desktop:** se sirve desde SQLite como 200 con `X-Omero-Cache: fresh` (**no** `hit`: `hit` = sin conexión, dato posiblemente viejo; `useEntitlement` solo desbloquea con dato en vivo). Nunca se manda condicional sin snapshot local.
+- **ETag de productos** `"<cat>-<stock>"`: la versión de stock sale de ahí (`lib/catalog/etag.ts`); tras un delta se recompone para que el siguiente ciclo dé 304. `GET /api/products` agrega `X-Omero-Stock-Version`.
+- **Stock en vivo:** el evento SSE `stock` (mismo stream de MP) es solo un **disparador**: `useStockSync` (debounce 250 ms, respaldo cada 30 s sin SSE) llama `useProducts.syncStock()` → `GET /api/products/stock?since=`; en desktop esa ruta pasa por `catalog-proxy` (kind `stockDelta`): fusiona en SQLite y ajusta con pendientes. 410/error → catálogo completo (máx. 1 cada 5 min); reconciliación completa cada 30 min.
+- **Syncer:** delta primero, después `If-None-Match` por ruta (products, promotions, settings; no medios de pago ni clientes). Backend viejo (sin ETag/delta) = comportamiento anterior.
+- **Dependencia backend:** el ticket SSE exigía permiso de MP; un PR aparte lo abre a `PERM_PRODUCTOS_VER` filtrando `payment`/`status` por canal. Sin él, quien no tiene permiso de MP se actualiza por el respaldo de 30 s.
+
 ### Productos por peso, por unidad + peso y balanza (added 2026-10-06, branch: feat/productos-peso-unidad)
 
 Contrato y decisiones en `omero-backend` (CLAUDE.md, "Productos por peso y por unidad + peso") y

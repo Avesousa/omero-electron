@@ -45,16 +45,20 @@ export function readEntitlement(tenantId: string, env: Env = process.env): Cache
   }
 }
 
-/** Guarda el entitlement recién obtenido del backend con su `fetchedAt`. Best-effort: nunca lanza. */
+/**
+ * Guarda el entitlement recién obtenido del backend con su `fetchedAt` y su `etag` (sin `etag` se borra el guardado:
+ * backend sin ETag). Best-effort: nunca lanza.
+ */
 export function writeEntitlement(
   tenantId: string,
   entitlement: Entitlement,
   now: number = Date.now(),
   env: Env = process.env,
+  etag?: string | null,
 ): CachedEntitlement | null {
   const dir = dirFor(env)
   if (!dir) return null
-  const cached: CachedEntitlement = { entitlement, fetchedAt: new Date(now).toISOString() }
+  const cached: CachedEntitlement = { entitlement, fetchedAt: new Date(now).toISOString(), ...(etag ? { etag } : {}) }
   memory().set(tenantId, cached)
   try {
     fs.mkdirSync(dir, { recursive: true })
@@ -66,6 +70,12 @@ export function writeEntitlement(
     console.warn(`[entitlement] no se pudo persistir la caché: ${(err as Error).message}`) // queda en memoria
   }
   return cached
+}
+
+/** El backend confirmó (304) que el entitlement guardado sigue vigente: renueva `fetchedAt` conservando el ETag. */
+export function touchEntitlement(tenantId: string, now: number = Date.now(), env: Env = process.env): CachedEntitlement | null {
+  const current = readEntitlement(tenantId, env)
+  return current ? writeEntitlement(tenantId, current.entitlement, now, env, current.etag) : null
 }
 
 /** Solo para tests. */
