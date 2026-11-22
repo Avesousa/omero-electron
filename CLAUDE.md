@@ -444,3 +444,42 @@ El snapshot SQLite de medios de pago es por tenant, no por usuario: `catalog-pro
 - **Offline**: lista y detalle salen de la caché SQLite (el detalle solo si el cliente se consultó antes con conexión; si no, error claro). El cobro de deuda va SIEMPRE al outbox (`CREDIT_COLLECTION`, responde `queued` con `debtAfter` aproximada). La venta a crédito lleva `customerId` y va por el outbox como cualquier venta.
 - **Sin soporte offline: alta rápida de cliente** (`POST /api/customers/quick`): el código lo asigna el backend, así que sin conexión se muestra "Sin conexión: no se puede crear un cliente nuevo ahora…". Decisión: no se inventa un alta local.
 - Tests: `app/pos/__tests__/creditFlow.test.tsx` (pantalla completa con teclas), `PaymentModal.test`, `utils/credit.test`, `lib/customersApi.test`, `hooks/__tests__/useCustomers.test`.
+
+## Guías de uso (onboarding in-app) — obligatorio en cada feature
+
+Cada herramienta de Omero tiene una guía visual que explica **para qué sirve** y muestra **el paso a paso** la primera vez que el usuario entra. Spec: `AiBuild/feature/onboarding-guias/` (y `AiBuild/comunicaciones-onboarding-metricas.md` para el programa completo).
+
+**Al crear una herramienta nueva o cambiar una existente, el trabajo no está terminado sin su guía:**
+
+1. **Herramienta nueva** → crear `web/src/guides/<toolId>.guide.ts` y registrarla en `web/src/guides/index.ts`:
+   - `purpose`: una frase (≤ 140 caracteres) de para qué le sirve al negocio, no qué hace técnicamente.
+   - `steps`: mínimo 3 pasos, en el orden real de uso, cada uno anclado a un elemento con `data-tour="<toolId>-<paso>"`.
+   - Texto en español rioplatense con voseo, imperativo y sin jerga ("Elegí el proveedor", no "Seleccione la entidad proveedor").
+   - Estado vacío que enseña (`EmptyStateGuide`): si la herramienta no tiene datos, mostrar qué es y el botón para crear el primero.
+2. **Cambio visible en una herramienta** (paso nuevo, campo nuevo, flujo distinto) → subir `version` y agregar `changes[version]`. Quienes ya la vieron reciben solo "Qué cambió".
+3. **No borrar ni renombrar un `data-tour`** sin actualizar la guía que lo usa (el test de anclas falla si un `target` no existe).
+4. **Spec SDD**: la spec funcional (`AiBuild/.../functional-spec.md`) incluye la sección **"Paso a paso para el usuario"**, fuente del texto de la guía.
+5. **Métricas**: la pantalla usa `useToolGuide('<toolId>')`, que registra `tool.opened` y `guide.*`. No inventar nombres de evento: usar el catálogo de `AiBuild/feature/notificaciones-motor/WIP/functional-spec.md`.
+6. **Avisos**: si la feature genera un momento que vale la pena comunicar (primer uso, algo que vence, un error del usuario), se agrega un evento al catálogo y una regla del motor; nunca se manda un mensaje armado a mano desde la pantalla.
+
+Mientras `web/src/guides/` no exista (llega con `onboarding-guias`), dejar el paso a paso en `docs/guias/<toolId>.md` con la misma estructura (id, version, purpose, steps con su `data-tour`, changes) para migrarlo después.
+
+Contrato:
+
+```ts
+export interface GuideStep { target: string; title: string; body: string; key?: string; waitFor?: 'click' | 'input' | 'route' | 'key' }
+export interface ToolGuide {
+  id: string                 // 'compras'
+  version: number            // subir en cada cambio visible
+  app: 'admin' | 'pos'
+  route: string              // '/admin/purchases'
+  permission?: Permission
+  title: string
+  purpose: string            // ≤ 140 caracteres
+  media?: string             // WebM de 5–10 s en /public/guides
+  steps: GuideStep[]
+  changes?: Record<number, string[]>
+}
+```
+
+**Particularidades del POS** (`web/src/guides/`): los pasos se piensan por teclado (`key`: `I` abrir caja, `Tab` cerrar, `000` precio libre, con `waitFor: 'key'`); una guía **nunca** se dispara con una venta en curso ni tapa el carrito; `Esc` durante una guía no debe llegar al handler del POS; los avisos in-app del POS son solo banner (y modal de suspensión con el carrito vacío).
