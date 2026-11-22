@@ -25,10 +25,13 @@ export interface EntitlementFetch {
   fromCache: boolean
 }
 
-/** Consulta `GET /api/billing/entitlement` (en desktop el Next local lo cachea en disco). null si falla o no hay dato. */
+/**
+ * Consulta `GET /api/billing/entitlement` (en desktop el Next local lo cachea en disco). null si falla o no hay dato.
+ * Sin `cache: 'no-store'`: el navegador revalida solo con ETag (un 304 le llega como 200 en vivo → no es `fromCache`).
+ */
 export async function fetchEntitlement(fetchFn: typeof fetch = fetch): Promise<EntitlementFetch | null> {
   try {
-    const res = await fetchFn('/api/billing/entitlement', { headers: authHeaders(), cache: 'no-store' })
+    const res = await fetchFn('/api/billing/entitlement', { headers: authHeaders() })
     if (!res.ok) return null
     const entitlement = parseEntitlement(((await res.json()) as { data?: unknown } | null)?.data)
     if (!entitlement) return null

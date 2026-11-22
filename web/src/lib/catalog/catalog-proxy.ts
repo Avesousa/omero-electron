@@ -2,7 +2,8 @@ import { proxyToBackend } from '../backend-proxy'
 import { adjustCustomersBody } from '../customers/customers-adjust'
 import { adjustStockBody } from '../outbox/stock-adjust'
 import { matchCatalogRoute } from './cache-policy'
-import { applyCatalogPayload, CUSTOMER_FIELDS_SETTING, CUSTOMERS_SETTING, customerDetailKey, itemBody, listBody, PAYMENT_METHODS_SETTING } from './snapshot'
+import { parseProductsEtag, withStockVersion } from './etag'
+import { applyCatalogPayload, CUSTOMER_FIELDS_SETTING, CUSTOMERS_SETTING, customerDetailKey, etagKeyOf, itemBody, listBody, parseStockDelta, PAYMENT_METHODS_SETTING, storedValidatorOf } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { rememberSession } from '../outbox/outbox-runtime'
 import { permissionsFromAuthHeader, tenantFromAuthHeader } from './tenant'
@@ -14,6 +15,10 @@ import type { CatalogRoute, CatalogStore } from './types'
  *   backend 200                 → actualiza SQLite (snapshot o upsert) y devuelve la respuesta tal cual
  *   backend 502/503/504 + datos → responde desde SQLite con `X-Omero-Cache: hit` (+ fecha y antigüedad)
  *   cualquier otra respuesta    → pasa sin modificar (401/403/404/500 son respuestas REALES del backend)
+ *
+ * Con ETag (products, promotions, configuración): si hay snapshot local y ETag guardado se manda `If-None-Match` PROPIO
+ * (el del navegador se descarta y el ETag nunca sale hacia él); un 304 se sirve desde SQLite con `X-Omero-Cache: fresh`.
+ * `GET /api/products/stock?since=` (delta) se fusiona en SQLite y se responde ajustado con lo pendiente del outbox.
  *
  * En ambos casos el stock de `products` se muestra como stock − ventas pendientes del outbox (`stock-adjust`).
  * `proxyToBackend` ya mapea red caída → 502 y timeout → 504, así que "sin conexión" llega acá como 502/504.
@@ -40,7 +45,29 @@ export function filterPaymentMethodsBody(body: string, authorization: string | n
   }
 }
 
-function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: string, authorization?: string | null): Response | null {
+/**
+ * `fresh` = el backend confirmó con un 304 que el snapshot está al día (dato vigente). `hit` = sin conexión (dato
+ * posiblemente viejo): es lo que `useEntitlement` y la UI usan para no dar por bueno el dato.
+ */
+type CacheMode = 'hit' | 'fresh'
+
+/** Versión de stock del snapshot de productos (del ETag guardado), para que el navegador pida el delta. */
+function stockVersionOf(store: CatalogStore): string | null {
+  try {
+    const parsed = parseProductsEtag(store.getEtag('products'))
+    return parsed ? String(parsed.stock) : null
+  } catch {
+    return null
+  }
+}
+
+function serveFromCache(
+  store: CatalogStore,
+  route: CatalogRoute,
+  tenantId: string,
+  authorization?: string | null,
+  mode: CacheMode = 'hit',
+): Response | null {
   let body: string
   let syncedAt: string | null
 
@@ -85,6 +112,8 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: stri
       syncedAt = setting.syncedAt
       break
     }
+    case 'stockDelta':
+      return null // el delta nunca se sirve desde la caché (ver `proxyStockDelta`)
     case 'product': {
       const json = store.findProduct(route.code)
       if (!json) return null
@@ -101,13 +130,61 @@ function serveFromCache(store: CatalogStore, route: CatalogRoute, tenantId: stri
   const headers = new Headers({
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
-    'X-Omero-Cache': 'hit',
+    'X-Omero-Cache': mode,
   })
-  if (syncedAt) {
+  if (route.kind === 'products') {
+    const stockVersion = stockVersionOf(store)
+    if (stockVersion) headers.set('X-Omero-Stock-Version', stockVersion)
+  }
+  if (syncedAt && mode === 'hit') {
     headers.set('X-Omero-Cache-At', syncedAt)
     headers.set('X-Omero-Cache-Age', String(Math.max(0, Math.floor((Date.now() - Date.parse(syncedAt)) / 1000))))
   }
   return new Response(body, { status: 200, headers })
+}
+
+/** Copia de la request sin el `If-None-Match` del navegador (opcionalmente con el propio). */
+function withValidator(request: Request, etag: string | null): Request {
+  const headers = new Headers(request.headers)
+  headers.delete('if-none-match')
+  if (etag) headers.set('If-None-Match', etag)
+  return new Request(request, { headers })
+}
+
+/**
+ * `GET /api/products/stock?since=<n>`: 200 → se fusiona en SQLite (y se recompone el ETag de `products` si SQLite estaba
+ * al día hasta `since`) y la respuesta sale ajustada con lo PENDIENTE del outbox. Cualquier otra respuesta (410 de
+ * versión vencida, 400, 404, 502/503/504 sin conexión) pasa tal cual: el navegador decide pedir el catálogo completo.
+ */
+async function proxyStockDelta(
+  request: Request,
+  route: Extract<CatalogRoute, { kind: 'stockDelta' }>,
+  store: CatalogStore,
+  tenantId: string,
+): Promise<Response> {
+  const upstream = await proxyToBackend(withValidator(request, null))
+  if (upstream.status !== 200) return upstream
+
+  const text = await upstream.text()
+  try {
+    const delta = parseStockDelta(text)
+    if (delta) {
+      store.applyStockDelta(delta.items)
+      // Solo si SQLite ya tenía todo hasta `since` y el delta no retrocede: si no, el ETag prometería datos que faltan.
+      const current = parseProductsEtag(store.getEtag('products'))
+      if (current && route.since <= current.stock && delta.version >= current.stock) {
+        const next = withStockVersion(store.getEtag('products'), delta.version)
+        if (next) store.setEtag('products', next)
+      }
+    }
+  } catch (err) {
+    console.warn(`[catalog] no se pudo aplicar el delta de stock: ${(err as Error).message}`)
+  }
+  const headers = new Headers(upstream.headers)
+  headers.delete('content-length') // el body se re-armó desde texto
+  headers.delete('etag')
+  headers.set('Cache-Control', 'no-store')
+  return new Response(adjustStockBody(tenantId, route, text), { status: 200, statusText: upstream.statusText, headers })
 }
 
 export async function proxyWithCatalog(request: Request): Promise<Response> {
@@ -122,17 +199,52 @@ export async function proxyWithCatalog(request: Request): Promise<Response> {
 
   rememberSession(tenantId, authorization)
 
-  const upstream = await proxyToBackend(request)
+  if (route.kind === 'stockDelta') return proxyStockDelta(request, route, store, tenantId)
+
+  // El ETag lo posee este servidor local: el `If-None-Match` del navegador se descarta y se manda el propio (si hay).
+  const etagKey = etagKeyOf(route)
+  const validator = storedValidatorOf(store, route)
+  const upstream = await proxyToBackend(withValidator(request, validator))
+
+  if (upstream.status === 304 && validator && etagKey) {
+    try {
+      store.touch(etagKey)
+      const fresh = serveFromCache(store, route, tenantId, authorization, 'fresh')
+      if (fresh) {
+        await upstream.body?.cancel().catch(() => {})
+        return fresh
+      }
+    } catch (err) {
+      console.warn(`[catalog] no se pudo servir el 304 desde la caché: ${(err as Error).message}`)
+    }
+    // Sin datos locales que servir: se descarta el validador y se pide completo.
+    try {
+      store.setEtag(etagKey, null)
+    } catch {
+      /* la caché no debe romper la request */
+    }
+    return proxyToBackend(withValidator(request, null))
+  }
 
   if (upstream.status === 200) {
     const text = await upstream.text()
     try {
-      applyCatalogPayload(store, route, text)
+      // Sin header ETag en el 200 (backend viejo) se borra el guardado: comportamiento de antes.
+      applyCatalogPayload(store, route, text, etagKey ? upstream.headers.get('etag') : undefined)
     } catch (err) {
       console.warn(`[catalog] no se pudo actualizar la caché: ${(err as Error).message}`)
     }
     const headers = new Headers(upstream.headers)
     headers.delete('content-length') // el body se re-armó desde texto
+    if (etagKey) {
+      // El body sale ajustado (stock − pendientes): el ETag del backend no le corresponde al navegador.
+      headers.delete('etag')
+      headers.set('Cache-Control', 'no-store')
+      if (route.kind === 'products') {
+        const stockVersion = stockVersionOf(store)
+        if (stockVersion) headers.set('X-Omero-Stock-Version', stockVersion)
+      }
+    }
     // Respuesta en vivo: el backend ya descontó lo enviado; solo falta restar lo PENDIENTE del outbox.
     const adjusted = adjustCustomersBody(tenantId, route, adjustStockBody(tenantId, route, text))
     return new Response(adjusted, { status: 200, statusText: upstream.statusText, headers })

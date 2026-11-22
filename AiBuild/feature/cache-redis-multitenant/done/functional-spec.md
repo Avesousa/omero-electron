@@ -22,8 +22,8 @@ El POS (`omero-electron/web`, modo web en Railway y modo desktop) hoy descarga e
 1. **ETag por ruta en la caché local:** al recibir `200`, guardar el `ETag` junto con el dato. En el siguiente ciclo mandar `If-None-Match`. Con `304`, conservar el dato y marcar la sincronización como exitosa (actualizar la hora de "última sincronización").
 2. **Rutas alcanzadas:** `/api/products`, `/api/promotions`, `/api/business/config/{key}` (syncer y hooks), `/api/billing/entitlement`. Medios de pago y clientes quedan igual hasta que el backend los cachee.
 3. **Stock en vivo:**
-   - Suscribirse al evento SSE `stock` (`{version, items:[{code, stock}]}`) y aplicar los cambios a la caché local del catálogo, guardando la `version`.
-   - Ignorar eventos con versión menor o igual a la que ya se tiene (llegan desordenados o repetidos).
+   - Suscribirse al evento SSE `stock` (`{version, items:[{code, stock}]}`). **El evento es un disparador**: no se aplica su contenido ni se avanza la versión con él (puede llegar desordenado o perderse); dispara el pedido del delta `GET /api/products/stock?since=<versión local>` y se aplica esa respuesta.
+   - La versión local solo avanza con lo que devuelve el delta (y solo si es mayor).
    - Al reconectar el SSE, o si no llegó ningún evento en el ciclo, pedir `GET /api/products/stock?since=<versión>`. Con `410 Gone`, pedir el catálogo completo.
    - Lo vendido en la propia caja sigue descontándose localmente con `stock-adjust`; al llegar el evento con el stock confirmado del backend, la venta ya sincronizada deja de descontarse dos veces (mismo criterio que hoy con la sincronización completa).
 4. **Modo desktop sin conexión:** sin cambios. El POS sigue vendiendo con la caché local; al volver la conexión usa el delta o el catálogo completo.
@@ -63,4 +63,5 @@ El POS (`omero-electron/web`, modo web en Railway y modo desktop) hoy descarga e
 - No duplicar el descuento de stock entre `stock-adjust` y el evento SSE.
 
 ## Open questions
-- ¿Mostrar un indicador sutil de "stock actualizado" cuando llega un evento de otra caja, o solo actualizar el número?
+- (Resuelta) Sin indicador visual: solo se actualiza el número.
+- (Resuelta) El ticket SSE hoy exige permiso de Mercado Pago: se cambia el backend (PR aparte) para que los cajeros con permiso de productos reciban `stock`, sin recibir `payment`/`status`.

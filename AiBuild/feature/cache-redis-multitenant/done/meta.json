@@ -1,0 +1,468 @@
+{
+  "project": "omero-electron",
+  "feature": "cache-redis-multitenant",
+  "ticket_id": null,
+  "raw_input": "POS: usar ETag/304 del backend en catálogo, promociones, config y entitlement, y stock en vivo por SSE + delta",
+  "type": "feature",
+  "branch": "feature/cache-redis-multitenant",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "finished",
+  "created_at": "2026-11-21T00:00:00Z",
+  "updated_at": "2026-11-22T00:00:00Z",
+  "git": true,
+  "depends_on": "omero-backend: feature/cache-redis-multitenant",
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "done",
+    "build": "done",
+    "finish": "done"
+  },
+  "open_questions": [],
+  "decisions": {
+    "sse_ticket_permission": "cambiar backend (PR aparte: ticket con PERM_PRODUCTOS_VER + filtrado por canal)",
+    "sqlite_stock": "delta en cada ciclo del syncer",
+    "stock_event": "disparador del delta, no fuente de verdad",
+    "indicator": "solo actualizar el número"
+  },
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 0,
+      "description": "Línea base de la rama",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [],
+      "done_when": "`check` verde y número base de tests anotado en `notes.md` de la WIP.",
+      "complexity": "S",
+      "files_affected": [
+        "AiBuild/feature/cache-redis-multitenant/WIP/notes.md"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T002",
+      "phase": 0,
+      "description": "PR backend: ticket SSE para cajeros sin permiso de MP, con canales (repo `omero-backend`, rama nueva desde develop)",
+      "status": "done",
+      "depends_on": [],
+      "can_parallelize_with": [],
+      "done_when": "tests del backend verdes y PR abierto contra develop. **No bloquea** el resto: sin él la feature funciona para quien ya tiene permiso de MP y los demás caen en el respaldo de 30 s.",
+      "complexity": "M",
+      "files_affected": [
+        "controller/MercadoPagoController.java",
+        "service/SseTicketService.java",
+        "service/SseEmitterRegistry.java",
+        "tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z",
+      "note": "Worktree .wt/sse-stock-channel, rama feat/sse-stock-channel, sin commit/PR. Suite completa 833 tests con 1 falla de latencia por carga (CacheRedisIntegrationTest.redisDown...); aislado con JDK 21 pasa 9/9."
+    },
+    {
+      "id": "T003",
+      "phase": 1,
+      "description": "Helper puro de ETag (`web/src/lib/catalog/etag.ts`)",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T004",
+        "T006"
+      ],
+      "done_when": "`etag.test.ts` cubre formatos válidos e inválidos y pasa.",
+      "complexity": "S",
+      "files_affected": [
+        "web/src/lib/catalog/etag.ts",
+        "etag.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T004",
+      "phase": 1,
+      "description": "Migración SQLite v3 (tabla `etags`) y tipos de `CatalogStore`",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T003",
+        "T006"
+      ],
+      "done_when": "`migrations.test.ts` abre una base v2 con datos y llega a v3 sin perderlos; `tsc --noEmit` pasa (los stores de test fallan hasta T005: se actualizan los mocks).",
+      "complexity": "S",
+      "files_affected": [
+        "lib/catalog/migrations.ts",
+        "lib/catalog/types.ts",
+        "migrations.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T005",
+      "phase": 1,
+      "description": "`sqlite-store`: ETag, `touch`, `applyStockDelta` y ETag atómico en los reemplazos",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`sqlite-store.test.ts` cubre las seis operaciones, incluido rollback (si falla el reemplazo, el ETag anterior queda) y que `wipe` deja sin ETag.",
+      "complexity": "M",
+      "files_affected": [
+        "lib/catalog/sqlite-store.ts",
+        "sqlite-store.test.ts",
+        "mocks de `CatalogStore` en otros tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T006",
+      "phase": 1,
+      "description": "Ajuste de stock para la forma del delta (`stock-adjust`)",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T003",
+        "T005"
+      ],
+      "done_when": "tests nuevos en `stock-adjust.test.ts` (items ajustados, sin pendientes devuelve el mismo texto, forma inesperada devuelve el mismo texto).",
+      "complexity": "S",
+      "files_affected": [
+        "lib/outbox/stock-adjust.ts",
+        "stock-adjust.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T007",
+      "phase": 1,
+      "description": "Política: ruta `GET /api/products/stock?since=<n>`",
+      "status": "done",
+      "depends_on": [
+        "T004"
+      ],
+      "can_parallelize_with": [
+        "T005",
+        "T006"
+      ],
+      "done_when": "`cache-policy.test.ts` cubre válidos, `since=abc`, `since=1&x=2`, sin query y `POST`.",
+      "complexity": "S",
+      "files_affected": [
+        "lib/catalog/cache-policy.ts",
+        "cache-policy.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T008",
+      "phase": 2,
+      "description": "`catalog-proxy`: 304 desde SQLite y ETag propio",
+      "status": "done",
+      "depends_on": [
+        "T003",
+        "T005"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`catalog-proxy.integration.test.ts` cubre: 304→200 desde SQLite, `lastSyncAt` actualizado sin reescribir filas, sin ETag guardado no hay condicional, header del navegador no llega al backend, `ETag` no sale, backend viejo sin `ETag` = comportamiento de hoy.",
+      "complexity": "L",
+      "files_affected": [
+        "lib/catalog/catalog-proxy.ts",
+        "catalog-proxy.integration.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T009",
+      "phase": 2,
+      "description": "`catalog-proxy`: ruta `stockDelta`",
+      "status": "done",
+      "depends_on": [
+        "T005",
+        "T006",
+        "T007",
+        "T008"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "tests de integración: delta se fusiona en SQLite y el ETag se recompone; no hay doble descuento (venta PENDING → stock = backend − pendiente; venta ya enviada y confirmada por el delta → no se resta dos veces); 410 pasa; offline pasa 502.",
+      "complexity": "M",
+      "files_affected": [
+        "lib/catalog/catalog-proxy.ts",
+        "tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T010",
+      "phase": 2,
+      "description": "`syncer`: condicional por ruta y delta primero",
+      "status": "done",
+      "depends_on": [
+        "T003",
+        "T005"
+      ],
+      "can_parallelize_with": [
+        "T008"
+      ],
+      "done_when": "`syncer.test.ts` cubre 304, 200 con ETag, backend viejo, delta 200/410/404, el siguiente ciclo da 304 tras un delta, y que un 304 no activa la recuperación.",
+      "complexity": "M",
+      "files_affected": [
+        "lib/catalog/syncer.ts",
+        "syncer.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T011",
+      "phase": 2,
+      "description": "Entitlement desktop: ETag persistido y 304",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T008",
+        "T010"
+      ],
+      "done_when": "tests de `entitlement-proxy` y `store` (archivo viejo sin `etag` se lee bien) pasan.",
+      "complexity": "M",
+      "files_affected": [
+        "lib/entitlement/store.ts",
+        "entitlement-proxy.ts",
+        "tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T012",
+      "phase": 3,
+      "description": "`apiFetch` devuelve headers y utilitarios de stock del cliente",
+      "status": "done",
+      "depends_on": [
+        "T003"
+      ],
+      "can_parallelize_with": [
+        "T013"
+      ],
+      "done_when": "`stockDelta.test.ts` (merge, número inválido, versión ausente) y `apiClient.test.ts` actualizado pasan.",
+      "complexity": "S",
+      "files_affected": [
+        "lib/apiClient.ts",
+        "lib/stockDelta.ts",
+        "tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T013",
+      "phase": 3,
+      "description": "`mpEvents`: listener `stock`",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T012"
+      ],
+      "done_when": "`mpEvents.test.ts` cubre evento `stock`, malformado ignorado y que sin `onStock` no rompe.",
+      "complexity": "S",
+      "files_affected": [
+        "lib/mpEvents.ts",
+        "lib/mpEvents.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T014",
+      "phase": 3,
+      "description": "`useProducts.syncStock`",
+      "status": "done",
+      "depends_on": [
+        "T012"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`useProducts` tests con timers falsos cubren delta aplicado, 410 → completo, límite 1/5 min, reentrancia, código desconocido, versión menor.",
+      "complexity": "L",
+      "files_affected": [
+        "app/pos/hooks/useProducts.ts",
+        "tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T015",
+      "phase": 3,
+      "description": "`useStockSync` + cableado en `page.tsx`",
+      "status": "done",
+      "depends_on": [
+        "T013",
+        "T014"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "tests de hook (ráfaga de eventos → una llamada; sin SSE → cada 30 s; reconexión → una) y que `creditFlow.test.tsx` / `weightFlow.test.tsx` siguen verdes.",
+      "complexity": "M",
+      "files_affected": [
+        "app/pos/hooks/useStockSync.ts` (nuevo)",
+        "hooks/useMercadoPagoEvents.ts",
+        "hooks/index.ts",
+        "app/pos/page.tsx",
+        "tests"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T016",
+      "phase": 3,
+      "description": "`useEntitlement` sin `no-store`",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T012",
+        "T013"
+      ],
+      "done_when": "`useEntitlement.test.ts` actualizado (la llamada ya no pasa `no-store`; `fresh` desbloquea; `hit` no).",
+      "complexity": "S",
+      "files_affected": [
+        "lib/useEntitlement.ts",
+        "useEntitlement.test.ts"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T017",
+      "phase": 3,
+      "description": "Web: el proxy deja pasar el 304 y los headers de caché",
+      "status": "done",
+      "depends_on": [
+        "T001"
+      ],
+      "can_parallelize_with": [
+        "T012",
+        "T016"
+      ],
+      "done_when": "`backend-proxy.test.ts` / `backend-proxy.integration.test.ts` con los casos nuevos verdes.",
+      "complexity": "S",
+      "files_affected": [
+        "lib/backend-proxy*.test.ts",
+        "(`lib/backend-proxy.ts` solo si hace falta)"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T018",
+      "phase": 4,
+      "description": "Test integral desktop: ciclo completo sin cambios y con cambios",
+      "status": "done",
+      "depends_on": [
+        "T008",
+        "T009",
+        "T010"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "el archivo `catalog-etag.integration.test.ts` pasa.",
+      "complexity": "M",
+      "files_affected": [
+        "lib/catalog/catalog-etag.integration.test.ts` (nuevo)"
+      ],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T019",
+      "phase": 4,
+      "description": "Cobertura y regresión",
+      "status": "done",
+      "depends_on": [
+        "T011",
+        "T015",
+        "T016",
+        "T017",
+        "T018"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "ambos `check` verdes, sin bajar la cobertura previa.",
+      "complexity": "S",
+      "files_affected": [],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T020",
+      "phase": 4,
+      "description": "Checklist E2E manual en beta",
+      "status": "done",
+      "depends_on": [
+        "T019"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "checklist escrito (la ejecución queda pendiente de Avelino).",
+      "complexity": "S",
+      "files_affected": [],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T021",
+      "phase": 5,
+      "description": "Logs y observabilidad",
+      "status": "done",
+      "depends_on": [
+        "T010"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "los avisos aparecen en los tests con `log` inyectado.",
+      "complexity": "S",
+      "files_affected": [],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T022",
+      "phase": 5,
+      "description": "Documentar en `CLAUDE.md` del POS",
+      "status": "done",
+      "depends_on": [
+        "T019"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "sección agregada y consistente con el código.",
+      "complexity": "S",
+      "files_affected": [],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T023",
+      "phase": 5,
+      "description": "Ajustar la spec funcional",
+      "status": "done",
+      "depends_on": [
+        "T019"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "spec funcional alineada con la técnica.",
+      "complexity": "S",
+      "files_affected": [],
+      "completed_at": "2026-11-22T00:00:00Z"
+    },
+    {
+      "id": "T024",
+      "phase": 5,
+      "description": "Notas de deuda técnica",
+      "status": "done",
+      "depends_on": [
+        "T019"
+      ],
+      "can_parallelize_with": [],
+      "done_when": "`notes.md` actualizado.",
+      "complexity": "S",
+      "files_affected": [],
+      "completed_at": "2026-11-22T00:00:00Z"
+    }
+  ],
+  "build_completed_at": "2026-11-22T00:00:00Z",
+  "finished_at": "2026-11-22T00:00:00Z"
+}

@@ -13,11 +13,18 @@ import {
 import { handleSubscriptionResponse } from '@/lib/subscriptionGate'
 
 export type ApiResult<T> =
-  | { success: true; data: T }
+  | { success: true; data: T; headers?: Headers }
   | { success: false; error: string; code?: string; lastSeenAt?: string; data?: { lastSeenAt?: string } }
 
 const SESSION_EXPIRED_MESSAGE = 'Sesión expirada. Iniciá sesión nuevamente.'
 const NETWORK_MESSAGE = 'No se pudo conectar con el servidor. Reintentá en unos segundos.'
+
+const OFFLINE_MESSAGE = 'Sin conexión con el servidor. Probá de nuevo en unos instantes.'
+
+/** ¿El error de un `ApiResult` es de red / sesión (no del contrato del backend)? Quien sincroniza en segundo plano no insiste. */
+export function isTransportError(error: string | undefined): boolean {
+  return error === NETWORK_MESSAGE || error === OFFLINE_MESSAGE || error === SESSION_EXPIRED_MESSAGE
+}
 
 /**
  * Dos mecanismos de sesión que NO se mezclan:
@@ -76,7 +83,7 @@ export async function apiFetch<T = unknown>(
       if (!renewed) {
         const r = await renewSession()
         if (r.ok) return apiFetch<T>(path, options, true)
-        if (r.code === 'UNAVAILABLE') return { success: false, error: 'Sin conexión con el servidor. Probá de nuevo en unos instantes.' }
+        if (r.code === 'UNAVAILABLE') return { success: false, error: OFFLINE_MESSAGE }
         const reason = reasonFor(r.code)
         if (reason) {
           clearSession()
@@ -107,6 +114,8 @@ export async function apiFetch<T = unknown>(
     }
     // 403 SUBSCRIPTION_INACTIVE: abre la pantalla bloqueante del POS (no cierra sesión ni revoca la caja).
     handleSubscriptionResponse(res.status, body)
+    // Éxito: se suman los headers de la respuesta (ETag / X-Omero-Stock-Version) para quien necesite la versión de stock.
+    if (body && typeof body === 'object' && body.success === true) return { ...body, headers: res.headers }
     return body
   } catch {
     return { success: false, error: `Respuesta inválida del servidor (${res.status}).` }

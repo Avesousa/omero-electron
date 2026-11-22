@@ -103,4 +103,91 @@ describe('handleEntitlementRequest', () => {
     expect((await handleEntitlementRequest(req(null))).status).toBe(200)
     expect(readEntitlement(TENANT)).toBeNull()
   })
+
+  describe('ETag propio y 304', () => {
+    const withEtag = (etag: string | null = '"ent-1"') =>
+      new Response(JSON.stringify({ success: true, data: DATA }), {
+        status: 200,
+        headers: { 'content-type': 'application/json', ...(etag ? { etag, 'cache-control': 'private, no-cache' } : {}) },
+      })
+    const sent = (n: number) => (proxyToBackend.mock.calls[n][0] as Request).headers.get('if-none-match')
+
+    it('200: guarda el ETag, no lo expone y responde no-store', async () => {
+      proxyToBackend.mockResolvedValue(withEtag())
+      const res = await handleEntitlementRequest(req())
+      expect(res.headers.get('etag')).toBeNull()
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      expect(res.headers.get('x-omero-cache')).toBeNull()
+      expect(readEntitlement(TENANT)!.etag).toBe('"ent-1"')
+      expect(sent(0)).toBeNull() // primer pedido: nada guardado, sin condicional
+    })
+
+    it('con ETag guardado manda el propio y el 304 se sirve como 200 con X-Omero-Cache: fresh y fetchedAt nuevo', async () => {
+      proxyToBackend.mockResolvedValueOnce(withEtag())
+      await handleEntitlementRequest(req())
+      const before = readEntitlement(TENANT)!.fetchedAt
+      await new Promise((r) => setTimeout(r, 5))
+      proxyToBackend.mockResolvedValueOnce(new Response(null, { status: 304, headers: { etag: '"ent-1"' } }))
+      const res = await handleEntitlementRequest(req())
+      expect(sent(1)).toBe('"ent-1"')
+      expect(res.status).toBe(200)
+      expect(res.headers.get('x-omero-cache')).toBe('fresh')
+      expect(res.headers.get('etag')).toBeNull()
+      expect((await res.json()).data).toEqual(DATA)
+      const after = readEntitlement(TENANT)!
+      expect(Date.parse(after.fetchedAt)).toBeGreaterThan(Date.parse(before))
+      expect(after.etag).toBe('"ent-1"') // el ETag se conserva
+    })
+
+    it('el If-None-Match del navegador se descarta (sin ETag propio no se manda nada)', async () => {
+      proxyToBackend.mockImplementation(async () => withEtag())
+      await handleEntitlementRequest(
+        new Request('http://localhost:3000/api/billing/entitlement', { headers: { authorization: token(), 'if-none-match': '"ajeno"' } }),
+      )
+      expect(sent(0)).toBeNull()
+      await handleEntitlementRequest(
+        new Request('http://localhost:3000/api/billing/entitlement', { headers: { authorization: token(), 'if-none-match': '"ajeno"' } }),
+      )
+      expect(sent(1)).toBe('"ent-1"')
+    })
+
+    it('200 sin ETag (backend viejo) borra el guardado', async () => {
+      proxyToBackend.mockResolvedValueOnce(withEtag())
+      await handleEntitlementRequest(req())
+      proxyToBackend.mockResolvedValueOnce(withEtag(null))
+      await handleEntitlementRequest(req())
+      expect(readEntitlement(TENANT)!.etag).toBeUndefined()
+      proxyToBackend.mockResolvedValueOnce(withEtag(null))
+      await handleEntitlementRequest(req())
+      expect(sent(2)).toBeNull()
+    })
+
+    it('un 304 sin validador propio pasa como respuesta real', async () => {
+      proxyToBackend.mockResolvedValueOnce(withEtag())
+      await handleEntitlementRequest(req())
+      resetEntitlementMemory()
+      fs.rmSync(path.join(dir, `${TENANT}.entitlement.json`))
+      // hay validador en memoria vacía → no se manda; simulamos un 304 inesperado sin validador: pasa como respuesta real
+      proxyToBackend.mockResolvedValueOnce(new Response(null, { status: 304 }))
+      expect((await handleEntitlementRequest(req())).status).toBe(304)
+    })
+
+    it('sin conexión sigue siendo hit (nunca fresh) aun con ETag guardado', async () => {
+      proxyToBackend.mockResolvedValueOnce(withEtag())
+      await handleEntitlementRequest(req())
+      proxyToBackend.mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      const res = await handleEntitlementRequest(req())
+      expect(res.headers.get('x-omero-cache')).toBe('hit')
+    })
+
+    it('un 304 cuando el almacén no puede persistir pide el entitlement completo', async () => {
+      proxyToBackend.mockResolvedValueOnce(withEtag())
+      await handleEntitlementRequest(req())
+      vi.stubEnv('OMERO_RUNTIME', 'web') // touch devuelve null (sin disco) pero la memoria aún tiene el ETag
+      proxyToBackend.mockResolvedValueOnce(new Response(null, { status: 304 })).mockResolvedValueOnce(withEtag())
+      const res = await handleEntitlementRequest(req())
+      expect(res.status).toBe(200)
+      expect(sent(2)).toBeNull()
+    })
+  })
 })

@@ -33,7 +33,7 @@ export function adjustStockBody(
   body: string,
   options: { since?: string | null } = {},
 ): string {
-  if (route.kind !== 'products' && route.kind !== 'product') return body
+  if (route.kind !== 'products' && route.kind !== 'product' && route.kind !== 'stockDelta') return body
   try {
     const store = getOutboxStore(tenantId)
     if (!store) return body
@@ -42,7 +42,12 @@ export function adjustStockBody(
 
     const parsed = JSON.parse(body) as { data?: unknown }
     let changed = false
-    if (Array.isArray(parsed?.data)) {
+    if (route.kind === 'stockDelta') {
+      // Delta de stock: `data = { version, items: [{ code, stock }] }`; cualquier otra forma queda tal cual.
+      const items = (parsed?.data as { items?: unknown } | null | undefined)?.items
+      if (!Array.isArray(items)) return body
+      for (const item of items) changed = adjustOne(item, quantities) || changed
+    } else if (Array.isArray(parsed?.data)) {
       for (const p of parsed.data) changed = adjustOne(p, quantities) || changed
     } else if (parsed?.data) {
       changed = adjustOne(parsed.data, quantities)

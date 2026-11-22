@@ -82,6 +82,15 @@ const backend = http.createServer(async (req, res) => {
     upload.sha = hash.digest('hex')
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify({ bytes: upload.bytes, sha: upload.sha }))
+  } else if (url.pathname === '/api/cached') {
+    // Catálogo con ETag: si el cliente manda el mismo valor → 304 sin body.
+    const etag = '"3-17"'
+    const base = { ETag: etag, Vary: 'Authorization', 'Cache-Control': 'private, no-cache' }
+    if (req.headers['if-none-match'] === etag) res.writeHead(304, base).end()
+    else {
+      res.writeHead(200, { ...base, 'Content-Type': 'application/json' })
+      res.end('{"success":true,"data":[]}')
+    }
   } else if (url.pathname === '/api/hang') {
     // nunca responde
   } else {
@@ -163,6 +172,23 @@ describe('proxy → backend real', () => {
     expect(echo.headers.authorization).toBe('Bearer abc')
     expect(echo.headers.origin).toBeUndefined()
     expect(echo.headers.referer).toBeUndefined()
+  })
+
+  it('caché con ETag: If-None-Match llega al backend, el 304 vuelve sin body y con ETag/Vary/Cache-Control', async () => {
+    const first = await fetch(`${edgeBase}/api/cached`)
+    expect(first.status).toBe(200)
+    expect(first.headers.get('etag')).toBe('"3-17"')
+    expect(first.headers.get('vary')).toBe('Authorization')
+    expect(first.headers.get('cache-control')).toBe('private, no-cache')
+
+    const second = await fetch(`${edgeBase}/api/cached`, { headers: { 'If-None-Match': '"3-17"' } })
+    expect(second.status).toBe(304)
+    expect(await second.text()).toBe('')
+    expect(second.headers.get('etag')).toBe('"3-17"')
+    expect(second.headers.get('vary')).toBe('Authorization')
+
+    const stale = await fetch(`${edgeBase}/api/cached`, { headers: { 'If-None-Match': '"3-16"' } })
+    expect(stale.status).toBe(200)
   })
 
   it('preserva set-cookie múltiples del backend', async () => {

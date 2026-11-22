@@ -1,7 +1,8 @@
 import { SUBSCRIPTION_INACTIVE_CODE } from '../entitlement/rule'
 import { getBackendUrl, getSyncIntervalMs } from '../runtime'
 import { checkBackend } from './connectivity'
-import { applyCatalogPayload } from './snapshot'
+import { parseProductsEtag, withStockVersion } from './etag'
+import { applyCatalogPayload, etagKeyOf, parseStockDelta, storedValidatorOf } from './snapshot'
 import { getCatalogStore } from './store-registry'
 import { tokenExpiry } from './tenant'
 import { SCALE_CONFIG_KEYS } from '../scale'
@@ -220,6 +221,37 @@ export class CatalogSyncer {
     }
   }
 
+  /**
+   * Delta de stock antes de los condicionales: si hay versión de stock (del ETag de `products`) se pide
+   * `/api/products/stock?since=` y se fusiona en SQLite; el ETag se recompone para que el siguiente ciclo dé 304.
+   * Cualquier respuesta que no sea un 200 válido (410 versión vencida, 400, 404, …) borra el ETag de `products`: el
+   * catálogo se baja completo. Una falla de red se ignora (la ruta de productos decide si el ciclo falló).
+   */
+  private async syncStockDelta(store: CatalogStore, tenantId: string, authorization: string): Promise<void> {
+    try {
+      const current = parseProductsEtag(store.getEtag('products'))
+      if (!current) return
+      const res = await this.deps.fetchFn(`${this.deps.backendUrl()}/api/products/stock?since=${current.stock}`, {
+        headers: { Authorization: authorization, Accept: 'application/json' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+      })
+      const delta = res.status === 200 ? parseStockDelta(await res.text()) : null
+      if (!delta) {
+        await res.body?.cancel().catch(() => {})
+        store.setEtag('products', null)
+        this.deps.log(`delta de stock descartado (${res.status}) para ${tenantId}; se baja el catálogo completo`)
+        return
+      }
+      store.applyStockDelta(delta.items)
+      const next = delta.version >= current.stock ? withStockVersion(store.getEtag('products'), delta.version) : null
+      if (next) store.setEtag('products', next)
+      else store.setEtag('products', null) // la versión retrocedió (backend reiniciado): catálogo completo
+    } catch {
+      /* red caída / timeout / SQLite: la ruta de productos decide el resultado del ciclo */
+    }
+  }
+
   private async syncTenant(tenantId: string, authorization: string): Promise<TenantResult> {
     const store = this.deps.getStore(tenantId)
     if (!store) return 'ok' // sin caché no hay nada que refrescar
@@ -245,14 +277,29 @@ export class CatalogSyncer {
       })),
     ]
 
+    await this.syncStockDelta(store, tenantId, authorization)
+
     let failed = false
     for (const { path, route, optional, permissioned } of routes) {
       try {
+        // Condicional: solo con snapshot local y ETag guardado por nosotros (products, promotions y configuración).
+        const validator = storedValidatorOf(store, route)
         const res = await this.deps.fetchFn(`${this.deps.backendUrl()}${path}`, {
-          headers: { Authorization: authorization, Accept: 'application/json' },
+          headers: {
+            Authorization: authorization,
+            Accept: 'application/json',
+            ...(validator ? { 'If-None-Match': validator } : {}),
+          },
           redirect: 'manual',
           signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
         })
+        const etagKey = etagKeyOf(route)
+        if (res.status === 304 && validator && etagKey) {
+          // El backend confirma que el snapshot está al día: solo se renueva la fecha (no es un fallo ni activa la recuperación).
+          await res.body?.cancel().catch(() => {})
+          store.touch(etagKey)
+          continue
+        }
         if (res.status === 403 && (await isSubscriptionInactive(res))) return 'ok' // token válido: no se olvida (el outbox lo necesita)
         if (res.status === 403 && permissioned && !(await endedCodeOf(res))) continue // sin permiso para esta lectura: la sesión sigue válida
         if (res.status === 403) await reportEndedResponse(tenantId, res) // caja revocada/vencida: la sesión termina ya
@@ -261,7 +308,8 @@ export class CatalogSyncer {
           if (!optional) failed = true
           continue
         }
-        if (!applyCatalogPayload(store, route, await res.text()) && !optional) failed = true
+        // Sin header ETag en el 200 (backend viejo) se borra el guardado: comportamiento de antes.
+        if (!applyCatalogPayload(store, route, await res.text(), etagKey ? res.headers.get('etag') : undefined) && !optional) failed = true
       } catch {
         if (!optional) failed = true // red caída / timeout
       }

@@ -5,7 +5,8 @@ import type { CatalogRoute } from './types'
  * Es una tabla explícita (no rutas dedicadas de Next) porque un segmento dinámico
  * `api/products/[code]` capturaría también `/api/products/search` y `/api/products/bulk-upload`.
  *
- * Solo GET, sin query string (el POS no envía filtros; con `?categoryId=` una lista cacheada sería incorrecta).
+ * Solo GET, sin query string (el POS no envía filtros; con `?categoryId=` una lista cacheada sería incorrecta),
+ * salvo `/api/products/stock?since=<n>` (delta de stock).
  * `{code}` debe ser numérico: los códigos, códigos de barras e ids del POS son números (se cargan por numpad),
  * lo que además descarta cualquier segmento con nombre (`search`, `bulk-upload`, …).
  *
@@ -20,6 +21,9 @@ const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** La única variante cacheada de la lista de clientes: los activos (la que usa la caja). */
 const CUSTOMERS_ACTIVE_QUERY = '?onlyActive=true'
 
+/** Delta de stock: `?since=<versión>` (solo dígitos; cualquier otra query no es la del POS y pasa por el proxy). */
+const STOCK_DELTA_QUERY = /^\?since=(\d{1,18})$/
+
 export function matchCatalogRoute(method: string, pathname: string, search: string): CatalogRoute | null {
   if (method.toUpperCase() !== 'GET') return null
 
@@ -27,6 +31,12 @@ export function matchCatalogRoute(method: string, pathname: string, search: stri
 
   // Clientes (crédito/fiado): la lista cacheada es SOLO `?onlyActive=true`; otras variantes (`onlyActive=false`) no se cachean.
   if (path === '/api/customers') return search === CUSTOMERS_ACTIVE_QUERY ? { kind: 'customers' } : null
+
+  // Delta de stock: es la única ruta de productos con query cacheable (la respuesta depende de `since`).
+  if (path === '/api/products/stock') {
+    const since = STOCK_DELTA_QUERY.exec(search)
+    return since ? { kind: 'stockDelta', since: Number(since[1]) } : null
+  }
 
   if (search !== '' && search !== '?') return null
 
