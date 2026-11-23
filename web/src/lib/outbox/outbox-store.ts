@@ -188,6 +188,11 @@ export class OutboxStore {
     return { row, inserted: info.changes > 0 }
   }
 
+  /** Agrupa varias escrituras en una sola transacción (un único fsync en vez de uno por fila). */
+  runInTransaction<T>(fn: () => T): T {
+    return this.conn.transaction(fn)()
+  }
+
   getByClientId(clientId: string): OutboxRow | null {
     const r = this.conn.prepare('SELECT * FROM outbox WHERE client_id = ?').get(clientId) as RawRow | undefined
     return r ? toRow(r) : null
