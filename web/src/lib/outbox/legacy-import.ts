@@ -49,35 +49,37 @@ export function importLegacyQueue(
 ): LegacyImportResult {
   const result: LegacyImportResult = { imported: [], rejected: [], ignored: [] }
 
-  for (const raw of items.slice(0, MAX_LEGACY_ITEMS)) {
-    const id = typeof raw?.id === 'string' ? raw.id : ''
-    if (!id) {
-      result.rejected.push({ id: '', reason: 'sin id' })
-      continue
-    }
-    if (raw.tenantId !== tenantId) {
-      result.ignored.push(id)
-      continue
-    }
-    try {
-      if (raw.payload === null || typeof raw.payload !== 'object' || Array.isArray(raw.payload)) {
-        throw new InvalidRequest('payload inválido')
+  store.runInTransaction(() => {
+    for (const raw of items.slice(0, MAX_LEGACY_ITEMS)) {
+      const id = typeof raw?.id === 'string' ? raw.id : ''
+      if (!id) {
+        result.rejected.push({ id: '', reason: 'sin id' })
+        continue
       }
-      const { payload } = parseSale(raw.payload as Record<string, unknown>)
-      const queuedMs = typeof raw.queuedAt === 'string' ? Date.parse(raw.queuedAt) : NaN
-      const createdAt = new Date(Number.isNaN(queuedMs) || queuedMs > now.getTime() ? now.getTime() : queuedMs).toISOString()
-      store.enqueue({
-        type: 'SALE',
-        payload: JSON.stringify(payload),
-        createdAt,
-        sourceUserId,
-        clientId: legacyClientId(tenantId, id),
-      })
-      result.imported.push(id)
-    } catch (err) {
-      result.rejected.push({ id, reason: err instanceof InvalidRequest ? err.message : `error: ${(err as Error).message}` })
+      if (raw.tenantId !== tenantId) {
+        result.ignored.push(id)
+        continue
+      }
+      try {
+        if (raw.payload === null || typeof raw.payload !== 'object' || Array.isArray(raw.payload)) {
+          throw new InvalidRequest('payload inválido')
+        }
+        const { payload } = parseSale(raw.payload as Record<string, unknown>)
+        const queuedMs = typeof raw.queuedAt === 'string' ? Date.parse(raw.queuedAt) : NaN
+        const createdAt = new Date(Number.isNaN(queuedMs) || queuedMs > now.getTime() ? now.getTime() : queuedMs).toISOString()
+        store.enqueue({
+          type: 'SALE',
+          payload: JSON.stringify(payload),
+          createdAt,
+          sourceUserId,
+          clientId: legacyClientId(tenantId, id),
+        })
+        result.imported.push(id)
+      } catch (err) {
+        result.rejected.push({ id, reason: err instanceof InvalidRequest ? err.message : `error: ${(err as Error).message}` })
+      }
     }
-  }
+  })
   if (items.length > MAX_LEGACY_ITEMS) {
     for (const raw of items.slice(MAX_LEGACY_ITEMS)) {
       if (typeof raw?.id === 'string') result.rejected.push({ id: raw.id, reason: 'demasiados ítems en un solo envío' })
