@@ -668,6 +668,16 @@ export default function POSPage() {
     })
   }
 
+  // Elegir un producto desde el modal de productos: se agrega al carrito y se cierra el modal
+  const handleSelectProductFromModal = (product: Product) => {
+    if (product.stock <= 0) {
+      showNotification('Producto sin stock', 'error')
+      return
+    }
+    addProductToCart(product)
+    handleCloseProductsModal()
+  }
+
   // Payment handlers
   const handlePaymentComplete = async (
     saleCompleted: boolean, 
@@ -1235,6 +1245,7 @@ export default function POSPage() {
         products={products}
         searchQuery={productsModal.searchQuery}
         onClose={handleCloseProductsModal}
+        onSelect={handleSelectProductFromModal}
         onKeyPress={handleKeyPress}
       />
 
