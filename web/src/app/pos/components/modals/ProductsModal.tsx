@@ -13,6 +13,7 @@ interface ProductsModalProps {
   products: Product[]
   searchQuery: string
   onClose: () => void
+  onSelect?: (product: Product) => void
   onKeyPress?: (key: string) => void
 }
 
@@ -29,6 +30,7 @@ export const ProductsModal = ({
   products,
   searchQuery,
   onClose,
+  onSelect,
   onKeyPress
 }: ProductsModalProps) => {
   const [internalSearch, setInternalSearch] = useState('')
@@ -71,6 +73,19 @@ export const ProductsModal = ({
           type="text"
           value={internalSearch}
           onChange={e => setInternalSearch(e.target.value)}
+          onKeyDown={e => {
+            // El hook global de teclado no intercepta este campo (data-pos-text-input),
+            // así que cerrar con Esc / ⇧ / ⌘ lo resolvemos acá.
+            if (e.key === 'Escape' || e.key === 'Shift' || e.key === 'Meta') {
+              e.preventDefault()
+              onClose()
+            } else if (e.key === 'Enter' && onSelect && activeQuery && filteredProducts.length > 0) {
+              // Enter agrega el primer resultado (el más relevante)
+              e.preventDefault()
+              onSelect(filteredProducts[0])
+            }
+          }}
+          data-pos-text-input
           placeholder="Buscar por código, ID o nombre..."
           autoFocus
           className="flex-1 font-mono text-base rounded-2xl px-4 py-3 bg-[var(--pos-card-2)] text-[var(--pos-ink)] placeholder:text-[var(--pos-muted)] border border-[var(--pos-line)] outline-none transition focus:border-[var(--pos-primary-2)] focus:ring-4 focus:ring-[var(--pos-primary-soft)]"
@@ -99,7 +114,13 @@ export const ProductsModal = ({
               {filteredProducts.map(product => (
                 <div
                   key={product.code}
-                  className="pos-card-2 !rounded-2xl p-4 text-center bg-[var(--pos-card)] hover:border-[var(--pos-primary-2)] transition-colors"
+                  role={onSelect ? 'button' : undefined}
+                  tabIndex={onSelect ? 0 : undefined}
+                  onClick={onSelect ? () => onSelect(product) : undefined}
+                  onKeyDown={onSelect ? e => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(product) }
+                  } : undefined}
+                  className={`pos-card-2 !rounded-2xl p-4 text-center bg-[var(--pos-card)] hover:border-[var(--pos-primary-2)] transition-colors ${onSelect ? 'cursor-pointer' : ''} ${product.stock <= 0 ? 'opacity-60' : ''}`}
                 >
                   <div className="text-2xl font-mono font-extrabold pos-primary mb-2">
                     {product.code}
