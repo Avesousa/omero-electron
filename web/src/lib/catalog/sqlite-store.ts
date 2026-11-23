@@ -24,6 +24,9 @@ import type {
 type DatabaseConstructor = typeof import('better-sqlite3')
 type Db = InstanceType<DatabaseConstructor>
 
+/** Prefijo de la clave de `etags` para las configuraciones (`setting:<key>`). */
+const SETTING_ETAG_PREFIX = 'setting:'
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export interface OpenOptions {
@@ -153,11 +156,54 @@ export class SqliteCatalogStore implements CatalogStore {
     return m ? { resource: m.resource, lastSyncAt: m.lastSyncAt, itemCount: m.itemCount } : null
   }
 
+  /** Guarda (o, con `null`/`undefined`, borra) el ETag de un recurso. Se invoca dentro de la transacción de los datos. */
+  private writeEtag(key: string, etag: string | null | undefined): void {
+    if (etag) {
+      this.conn
+        .prepare('INSERT INTO etags (key, etag) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET etag = excluded.etag')
+        .run(key, etag)
+    } else {
+      this.conn.prepare('DELETE FROM etags WHERE key = ?').run(key)
+    }
+  }
+
+  getEtag(key: string): string | null {
+    const row = this.conn.prepare('SELECT etag FROM etags WHERE key = ?').get(key) as { etag: string } | undefined
+    return row ? row.etag : null
+  }
+
+  setEtag(key: string, etag: string | null): void {
+    this.writeEtag(key, etag)
+  }
+
+  touch(key: string, now: Date = new Date()): void {
+    const at = now.toISOString()
+    if (key === 'products' || key === 'promotions') {
+      this.conn.prepare('UPDATE sync_meta SET last_sync_at = ? WHERE resource = ?').run(at, key)
+    } else if (key.startsWith(SETTING_ETAG_PREFIX)) {
+      this.conn.prepare('UPDATE settings SET synced_at = ? WHERE key = ?').run(at, key.slice(SETTING_ETAG_PREFIX.length))
+    }
+  }
+
+  applyStockDelta(items: { code: string; stock: number }[]): number {
+    // `json(?)` con el número en texto: conserva el formato entero (5, no 5.0) como lo devuelve el backend.
+    const update = this.conn.prepare("UPDATE products SET json = json_set(json, '$.stock', json(?)) WHERE code = ?")
+    let updated = 0
+    this.conn.transaction(() => {
+      for (const item of items) {
+        if (!Number.isFinite(item.stock)) continue
+        updated += update.run(String(item.stock), String(item.code)).changes
+      }
+    })()
+    return updated
+  }
+
   private snapshot<T>(
     resource: CatalogResource,
     items: T[],
     now: Date,
     replace: (db: Db, items: T[]) => void,
+    etag: string | null | undefined,
   ): SnapshotResult {
     const lastSyncAt = now.toISOString()
     const hash = sha256(JSON.stringify(items))
@@ -170,33 +216,37 @@ export class SqliteCatalogStore implements CatalogStore {
 
     // Sin cambios: no se reescribe nada, solo se actualiza la fecha del último sync.
     if (previous && previous.payloadHash === hash) {
-      upsertMeta.run(resource, lastSyncAt, hash, items.length)
+      this.conn.transaction(() => {
+        upsertMeta.run(resource, lastSyncAt, hash, items.length)
+        this.writeEtag(resource, etag) // los datos no cambiaron, pero el validador del backend sí pudo cambiar
+      })()
       return { written: false, itemCount: items.length, lastSyncAt }
     }
 
     this.conn.transaction(() => {
       replace(this.conn, items)
       upsertMeta.run(resource, lastSyncAt, hash, items.length)
+      this.writeEtag(resource, etag) // misma transacción que los datos: nunca un ETag de otro snapshot
     })()
     return { written: true, itemCount: items.length, lastSyncAt }
   }
 
-  replaceProducts(items: ProductLike[], now: Date = new Date()): SnapshotResult {
+  replaceProducts(items: ProductLike[], now: Date = new Date(), etag?: string | null): SnapshotResult {
     return this.snapshot('products', items, now, (db, list) => {
       db.exec('DELETE FROM products')
       const insert = db.prepare(`INSERT INTO products (id, code, barcode, json) VALUES (?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET code = excluded.code, barcode = excluded.barcode, json = excluded.json`)
       for (const p of list) insert.run(String(p.id), String(p.code), p.barcode == null ? null : String(p.barcode), JSON.stringify(p))
-    })
+    }, etag)
   }
 
-  replacePromotions(items: PromotionLike[], now: Date = new Date()): SnapshotResult {
+  replacePromotions(items: PromotionLike[], now: Date = new Date(), etag?: string | null): SnapshotResult {
     return this.snapshot('promotions', items, now, (db, list) => {
       db.exec('DELETE FROM promotions')
       const insert = db.prepare(`INSERT INTO promotions (id, json) VALUES (?, ?)
        ON CONFLICT(id) DO UPDATE SET json = excluded.json`)
       for (const p of list) insert.run(String(p.id), JSON.stringify(p))
-    })
+    }, etag)
   }
 
   /**
@@ -217,13 +267,15 @@ export class SqliteCatalogStore implements CatalogStore {
     return r ? { json: r.json, syncedAt: r.synced_at } : null
   }
 
-  upsertSetting(key: string, json: string, now: Date = new Date()): void {
-    this.conn
-      .prepare(
-        `INSERT INTO settings (key, json, synced_at) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET json = excluded.json, synced_at = excluded.synced_at`,
-      )
-      .run(key, json, now.toISOString())
+  upsertSetting(key: string, json: string, now: Date = new Date(), etag?: string | null): void {
+    const stmt = this.conn.prepare(
+      `INSERT INTO settings (key, json, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET json = excluded.json, synced_at = excluded.synced_at`,
+    )
+    this.conn.transaction(() => {
+      stmt.run(key, json, now.toISOString())
+      this.writeEtag(`${SETTING_ETAG_PREFIX}${key}`, etag)
+    })()
   }
 
   deleteSettingsByPrefix(prefix: string, keep: readonly string[] = []): number {

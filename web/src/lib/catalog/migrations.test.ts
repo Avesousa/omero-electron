@@ -20,7 +20,7 @@ describe('MIGRATIONS', () => {
     const db = new Database(':memory:')
     for (const m of MIGRATIONS) db.exec(m.sql)
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]).map((r) => r.name)
-    expect(tables).toEqual(expect.arrayContaining(['products', 'promotions', 'sync_meta']))
+    expect(tables).toEqual(expect.arrayContaining(['products', 'promotions', 'sync_meta', 'settings', 'etags']))
     const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as { name: string }[]).map((r) => r.name)
     expect(indexes).toEqual(expect.arrayContaining(['idx_products_code', 'idx_products_barcode']))
     db.close()

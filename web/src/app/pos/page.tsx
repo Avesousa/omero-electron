@@ -35,7 +35,7 @@ import {
 //     To activate the Electron hook, set NEXT_PUBLIC_ELECTRON=true at build time and
 //     update the re-export in hooks/index.ts to point to useKeyboard.electron.ts, or
 //     detect window.electronAPI?.isElectron at runtime and swap implementations.
-import { useNotifications, useCart, usePayment, usePaymentMethods, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling } from './hooks'
+import { useNotifications, useCart, usePayment, usePaymentMethods, useKeyboard, useExpenses, useMercadoPagoEvents, useMercadoPagoPolling, useStockSync } from './hooks'
 import type { PaymentValues } from './hooks/usePayment'
 import type { PaymentLine } from './utils/payments'
 import { formatStock, roundKg } from '@/lib/quantity'
@@ -100,6 +100,8 @@ export default function POSPage() {
 
   // Custom hooks
   const { notification, showNotification } = useNotifications()
+  // useMercadoPagoEvents corre antes que useProducts: el evento `stock` llega a `requestSync` por ref.
+  const requestStockSyncRef = useRef<() => void>(() => {})
   const {
     isConnected: mpConnected,
     sseConnected,
@@ -107,7 +109,7 @@ export default function POSPage() {
     lastPayment,
     lastPaymentTime,
     clearLastPayment
-  } = useMercadoPagoEvents({ showNotification })
+  } = useMercadoPagoEvents({ showNotification, onStock: () => requestStockSyncRef.current() })
   const { triggerPollingIfNeeded } = useMercadoPagoPolling({
     sseConnected,
     mpConnected: isMpApiConnected,
@@ -152,9 +154,12 @@ export default function POSPage() {
     findProductByCode,
     findProductByScalePlu,
     refreshProducts,
+    syncStock,
     searchProductByCodePrefix,
     fetchProducts
   } = useProducts()
+  const { requestSync: requestStockSync } = useStockSync({ sseConnected, syncStock })
+  requestStockSyncRef.current = requestStockSync
   const connection = useConnectionStatus()
   const updateAvailable = useUpdateAvailable()
   // Cola vieja de localStorage: se migra una vez (desktop → outbox SQLite; web → se sube y se borra).
@@ -661,6 +666,16 @@ export default function POSPage() {
       isOpen: false,
       searchQuery: ''
     })
+  }
+
+  // Elegir un producto desde el modal de productos: se agrega al carrito y se cierra el modal
+  const handleSelectProductFromModal = (product: Product) => {
+    if (product.stock <= 0) {
+      showNotification('Producto sin stock', 'error')
+      return
+    }
+    addProductToCart(product)
+    handleCloseProductsModal()
   }
 
   // Payment handlers
@@ -1230,6 +1245,7 @@ export default function POSPage() {
         products={products}
         searchQuery={productsModal.searchQuery}
         onClose={handleCloseProductsModal}
+        onSelect={handleSelectProductFromModal}
         onKeyPress={handleKeyPress}
       />
 

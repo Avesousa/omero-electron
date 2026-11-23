@@ -37,11 +37,16 @@ const backend = {
   promotions: [] as { id: string; name: string }[],
   config: {} as Record<string, string>,
   paymentMethods: [] as { id: string; name: string; kind: string; shortcutKey: number; description?: string | null }[],
+  /** ETag/delta de la caché condicional (backend nuevo). Con `enabled = false` el backend se comporta como el viejo. */
+  etag: { enabled: false, cat: 1, stock: 10, delta: { status: 200 as number, version: 10, items: [] as { code: string; stock: number }[] }, config: 1, promo: 1 },
+  /** `If-None-Match` recibido en cada request (en orden). */
+  requests: [] as { path: string; inm: string | undefined }[],
 }
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url!, 'http://backend')
   backend.hits.push(`${req.method} ${url.pathname}${url.search}`)
+  backend.requests.push({ path: url.pathname + url.search, inm: req.headers['if-none-match'] as string | undefined })
 
   if (backend.mode === 'reset') return req.socket.destroy()
   if (backend.mode === 'hang') return // nunca responde
@@ -53,6 +58,25 @@ const server = http.createServer((req, res) => {
   const json = (body: unknown, status = 200) => {
     res.writeHead(status, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(body))
+  }
+  // Conditional GET con ETag fuerte (como omero-backend#86): 304 sin body si If-None-Match coincide.
+  const conditional = (etag: string, body: unknown) => {
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, no-cache', Vary: 'Authorization' })
+      return res.end()
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', ETag: etag, 'Cache-Control': 'private, no-cache', Vary: 'Authorization' })
+    res.end(JSON.stringify(body))
+  }
+  if (backend.etag.enabled && req.method === 'GET') {
+    if (url.pathname === '/api/products') return conditional(`"${backend.etag.cat}-${backend.etag.stock}"`, { success: true, data: backend.products })
+    if (url.pathname === '/api/promotions') return conditional(`"${backend.etag.promo}"`, { success: true, data: backend.promotions })
+    const c = /^\/api\/business\/config\/([A-Za-z0-9_]+)$/.exec(url.pathname)
+    if (c) return conditional(`"cfg-${backend.etag.config}"`, { success: true, data: { key: c[1], value: backend.config[c[1]] ?? 'false', type: 'boolean' } })
+  }
+  if (url.pathname === '/api/products/stock') {
+    if (backend.etag.delta.status !== 200) return json({ success: false, code: 'STOCK_DELTA_EXPIRED' }, backend.etag.delta.status)
+    return json({ success: true, data: { version: backend.etag.delta.version, items: backend.etag.delta.items } })
   }
   if (req.method === 'POST' && url.pathname === '/api/products') return json({ success: true, data: { id: 99 } }, 201)
   if (url.pathname === '/api/products') return json({ success: true, data: backend.products })
@@ -83,6 +107,8 @@ beforeEach(() => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omero-catalog-int-'))
   backend.mode = 'ok'
   backend.hits = []
+  backend.requests = []
+  backend.etag = { enabled: false, cat: 1, stock: 10, delta: { status: 200, version: 10, items: [] }, config: 1, promo: 1 }
   backend.products = [
     { id: 0, code: '000', name: 'Precio libre' },
     { id: 1, code: '001', name: 'Coca Cola 2L', barcode: 7790001 },
@@ -515,5 +541,248 @@ describe('modo web y degradación', () => {
     backend.products = original
     backend.mode = 503
     expect((await list(await get('/api/products'))).map((p) => p.code)).toEqual(['000', '001', '002'])
+  })
+})
+
+
+describe('caché condicional (ETag / 304)', () => {
+  const inmOf = (path: string) => backend.requests.filter((r) => r.path === path).map((r) => r.inm)
+
+  it('primer GET: sin If-None-Match (no hay snapshot); guarda el ETag y no lo expone, con X-Omero-Stock-Version', async () => {
+    backend.etag.enabled = true
+    const res = await get('/api/products')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('etag')).toBeNull()
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(res.headers.get('x-omero-cache')).toBeNull()
+    expect(res.headers.get('x-omero-stock-version')).toBe('10')
+    expect(inmOf('/api/products')).toEqual([undefined])
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBe('"1-10"')
+  })
+
+  it('segundo GET: manda el ETag propio, el 304 se sirve desde SQLite con X-Omero-Cache: fresh y actualiza lastSyncAt', async () => {
+    backend.etag.enabled = true
+    await get('/api/products')
+    const store = getCatalogStore(TENANT_A)!
+    const before = store.getMeta('products')!.lastSyncAt
+    await new Promise((r) => setTimeout(r, 5))
+    const res = await get('/api/products')
+    expect(inmOf('/api/products')).toEqual([undefined, '"1-10"'])
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-omero-cache')).toBe('fresh')
+    expect(res.headers.get('x-omero-cache-at')).toBeNull()
+    expect(res.headers.get('etag')).toBeNull()
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(res.headers.get('x-omero-stock-version')).toBe('10')
+    expect((await list(res)).map((p) => p.code)).toEqual(['000', '001', '002'])
+    expect(Date.parse(store.getMeta('products')!.lastSyncAt)).toBeGreaterThan(Date.parse(before))
+  })
+
+  it('el If-None-Match del navegador no llega al backend', async () => {
+    backend.etag.enabled = true
+    const res = await get('/api/products', authA, { headers: { 'If-None-Match': '"1-10"' } })
+    expect(res.status).toBe(200) // sin snapshot propio → catálogo completo, nunca un 304 al navegador
+    expect(inmOf('/api/products')).toEqual([undefined])
+    const again = await get('/api/products', authA, { headers: { 'If-None-Match': '"otro"' } })
+    expect(again.status).toBe(200)
+    expect(inmOf('/api/products')).toEqual([undefined, '"1-10"'])
+  })
+
+  it('cambio de catálogo → 200 completo con el ETag nuevo', async () => {
+    backend.etag.enabled = true
+    await get('/api/products')
+    backend.products = backend.products.filter((p) => p.code !== '002')
+    backend.etag.cat = 2
+    const res = await get('/api/products')
+    expect(res.headers.get('x-omero-cache')).toBeNull()
+    expect((await list(res)).map((p) => p.code)).toEqual(['000', '001'])
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBe('"2-10"')
+  })
+
+  it('el stock en la respuesta 304 sigue restando lo pendiente del outbox', async () => {
+    backend.etag.enabled = true
+    backend.products = [{ id: 1, code: '001', name: 'Coca', stock: 10 } as never]
+    await get('/api/products')
+    await get('/api/sales', authA, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [{ productId: '001', quantity: 3, unitPrice: 10, total: 30 }], cashAmount: 30, mpAmount: 0, change: 0 }),
+    })
+    const res = await get('/api/products')
+    expect(res.headers.get('x-omero-cache')).toBe('fresh')
+    expect(((await res.json()).data as { stock: number }[])[0].stock).toBe(7)
+  })
+
+  it('promociones y configuración usan su propio ETag (setting:<key>)', async () => {
+    backend.etag.enabled = true
+    await get('/api/promotions')
+    await get('/api/business/config/mp_offline')
+    expect(getCatalogStore(TENANT_A)!.getEtag('promotions')).toBe('"1"')
+    expect(getCatalogStore(TENANT_A)!.getEtag('setting:mp_offline')).toBe('"cfg-1"')
+    const promo = await get('/api/promotions')
+    const cfg = await get('/api/business/config/mp_offline')
+    expect(promo.headers.get('x-omero-cache')).toBe('fresh')
+    expect(cfg.headers.get('x-omero-cache')).toBe('fresh')
+    expect(promo.headers.get('x-omero-stock-version')).toBeNull()
+    expect((await cfg.json()).data.key).toBe('mp_offline')
+  })
+
+  it('backend viejo (200 sin ETag): borra el guardado y no manda condicional, como antes', async () => {
+    backend.etag.enabled = true
+    await get('/api/products')
+    backend.etag.enabled = false
+    const res = await get('/api/products')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-omero-stock-version')).toBeNull()
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBeNull()
+    await get('/api/products')
+    expect(inmOf('/api/products')).toEqual([undefined, '"1-10"', undefined])
+  })
+
+  it('sin conexión sigue sirviendo con X-Omero-Cache: hit (nunca fresh) y trae la versión de stock', async () => {
+    backend.etag.enabled = true
+    await get('/api/products')
+    backend.mode = 503
+    const res = await get('/api/products')
+    expect(res.headers.get('x-omero-cache')).toBe('hit')
+    expect(res.headers.get('x-omero-stock-version')).toBe('10')
+  })
+
+  it('un 304 con el snapshot vacío en el momento de servir se reintenta completo (nunca un 304 al navegador)', async () => {
+    backend.etag.enabled = true
+    await get('/api/products')
+    const store = getCatalogStore(TENANT_A)!
+    vi.spyOn(store, 'getMeta').mockReturnValueOnce({ resource: 'products', lastSyncAt: new Date().toISOString(), itemCount: 3 }).mockReturnValueOnce(null)
+    const res = await get('/api/products')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('x-omero-cache')).toBeNull()
+    expect(inmOf('/api/products')).toEqual([undefined, '"1-10"', undefined])
+  })
+
+  it('un fallo de la caché al leer el ETag no rompe la request', async () => {
+    backend.etag.enabled = true
+    await get('/api/products')
+    const store = getCatalogStore(TENANT_A)!
+    vi.spyOn(store, 'getEtag').mockImplementation(() => {
+      throw new Error('disco')
+    })
+    const res = await get('/api/products')
+    expect(res.status).toBe(200)
+    expect(inmOf('/api/products')).toEqual([undefined, undefined])
+  })
+})
+
+describe('delta de stock (/api/products/stock?since=)', () => {
+  const sale = (code: string, quantity: number) =>
+    get('/api/sales', authA, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [{ productId: code, quantity, unitPrice: 10, total: 10 * quantity }], cashAmount: 10, mpAmount: 0, change: 0 }),
+    })
+  const stockRows = () => getCatalogStore(TENANT_A)!.getProducts().map((j) => JSON.parse(j) as { code: string; stock: number })
+
+  beforeEach(() => {
+    backend.etag.enabled = true
+    backend.products = [
+      { id: 1, code: '001', name: 'Coca', stock: 10 } as never,
+      { id: 2, code: '002', name: 'Agua', stock: 5 } as never,
+    ]
+  })
+
+  it('200: fusiona en SQLite, recompone el ETag y el siguiente GET da 304', async () => {
+    await get('/api/products')
+    backend.etag.stock = 12
+    backend.etag.delta = { status: 200, version: 12, items: [{ code: '001', stock: 8 }, { code: '999', stock: 1 }] }
+    const res = await get('/api/products/stock?since=10')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('etag')).toBeNull()
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect((await res.json()).data.version).toBe(12)
+    expect(stockRows().find((p) => p.code === '001')!.stock).toBe(8)
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBe('"1-12"')
+    expect(backend.requests.filter((r) => r.path === '/api/products/stock?since=10').map((r) => r.inm)).toEqual([undefined])
+
+    const next = await get('/api/products')
+    expect(next.headers.get('x-omero-cache')).toBe('fresh')
+    expect(next.headers.get('x-omero-stock-version')).toBe('12')
+  })
+
+  it('el delta sale ajustado con lo pendiente del outbox', async () => {
+    await get('/api/products')
+    await sale('001', 3) // pendiente
+    backend.etag.delta = { status: 200, version: 11, items: [{ code: '001', stock: 9 }] }
+    const res = await get('/api/products/stock?since=10')
+    expect((await res.json()).data.items).toEqual([{ code: '001', stock: 6 }])
+    expect(stockRows().find((p) => p.code === '001')!.stock).toBe(9) // SQLite guarda el valor crudo
+  })
+
+  it('no hay doble descuento: una venta ya enviada y confirmada por el delta no se resta otra vez', async () => {
+    await get('/api/products')
+    await sale('001', 3)
+    const outbox = (await import('../outbox/outbox-registry')).getOutboxStore(TENANT_A)!
+    const row = outbox.list({ status: 'PENDING' })[0] as { clientId: string }
+    outbox.markSent(row.clientId, { serverId: 'srv-1', sentAt: new Date().toISOString() }) // enviada: el backend ya la descontó
+    backend.etag.delta = { status: 200, version: 11, items: [{ code: '001', stock: 7 }] }
+    const res = await get('/api/products/stock?since=10')
+    expect((await res.json()).data.items).toEqual([{ code: '001', stock: 7 }])
+  })
+
+  it('no recompone el ETag si el navegador pidió desde una versión mayor a la de SQLite', async () => {
+    await get('/api/products')
+    backend.etag.delta = { status: 200, version: 20, items: [{ code: '001', stock: 1 }] }
+    await get('/api/products/stock?since=15')
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBe('"1-10"')
+    expect(stockRows().find((p) => p.code === '001')!.stock).toBe(1)
+  })
+
+  it('no recompone el ETag si la versión del delta retrocede', async () => {
+    await get('/api/products')
+    backend.etag.delta = { status: 200, version: 4, items: [] }
+    await get('/api/products/stock?since=4')
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBe('"1-10"')
+  })
+
+  it('sin ETag de products (backend viejo) el delta no inventa uno', async () => {
+    backend.etag.enabled = false
+    await get('/api/products')
+    backend.etag.delta = { status: 200, version: 5, items: [{ code: '001', stock: 2 }] }
+    const res = await get('/api/products/stock?since=0')
+    expect(res.status).toBe(200)
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBeNull()
+  })
+
+  it('un cuerpo con forma inválida pasa sin tocar SQLite', async () => {
+    await get('/api/products')
+    backend.etag.delta = { status: 200, version: 11, items: [{ code: '001', stock: 'x' as never }] }
+    const res = await get('/api/products/stock?since=10')
+    expect(res.status).toBe(200)
+    expect(getCatalogStore(TENANT_A)!.getEtag('products')).toBe('"1-10"')
+    expect(stockRows().find((p) => p.code === '001')!.stock).toBe(10)
+  })
+
+  it.each([410, 400, 404, 500])('un %i pasa tal cual', async (status) => {
+    await get('/api/products')
+    backend.etag.delta = { status, version: 0, items: [] }
+    const res = await get('/api/products/stock?since=10')
+    expect(res.status).toBe(status)
+    expect(res.headers.get('x-omero-cache')).toBeNull()
+  })
+
+  it.each([502, 503, 504])('un %i pasa sin servir de la caché', async (status) => {
+    await get('/api/products')
+    backend.mode = status as 502
+    const res = await get('/api/products/stock?since=10')
+    expect(res.status).toBe(status)
+    expect(res.headers.get('x-omero-cache')).toBeNull()
+  })
+
+  it('un fallo de SQLite al aplicar el delta no rompe la respuesta', async () => {
+    await get('/api/products')
+    vi.spyOn(getCatalogStore(TENANT_A)!, 'applyStockDelta').mockImplementation(() => {
+      throw new Error('disco')
+    })
+    backend.etag.delta = { status: 200, version: 11, items: [{ code: '001', stock: 9 }] }
+    const res = await get('/api/products/stock?since=10')
+    expect(res.status).toBe(200)
   })
 })

@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '@/lib/apiClient'
 import { startMpEvents, type TicketResult } from '@/lib/mpEvents'
 import type { NotificationType, PaymentNotification, MPStatusEvent } from '../types'
 
 interface UseMercadoPagoEventsParams {
   showNotification: (message: string, type?: NotificationType) => void
+  /** Evento `stock` del negocio: solo un disparador para sincronizar el stock (el payload no se usa). */
+  onStock?: () => void
 }
 
 async function fetchTicket(): Promise<TicketResult> {
@@ -16,7 +18,10 @@ async function fetchTicket(): Promise<TicketResult> {
   return { ok: false, forbidden: error === 'Error 403' }
 }
 
-export const useMercadoPagoEvents = ({ showNotification }: UseMercadoPagoEventsParams) => {
+export const useMercadoPagoEvents = ({ showNotification, onStock }: UseMercadoPagoEventsParams) => {
+  // La conexión es única por montaje: el callback se lee por ref para no reabrir el stream si cambia.
+  const onStockRef = useRef(onStock)
+  onStockRef.current = onStock
   const [sseConnected, setSseConnected] = useState(false)
   const [mpConnected, setMpConnected] = useState(false)
   const [lastPayment, setLastPayment] = useState<PaymentNotification | null>(null)
@@ -39,6 +44,7 @@ export const useMercadoPagoEvents = ({ showNotification }: UseMercadoPagoEventsP
         setLastPayment(data as PaymentNotification)
         setLastPaymentTime(Date.now())
       },
+      onStock: () => onStockRef.current?.(),
     })
     return stop
     // Una sola conexión por montaje: re-ejecutar este efecto abre otro stream y deja el anterior colgado en el server

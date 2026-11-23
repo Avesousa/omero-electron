@@ -132,6 +132,33 @@ describe('response', () => {
     expect(res.headers.get('content-type')).toBe('application/json')
   })
 
+  it('reenvía If-None-Match al backend', async () => {
+    await proxyToBackend(new Request('http://localhost:3000/api/products', { headers: { 'If-None-Match': '"3-17"' } }))
+    expect(lastCall().headers.get('if-none-match')).toBe('"3-17"')
+  })
+
+  it('304 sin body: conserva el status y deja pasar ETag, Vary y Cache-Control', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(null, { status: 304, headers: { ETag: '"3-17"', Vary: 'Authorization', 'Cache-Control': 'private, no-cache' } }),
+    )
+    const res = await proxyToBackend(new Request('http://localhost:3000/api/products', { headers: { 'If-None-Match': '"3-17"' } }))
+    expect(res.status).toBe(304)
+    expect(res.body).toBeNull()
+    expect(res.headers.get('etag')).toBe('"3-17"')
+    expect(res.headers.get('vary')).toBe('Authorization')
+    expect(res.headers.get('cache-control')).toBe('private, no-cache')
+  })
+
+  it('200 con ETag: lo conserva junto con Vary y Cache-Control', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('{"success":true}', { headers: { ETag: '"3-17"', Vary: 'Authorization', 'Cache-Control': 'private, no-cache' } }),
+    )
+    const res = await proxyToBackend(new Request('http://localhost:3000/api/products'))
+    expect(res.headers.get('etag')).toBe('"3-17"')
+    expect(res.headers.get('vary')).toBe('Authorization')
+    expect(res.headers.get('cache-control')).toBe('private, no-cache')
+  })
+
   it('quita content-encoding y content-length (fetch ya descomprimió) y hop-by-hop', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response('plano', { headers: { 'Content-Encoding': 'gzip', 'Content-Length': '999', Connection: 'keep-alive', 'Keep-Alive': 'timeout=5', 'X-Keep': 'ok' } }),

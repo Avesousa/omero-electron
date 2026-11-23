@@ -41,6 +41,17 @@ describe('fetchEntitlement', () => {
     expect(r).toMatchObject({ fromCache: false, fetchedAt: new Date(NOW).toISOString() })
     expect(fetchMock).toHaveBeenCalledWith('/api/billing/entitlement', expect.objectContaining({ headers: { Authorization: 'Bearer x' } }))
   })
+  it('no pide cache: no-store (el navegador revalida con ETag)', async () => {
+    await fetchEntitlement()
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(init.cache).toBeUndefined()
+  })
+  it('X-Omero-Cache: fresh cuenta como en vivo (no fromCache)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: data() }), { headers: { 'X-Omero-Cache': 'fresh', 'X-Omero-Cache-At': '2026-10-09T00:00:00.000Z' } }),
+    )
+    expect(await fetchEntitlement()).toMatchObject({ fromCache: false, fetchedAt: new Date(NOW).toISOString() })
+  })
   it('desde caché local: usa X-Omero-Cache-At', async () => {
     current = { body: { success: true, data: data() }, cache: '2026-10-09T00:00:00.000Z' }
     expect(await fetchEntitlement()).toMatchObject({ fromCache: true, fetchedAt: '2026-10-09T00:00:00.000Z' })

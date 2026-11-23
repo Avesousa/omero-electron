@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Product } from '../types'
-import { apiFetch } from '@/lib/apiClient'
+import { apiFetch, isTransportError, type ApiResult } from '@/lib/apiClient'
 import { saleFormatOf, unitPriceOf } from '@/lib/quantity'
+import { mergeStock, parseStockDelta, stockVersionOf } from '@/lib/stockDelta'
 
 const CACHE_KEY = 'pos_products_cache'
 const FETCH_TIMEOUT = 2000          // 2s → si tarda más, falla y reintenta
 const RETRY_DELAY = 30 * 1000      // 30s entre reintentos async
+/** Catálogo completo de respaldo (sin versión / delta vencido o inválido): como máximo una vez cada 5 min. */
+export const FULL_FALLBACK_MIN_MS = 5 * 60_000
+/** Reconciliación completa sin condicional: red de seguridad ante un cambio de stock perdido. */
+export const FULL_RECONCILE_MS = 30 * 60_000
 
 interface ProductCache {
   products: Product[]
@@ -53,12 +58,29 @@ export const useProducts = () => {
   const [error, setError] = useState<string | null>(null)
   const revalidating = useRef(false)
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Versión de stock que el cliente ya tiene (de la última carga completa o del último delta). null = desconocida.
+  const stockVersion = useRef<number | null>(null)
+  const syncing = useRef(false)
+  const syncAgain = useRef(false)
+  const lastFallbackAt = useRef<number | null>(null)
+  const unmounted = useRef(false)
 
   useEffect(() => {
+    unmounted.current = false
     return () => {
+      unmounted.current = true
       if (retryTimer.current) clearTimeout(retryTimer.current)
     }
   }, [])
+
+  // Aplica una carga completa: estado, caché local y versión de stock (la carga completa es la verdad).
+  const applyFull = (result: ApiResult<any[]> & { success: true }): Product[] => {
+    const transformed = result.data.map(transformProduct)
+    setProducts(transformed)
+    saveCache(transformed)
+    stockVersion.current = stockVersionOf(result.headers)
+    return transformed
+  }
 
   useEffect(() => {
     const cached = loadCache()
@@ -81,9 +103,7 @@ export const useProducts = () => {
       setLoading(true)
       const result = await apiFetch<any[]>('/api/products')
       if (result.success) {
-        const transformed = result.data.map(transformProduct)
-        setProducts(transformed)
-        saveCache(transformed)
+        applyFull(result)
       } else {
         setError(result.error || 'Error al cargar productos')
       }
@@ -106,9 +126,7 @@ export const useProducts = () => {
     try {
       const result = await apiFetch<any[]>('/api/products', { signal: controller.signal })
       if (result.success) {
-        const transformed = result.data.map(transformProduct)
-        setProducts(transformed)
-        saveCache(transformed)
+        applyFull(result)
         return // éxito → no hay retry pendiente
       }
     } catch {
@@ -161,15 +179,75 @@ export const useProducts = () => {
   const refreshProducts = async (): Promise<Product[]> => {
     try {
       const result = await apiFetch<any[]>('/api/products')
-      if (result.success) {
-        const transformed = result.data.map(transformProduct)
-        setProducts(transformed)
-        saveCache(transformed)
-        return transformed
-      }
+      if (result.success) return applyFull(result)
     } catch {}
     return products
   }
+
+  // Catálogo completo de respaldo, limitado a 1 cada 5 min. `force` salta el límite (reconciliación).
+  const fullFallback = async (force = false) => {
+    const now = Date.now()
+    if (!force && lastFallbackAt.current !== null && now - lastFallbackAt.current < FULL_FALLBACK_MIN_MS) return
+    lastFallbackAt.current = now
+    try {
+      // `reload`: sin If-None-Match del navegador (carga completa real, no un 304 reciclado).
+      const result = await apiFetch<any[]>('/api/products', { cache: 'reload' })
+      if (result.success && !unmounted.current) applyFull(result)
+    } catch {}
+  }
+
+  const syncStockOnce = async () => {
+    const since = stockVersion.current
+    if (since === null) return fullFallback()
+    let result: ApiResult<unknown>
+    try {
+      result = await apiFetch<unknown>(`/api/products/stock?since=${since}`)
+    } catch {
+      return // error de red: no se hace nada (respaldo de 30 s / próximo evento)
+    }
+    if (unmounted.current) return
+    if (!result.success) {
+      if (isTransportError(result.error)) return
+      return fullFallback() // 410 (delta vencido), 404 (backend viejo) u otro error del contrato
+    }
+    const delta = parseStockDelta(result.data)
+    if (!delta || delta.version < since) return fullFallback() // payload inválido o Redis reiniciado
+    setProducts((prev) => {
+      const merged = mergeStock(prev, delta.items)
+      if (merged !== prev) saveCache(merged)
+      return merged
+    })
+    // La versión solo avanza con lo que devolvió el delta y solo si es mayor.
+    if (delta.version > since) stockVersion.current = delta.version
+  }
+
+  /**
+   * Sincroniza el stock con `GET /api/products/stock?since=<versión local>`. El evento SSE `stock` solo la DISPARA
+   * (nunca se aplica su payload). Una sola ejecución a la vez; si llegan más disparos mientras corre, se repite al terminar.
+   */
+  const syncStock = async (): Promise<void> => {
+    if (syncing.current) {
+      syncAgain.current = true
+      return
+    }
+    syncing.current = true
+    try {
+      do {
+        syncAgain.current = false
+        await syncStockOnce()
+      } while (syncAgain.current && !unmounted.current)
+    } finally {
+      syncing.current = false
+    }
+  }
+
+  // Reconciliación completa sin condicional cada 30 min.
+  const syncStockRef = useRef(fullFallback)
+  syncStockRef.current = fullFallback
+  useEffect(() => {
+    const timer = setInterval(() => void syncStockRef.current(true), FULL_RECONCILE_MS)
+    return () => clearInterval(timer)
+  }, [])
 
   return {
     products,
@@ -177,6 +255,7 @@ export const useProducts = () => {
     error,
     fetchProducts,
     refreshProducts,
+    syncStock,
     getProductByCode,
     findProductByCode,
     findProductByScalePlu,

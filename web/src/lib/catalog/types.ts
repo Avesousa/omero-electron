@@ -9,6 +9,7 @@ export type CatalogResource = 'products' | 'promotions'
 /** Lecturas del backend que la capa de datos sabe servir desde la caché. */
 export type CatalogRoute =
   | { kind: 'products' } // GET /api/products (lista completa, sin query)
+  | { kind: 'stockDelta'; since: number } // GET /api/products/stock?since=<n> (cambios de stock desde esa versión)
   | { kind: 'product'; code: string } // GET /api/products/{code}
   | { kind: 'promotions' } // GET /api/promotions (lista completa, sin query)
   | { kind: 'setting'; key: string } // GET /api/business/config/{key} (p. ej. mp_offline)
@@ -50,10 +51,21 @@ export interface PromotionLike {
  */
 export interface CatalogStore {
   readonly tenantId: string
-  /** Reemplaza TODOS los productos en una transacción (detecta eliminados). */
-  replaceProducts(items: ProductLike[], now?: Date): SnapshotResult
-  /** Reemplaza TODAS las promociones en una transacción. */
-  replacePromotions(items: PromotionLike[], now?: Date): SnapshotResult
+  /**
+   * Reemplaza TODOS los productos en una transacción (detecta eliminados). `etag` se guarda en la MISMA transacción;
+   * sin `etag` se borra el guardado (backend viejo: no hay validador).
+   */
+  replaceProducts(items: ProductLike[], now?: Date, etag?: string | null): SnapshotResult
+  /** Reemplaza TODAS las promociones en una transacción (mismo criterio de `etag`). */
+  replacePromotions(items: PromotionLike[], now?: Date, etag?: string | null): SnapshotResult
+  /** ETag guardado de un recurso (`products` | `promotions` | `setting:<key>`). */
+  getEtag(key: string): string | null
+  /** Guarda el ETag de un recurso; `null` lo borra. */
+  setEtag(key: string, etag: string | null): void
+  /** Marca el recurso como sincronizado ahora (`sync_meta`/`settings`) sin reescribir datos. Sin fila previa no hace nada. */
+  touch(key: string, now?: Date): void
+  /** Aplica `{code, stock}` a los productos guardados en una transacción; ignora códigos desconocidos. Devuelve cuántos actualizó. */
+  applyStockDelta(items: { code: string; stock: number }[]): number
   /** Inserta/actualiza un producto (lookup por código); no elimina nada. */
   upsertProduct(item: ProductLike): void
   /** JSON crudo de cada producto (en el orden de inserción). */
@@ -64,7 +76,7 @@ export interface CatalogStore {
   getMeta(resource: CatalogResource): CatalogMeta | null
   /** Configuración de negocio cacheada (JSON crudo del backend) y cuándo se sincronizó. */
   getSetting(key: string): { json: string; syncedAt: string } | null
-  upsertSetting(key: string, json: string, now?: Date): void
+  upsertSetting(key: string, json: string, now?: Date, etag?: string | null): void
   /** Borra las configuraciones cuya clave empieza con `prefix` y no está en `keep`. Devuelve cuántas borró. */
   deleteSettingsByPrefix(prefix: string, keep?: readonly string[]): number
   close(): void

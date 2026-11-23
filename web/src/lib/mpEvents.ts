@@ -21,6 +21,8 @@ export interface MpEventsOptions {
   onClose: () => void
   onStatus: (data: unknown) => void
   onPayment: (data: unknown) => void
+  /** Cambio de stock en el negocio: solo es un DISPARADOR (el cliente pide el delta), el payload no se aplica. */
+  onStock?: (data: unknown) => void
   /** Inyectables para tests */
   createSource?: (url: string) => EventSource
   random?: () => number
@@ -97,6 +99,10 @@ export function startMpEvents(opts: MpEventsOptions): () => void {
     es.addEventListener('payment', (e: Event) => {
       const data = parse((e as MessageEvent).data)
       if (data !== undefined) opts.onPayment(data)
+    })
+    es.addEventListener('stock', (e: Event) => {
+      const data = parse((e as MessageEvent).data)
+      if (data !== undefined) opts.onStock?.(data)
     })
   }
 

@@ -50,6 +50,16 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 3,
+    description: 'etags (validadores del backend para If-None-Match)',
+    sql: `
+      CREATE TABLE etags (
+        key  TEXT PRIMARY KEY,   -- 'products' | 'promotions' | 'setting:<key>'
+        etag TEXT NOT NULL       -- ETag tal como lo devolvió el backend (con comillas)
+      );
+    `,
+  },
 ]
 
 /** Versión de esquema más nueva que conoce este build. */

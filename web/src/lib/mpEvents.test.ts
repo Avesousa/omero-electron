@@ -65,6 +65,27 @@ describe('startMpEvents', () => {
     expect(cb.onPayment).toHaveBeenCalledTimes(1)
   })
 
+  it('evento stock: entrega el payload parseado a onStock; malformado se ignora; sin onStock no rompe', async () => {
+    const onStock = vi.fn()
+    startMpEvents({
+      backendUrl: 'http://api',
+      fetchTicket: async () => ({ ok: true, ticket: 't' }),
+      onOpen: vi.fn(), onClose: vi.fn(), onStatus: vi.fn(), onPayment: vi.fn(), onStock,
+      createSource: (u) => new FakeSource(u) as unknown as EventSource,
+      random: () => 0.5,
+    })
+    await flush()
+    FakeSource.all[0].emit('stock', '{"version":5,"items":[]}')
+    FakeSource.all[0].emit('stock', 'no-json')
+    expect(onStock).toHaveBeenCalledTimes(1)
+    expect(onStock).toHaveBeenCalledWith({ version: 5, items: [] })
+
+    // Sin onStock: el evento no rompe nada.
+    setup([{ ok: true, ticket: 't2' }])
+    await flush()
+    expect(() => FakeSource.all[1].emit('stock', '{"version":1}')).not.toThrow()
+  })
+
   it('onerror: cierra la fuente y reconecta con ticket nuevo tras backoff; se resetea al abrir', async () => {
     const { fetchTicket } = setup([
       { ok: true, ticket: 't1' },
