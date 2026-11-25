@@ -13,6 +13,8 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 | 2 | `ciclo-suscripcion-eventos` | omero-billing | 1 (endpoint) | historial, eventos con datos del recibo, grupos de rechazo, suspensión → baja, encuesta de baja, datos del registro |
 | 3 | `notificaciones-email` | omero-backend | 1 | layout de marca + bloques + SMTP genérico (proveedor se conecta con credenciales) |
 | 4 | `flujo-cobro-exitoso-bienvenida` | omero-backend | 1, 2, 3 | **primer flujo real**: recibo de cobro + bienvenida/onboarding + verificación de email |
+| 4b | `cuenta-seguridad` (spec C) | omero-backend → omero → omero-electron | 1, 3 | recuperar/cambiar contraseña, aviso de dispositivo nuevo, invitaciones por email |
+| 4c | `flujo-cuenta-cobros` (spec A) | omero-backend → omero | 1, 2, 3, 4 | fin de prueba, renovación, dunning, suspensión, baja, borrado, cancelación |
 | 5 | `notificaciones-motor` | omero, omero-electron | 1 | banner, bandeja, modal, preferencias, `/verificar-email` (admin) |
 | 6 | `registro-onboarding` | omero-landing | 2 | rubro, celular, opt-ins, origen del alta, logo para emails (TyC ya hechos en esta branch) |
 | 7 | `onboarding-guias` | omero-backend → omero → omero-electron | 1 | asistente, Primeros pasos, framework de guías + guías P1 |
@@ -24,7 +26,7 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 
 ## Decisiones tomadas
 - Motor dentro de omero-backend; billing emite eventos.
-- Proveedores de email/WhatsApp a definir; todo se construye con adaptadores intercambiables (email arranca por SMTP genérico).
+- Proveedores con adaptadores intercambiables. Email: primer adaptador por **API HTTPS** porque Railway Hobby bloquea SMTP (recomendado Resend, **a confirmar**); SMTP queda para local/Railway Pro. WhatsApp: a definir.
 - Plantillas de email: layout y bloques en el repo, contenido en base editable desde la consola, render propio (no del proveedor).
 - Retención: datos del negocio 60 días después de la baja; contacto se conserva salvo supresión. TyC y privacidad actualizados.
 - Suspensión por falta de pago: **15 días** (configurable) antes de la baja.

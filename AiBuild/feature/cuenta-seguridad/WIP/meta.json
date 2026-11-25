@@ -1,0 +1,33 @@
+{
+  "project": "omero-electron",
+  "feature": "cuenta-seguridad",
+  "ticket_id": null,
+  "raw_input": "Spec C: cuenta y seguridad — recuperar y cambiar contraseña, aviso de dispositivo nuevo, invitación de usuarios por email",
+  "type": "feature",
+  "branch": "feature/comunicaciones-onboarding-metricas",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "specs-ready",
+  "created_at": "2026-11-25T02:00:00Z",
+  "updated_at": "2026-11-25T02:00:00Z",
+  "git": true,
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "pending",
+    "build": "pending",
+    "finish": "pending"
+  },
+  "depends_on": [
+    "cuenta-seguridad (omero-backend, omero)"
+  ],
+  "open_questions": [],
+  "related_specs": [
+    "omero-backend: AiBuild/feature/cuenta-seguridad",
+    "omero: AiBuild/feature/cuenta-seguridad"
+  ],
+  "program_doc": "AiBuild/comunicaciones-onboarding-metricas.md",
+  "tasks": []
+}

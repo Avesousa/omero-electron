@@ -107,7 +107,9 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 | `auth.email_verified` | backend | userId | checklist |
 | `auth.password_reset_requested` | backend | userId, token(ref) | recuperar contraseña |
 | `auth.password_changed` | backend | userId | seguridad |
-| `user.invited` | backend | tenantId, invitedUserId, invitedBy, role | invitación |
+| `user.invited` | backend | tenantId, invitedUserId, invitedBy, role, tokenRef | invitación |
+| `user.invitation_accepted` | backend | tenantId, userId, invitedBy | aviso a quien invitó, checklist |
+| `auth.new_device_login` | backend | userId, label, kind (WEB/CAJA), at | aviso de seguridad |
 | `subscription.transitioned` | billing | subscriptionId, tenantId, from, to, trigger, planCode, accessUntil, graceUntil | journeys de cuenta, métricas |
 | `trial.started` | billing | subscriptionId, tenantId, trialEndsAt, planCode | onboarding |
 | `trial.ending` | job billing | subscriptionId, tenantId, trialEndsAt, daysLeft, amount, cardLast4 | aviso fin de prueba |
@@ -117,6 +119,8 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 | `payment.failed` | billing | paymentId, subscriptionId, tenantId, amount, retryAttempt, rejectionGroup, statusDetail, graceUntil | dunning |
 | `subscription.suspended` | billing | subscriptionId, tenantId, suspendedAt, expiresAt | modal + avisos |
 | `subscription.cancelled` | billing | subscriptionId, tenantId, accessUntil, reasonGroup, reasonDetail | confirmación, encuesta |
+| `subscription.card_updated` | billing | subscriptionId, tenantId, cardBrand, cardLast4 | pospone el dunning 24 h |
+| `subscription.access_ending` | job billing | subscriptionId, tenantId, accessUntil | fin del acceso de una cancelada (−3 días) |
 | `subscription.expired` | billing | subscriptionId, tenantId, dataDeletionAt | baja, retención |
 | `retention.offer_accepted` | billing | subscriptionId, tenantId, reason, offerType | métricas de retención |
 | `tenant.data_deletion_scheduled` | job backend | tenantId, deletionAt, daysLeft | aviso de borrado (−7 d) |
