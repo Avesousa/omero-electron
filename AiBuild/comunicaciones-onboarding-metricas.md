@@ -27,8 +27,12 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 - Proveedores de email/WhatsApp a definir; todo se construye con adaptadores intercambiables (email arranca por SMTP genérico).
 - Plantillas de email: layout y bloques en el repo, contenido en base editable desde la consola, render propio (no del proveedor).
 - Retención: datos del negocio 60 días después de la baja; contacto se conserva salvo supresión. TyC y privacidad actualizados.
-- Suspensión por falta de pago: 30 días (configurable) antes de la baja.
-- Consola interna **dentro de `omero`** (sin app nueva) en **`panel.omero.ar`**, dominio extra del mismo servicio de Railway que entra directo a la consola (respaldo: `/plataforma` + acceso en el menú); roles `OMERO_ADMIN` / `OMERO_OPERADOR` en el mismo login. **v1 solo correo.**
+- Suspensión por falta de pago: **15 días** (configurable) antes de la baja.
+- Avisos de cobros y de cuenta: **solo a los dueños** del negocio (rol `omero-admin` del tenant).
+- Aviso de renovación 3 días antes de cada cobro: **todos los planes**.
+- Respuestas de los emails: **`soporte@omero.ar`**. Remitente de envío: a definir.
+- Roles de la consola: **`PLATAFORMA_ADMIN` / `PLATAFORMA_OPERADOR`** (no `omero-admin`/`omero-operador`, que ya son roles de los negocios), con permisos `platformOnly`.
+- Consola interna **dentro de `omero`** (sin app nueva) en **`panel.omero.ar`**, dominio extra del mismo servicio de Railway que entra directo a la consola (respaldo: `/plataforma` + acceso en el menú); roles `PLATAFORMA_ADMIN` / `PLATAFORMA_OPERADOR` en el mismo login. **v1 solo correo.**
 - Motivos de baja según `motivos-de-baja.md`.
 
 ## Migraciones reservadas (renumerar al mergear si chocan)

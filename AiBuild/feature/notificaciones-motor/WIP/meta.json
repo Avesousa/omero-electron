@@ -22,8 +22,6 @@
   },
   "depends_on": [],
   "open_questions": [
-    "Ventana de suspensión antes de la baja: default 30 días (BILLING_SUSPENSION_DAYS)",
-    "Avisos de cobro: ¿todos los usuarios con SUSCRIPCION_VER o solo el dueño? Default: todos con el permiso",
     "Renumerar migraciones V43+ si colisionan con feature/caja-apertura-cierre"
   ],
   "related_specs": [

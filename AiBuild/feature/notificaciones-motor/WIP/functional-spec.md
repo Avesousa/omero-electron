@@ -51,7 +51,7 @@ Un único motor que recibe **eventos** de negocio ("pago aprobado", "cobro recha
 - **Horario silencioso** (America/Argentina/Buenos_Aires): WhatsApp y push solo de 9:00 a 21:00; fuera de horario se reprograman a las 9:00. `SEGURIDAD` no espera. Email e in-app sin restricción.
 - **Tope de frecuencia** para `ONBOARDING`, `USO`, `MARKETING`: máximo 1 por día y 3 por semana por usuario (configurable). Lo que excede se omite (`SKIPPED_FREQUENCY`), no se acumula.
 - **Escalada por gravedad**: `INFO` → in-app; `IMPORTANTE` → in-app + email; `CRITICO` → in-app + email + WhatsApp (con opt-in) + push.
-- **Destinatarios**: avisos de `COBROS`/`CUENTA` al dueño y usuarios con `SUSCRIPCION_VER`; operativos a quienes tienen el permiso de la herramienta; `SEGURIDAD` al usuario afectado.
+- **Destinatarios**: avisos de `COBROS`/`CUENTA` **solo a los dueños** del negocio (usuarios con el rol `omero-admin` del tenant, el que recibe quien crea la cuenta); operativos a quienes tienen el permiso de la herramienta; `SEGURIDAD` al usuario afectado.
 - **Canal no disponible** (sin email verificado, sin opt-in de WhatsApp, sin suscripción push): ese canal se omite con motivo registrado; nunca bloquea los otros canales.
 - **Email sin verificar**: recibe `SEGURIDAD`, `COBROS` y `CUENTA`; no recibe `ONBOARDING`/`USO`/`MARKETING` hasta verificar.
 
@@ -111,7 +111,8 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 | `subscription.transitioned` | billing | subscriptionId, tenantId, from, to, trigger, planCode, accessUntil, graceUntil | journeys de cuenta, métricas |
 | `trial.started` | billing | subscriptionId, tenantId, trialEndsAt, planCode | onboarding |
 | `trial.ending` | job billing | subscriptionId, tenantId, trialEndsAt, daysLeft, amount, cardLast4 | aviso fin de prueba |
-| `subscription.expiring` | job billing | subscriptionId, tenantId, expiresAt, daysLeft | aviso previo a la baja (−7/−1) |
+| `subscription.renewal_upcoming` | job billing | subscriptionId, tenantId, nextPaymentDate, amount, planName, cardBrand, cardLast4 | aviso de renovación (−3 días, todos los planes) |
+| `subscription.expiring` | job billing | subscriptionId, tenantId, expiresAt, daysLeft | aviso previo a la baja (−7/−3/−1) |
 | `payment.approved` | billing | paymentId, subscriptionId, tenantId, amount, currency, planCode, planName, interval, periodStart, periodEnd, nextPaymentDate, paymentMethod, cardBrand, cardLast4, isFirstPayment, mpPaymentId | recibo, bienvenida como cliente |
 | `payment.failed` | billing | paymentId, subscriptionId, tenantId, amount, retryAttempt, rejectionGroup, statusDetail, graceUntil | dunning |
 | `subscription.suspended` | billing | subscriptionId, tenantId, suspendedAt, expiresAt | modal + avisos |
@@ -176,8 +177,10 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 - Motor dentro de omero-backend; billing solo emite eventos.
 - Proveedores de email y WhatsApp a definir: el motor se construye completo con adaptadores intercambiables y modo `log`.
 - Retención: datos del negocio 60 días después de la baja; contacto hasta pedido de supresión.
-- Configuración de plantillas/reglas desde la consola en `panel.omero.ar`, dentro de la app omero (roles `OMERO_ADMIN` y `OMERO_OPERADOR`).
+- Suspensión por falta de pago: 15 días antes de la baja.
+- Avisos de `COBROS`/`CUENTA`: solo dueños.
+- Remitente de respuestas: `soporte@omero.ar`.
+- Configuración de plantillas/reglas desde la consola en `panel.omero.ar`, dentro de la app omero (roles `PLATAFORMA_ADMIN` y `PLATAFORMA_OPERADOR`).
 
 ## Open questions
-- Ventana de suspensión antes de la baja definitiva: se deja configurable con **30 días** por defecto (`BILLING_SUSPENSION_DAYS`).
-- ¿Los avisos de cobro los ven todos los usuarios con `SUSCRIPCION_VER` o solo el dueño? Default: todos con el permiso.
+- Ninguna abierta del motor (24/11: suspensión 15 días, avisos de cobro solo a dueños, aviso de renovación en todos los planes).
