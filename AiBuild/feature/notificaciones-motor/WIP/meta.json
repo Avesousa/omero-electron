@@ -1,0 +1,33 @@
+{
+  "project": "omero-electron",
+  "feature": "notificaciones-motor",
+  "ticket_id": null,
+  "raw_input": "Motor de avisos centralizado: eventos → reglas → plantillas → canales (in-app, email, push, WhatsApp) con adaptadores intercambiables",
+  "type": "feature",
+  "branch": "feature/comunicaciones-onboarding-metricas",
+  "main_branch": "develop",
+  "tests_required": true,
+  "language": "es",
+  "create_claude_md": false,
+  "status": "specs-ready",
+  "created_at": "2026-11-22T21:00:00Z",
+  "updated_at": "2026-11-22T21:00:00Z",
+  "git": true,
+  "steps": {
+    "functional_spec": "done",
+    "technical_spec": "done",
+    "plan": "pending",
+    "build": "pending",
+    "finish": "pending"
+  },
+  "depends_on": [],
+  "open_questions": [
+    "Renumerar migraciones V43+ si colisionan con feature/caja-apertura-cierre"
+  ],
+  "related_specs": [
+    "omero-backend: AiBuild/feature/notificaciones-motor",
+    "omero: AiBuild/feature/notificaciones-motor"
+  ],
+  "program_doc": "AiBuild/comunicaciones-onboarding-metricas.md",
+  "tasks": []
+}
