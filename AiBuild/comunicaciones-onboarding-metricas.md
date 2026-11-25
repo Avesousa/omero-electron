@@ -45,3 +45,21 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 omero-backend: V43 notifications_core, V44 users_contact_fields, V45 notifications_seed, V46 email_verification, V47 seed_flow_receipt_welcome, V48 whatsapp, V49 onboarding, V50 tenant_retention, V51–V52 analytics, V53 platform_roles.
 omero-billing: V6 subscription_history_and_events, V7 retention_offers.
 omero-backend (spec B): V57 retention_support. (spec D): V58 seed_activation_journey. (spec E): V59 push. (spec F): V60 seed_engagement.
+
+## Estado — MVP de onboarding (25/11/2026)
+
+Recorte para empezar a vender: email de bienvenida/onboarding + verificación de email + "Primeros pasos" y guías P1 en el admin. Entregado en `feature/onboarding-mvp` (omero-backend y omero), un PR por repo contra `develop`.
+
+| Feature | Repo | Estado | Qué entró en el MVP | Qué queda |
+|---|---|---|---|---|
+| `notificaciones-motor` | omero-backend | mvp-done | event_log, reglas, plantillas, notify_message, despacho con SKIP LOCKED + reintentos, render por canal, adaptador log; `account.created` | `/internal/events` (billing), in-app/banners, preferencias, unsubscribe, quiet hours, topes |
+| `notificaciones-email` | omero-backend | mvp-done | layout de marca + bloques, Resend, adaptador file (dev), preview dev | webhooks de Resend, SMTP, tope diario, consola |
+| `flujo-cobro-exitoso-bienvenida` | omero-backend | mvp-done (bienvenida) | `account.welcome` + verificación de email (token HMAC por mensaje, 72 h) + `emailVerified` en login/me | recibo de cobro (`payment.receipt`, depende de billing) |
+| `onboarding-guias` | omero-backend / omero | mvp-done (P1) | checklist de 5 pasos derivado de datos, progreso de guías, framework de guías + P1 (productos, medios de pago, instalación del POS, venta en caja, suscripción), `?guia=` | wizard, plantillas por rubro, pasos opcionales, "Qué cambió", guías del POS (omero-electron), P2/P3 |
+| `notificaciones-motor` (admin) | omero | mvp-done (parcial) | página `/verificar-email` | bandeja, banners, modal, preferencias |
+| `ciclo-suscripcion-eventos` | omero-billing | pending | — (el MVP no toca billing) | todo |
+| resto del programa | — | specs-ready | — | según el orden sugerido |
+
+Migraciones usadas en omero-backend: V43 notifications_core, V44 users_email_verified, V45 email_verification, V46 onboarding (las reservas de la tabla de arriba se corren: renumerar las siguientes desde V47).
+
+Deploy: `NOTIFY_APP_URL` (URL pública del admin), `NOTIFY_EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `NOTIFY_VERIFY_SECRET` (opcional, se deriva de JWT_SECRET), dominio `mail.omero.ar` verificado en Resend con click-tracking desactivado.
