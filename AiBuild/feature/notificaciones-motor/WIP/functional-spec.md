@@ -128,7 +128,12 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 | `sale.first_created` | backend | tenantId, saleId, total | celebración, checklist |
 | `product.created` / `bulk_upload.completed` | backend | tenantId, count | checklist |
 | `device.linked` | backend | tenantId, deviceId, deviceName | checklist |
-| `tool.not_used` | job backend | tenantId, toolId, daysSinceSignup | engagement |
+| `tool.not_used` | job backend | tenantId, toolId, daysSinceSignup | sugerencia de herramienta (spec F) |
+| `engagement.weekly_summary` | job backend | tenantId, isoWeek | resumen semanal |
+| `winback.due` | backend | tenantId, subscriptionId, variant (VALUE_7D, PROMO_30D) | win-back según motivo de baja |
+| `support.at_risk_digest` | job backend | isoWeek, tenants[] | lista semanal de negocios en riesgo para soporte |
+| `ops.sales_to_review` / `ops.sales_to_review_cleared` | job backend | tenantId, count | aviso operativo |
+| `cash.session_left_open` | backend (feature de caja) | tenantId, cashSessionId, cashName, openedAt | caja sin cerrar (futuro) |
 | `tenant.inactive` | job backend | tenantId, daysWithoutSales | inactividad |
 | `tenant.health_dropped` | job backend | tenantId, score, band | riesgo |
 | `feature.released` | consola | toolId, version, changes[] | novedades |

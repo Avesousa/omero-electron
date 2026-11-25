@@ -23,6 +23,8 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 | 8 | `retencion-datos` | omero-backend | 1, 2 | borrado a los 60 días (en dry-run hasta validar) |
 | 9 | `metricas-negocio` | omero-backend | 1, 2 | schema analytics, snapshots, health score, tableros Grafana |
 | 10 | `consola-omero` | omero-backend → omero | 1, 3 | **v1 solo correo** en `panel.omero.ar` (sección `/plataforma` del admin, mismo servicio de Railway): plantillas de email, journeys, envíos, estado del canal. v2: clientes, métricas, otros canales |
+| 9b | `engagement` (spec F) | omero-backend (+ promo en billing) | 1, 3, 7, 9, 4d | resumen semanal, inactividad 3/7/14, herramientas sin usar, win-back, negocios en riesgo para soporte, avisos operativos |
+| 10b | `notificaciones-push` (spec E) | omero-backend → omero → omero-electron | 1, 5 | Web Push con opt-in propio en el admin, notificación nativa en la caja |
 | 11 | `notificaciones-whatsapp` | omero-backend | 1 | cuando se elija proveedor |
 | — | Adaptador de email por API | omero-backend | 3 | cuando se elija proveedor (seguimiento de entregas/rebotes) |
 
@@ -42,4 +44,4 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 ## Migraciones reservadas (renumerar al mergear si chocan)
 omero-backend: V43 notifications_core, V44 users_contact_fields, V45 notifications_seed, V46 email_verification, V47 seed_flow_receipt_welcome, V48 whatsapp, V49 onboarding, V50 tenant_retention, V51–V52 analytics, V53 platform_roles.
 omero-billing: V6 subscription_history_and_events, V7 retention_offers.
-omero-backend (spec B): V57 retention_support. (spec D): V58 seed_activation_journey.
+omero-backend (spec B): V57 retention_support. (spec D): V58 seed_activation_journey. (spec E): V59 push. (spec F): V60 seed_engagement.
