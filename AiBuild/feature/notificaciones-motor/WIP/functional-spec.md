@@ -112,6 +112,7 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 | `auth.new_device_login` | backend | userId, label, kind (WEB/CAJA), at | aviso de seguridad |
 | `subscription.transitioned` | billing | subscriptionId, tenantId, from, to, trigger, planCode, accessUntil, graceUntil | journeys de cuenta, métricas |
 | `trial.started` | billing | subscriptionId, tenantId, trialEndsAt, planCode | onboarding |
+| `trial.midpoint` | job backend | subscriptionId, tenantId, trialEndsAt, daysLeft | email de mitad de prueba (journey de activación) |
 | `trial.ending` | job billing | subscriptionId, tenantId, trialEndsAt, daysLeft, amount, cardLast4 | aviso fin de prueba |
 | `subscription.renewal_upcoming` | job billing | subscriptionId, tenantId, nextPaymentDate, amount, planName, cardBrand, cardLast4 | aviso de renovación (−3 días, todos los planes) |
 | `subscription.expiring` | job billing | subscriptionId, tenantId, expiresAt, daysLeft | aviso previo a la baja (−7/−3/−1) |

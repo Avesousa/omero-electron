@@ -17,8 +17,9 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 | 4c | `flujo-cuenta-cobros` (spec A) | omero-backend → omero | 1, 2, 3, 4 | fin de prueba, renovación, dunning, suspensión, baja, borrado, cancelación |
 | 4d | `encuesta-baja-retencion` (spec B) | omero-billing → omero-backend → omero | 2, 4c, 8 | encuesta de baja, oferta por motivo (bajar de plan, 30 % × 2 cobros, +7 días, ayuda), pedidos de funciones, aviso a soporte |
 | 5 | `notificaciones-motor` | omero, omero-electron | 1 | banner, bandeja, modal, preferencias, `/verificar-email` (admin) |
-| 6 | `registro-onboarding` | omero-landing | 2 | rubro, celular, opt-ins, origen del alta, logo para emails (TyC ya hechos en esta branch) |
+| 6 | `registro-onboarding` | omero-landing | 2 | rubro, celular, opt-ins, origen del alta, logo para emails, `/registro/listo` con "revisá tu email" (spec G) (TyC ya hechos en esta branch) |
 | 7 | `onboarding-guias` | omero-backend → omero → omero-electron | 1 | asistente, Primeros pasos, framework de guías + guías P1 |
+| 7b | `journey-activacion` (spec D) | omero-backend | 1, 3, 4, 7 | emails condicionados: +24 h sin productos (consejo por rubro), +48 h sin ventas, +5 días sin POS, primera venta, mitad de prueba |
 | 8 | `retencion-datos` | omero-backend | 1, 2 | borrado a los 60 días (en dry-run hasta validar) |
 | 9 | `metricas-negocio` | omero-backend | 1, 2 | schema analytics, snapshots, health score, tableros Grafana |
 | 10 | `consola-omero` | omero-backend → omero | 1, 3 | **v1 solo correo** en `panel.omero.ar` (sección `/plataforma` del admin, mismo servicio de Railway): plantillas de email, journeys, envíos, estado del canal. v2: clientes, métricas, otros canales |
@@ -41,4 +42,4 @@ Cada feature tiene su carpeta `AiBuild/feature/<feature>/WIP/` con `functional-s
 ## Migraciones reservadas (renumerar al mergear si chocan)
 omero-backend: V43 notifications_core, V44 users_contact_fields, V45 notifications_seed, V46 email_verification, V47 seed_flow_receipt_welcome, V48 whatsapp, V49 onboarding, V50 tenant_retention, V51–V52 analytics, V53 platform_roles.
 omero-billing: V6 subscription_history_and_events, V7 retention_offers.
-omero-backend (spec B): V57 retention_support.
+omero-backend (spec B): V57 retention_support. (spec D): V58 seed_activation_journey.
