@@ -131,7 +131,8 @@ Convención `dominio.accion` en pasado. Cada evento declara fuente y payload mí
 | `tenant.inactive` | job backend | tenantId, daysWithoutSales | inactividad |
 | `tenant.health_dropped` | job backend | tenantId, score, band | riesgo |
 | `feature.released` | consola | toolId, version, changes[] | novedades |
-| `feature.requested` | billing/admin | tenantId, feature, source (CANCELACION, SOPORTE) | avisar cuando salga |
+| `feature.requested` | billing/admin | tenantId, text, source (CANCELACION, SOPORTE) | registro de pedidos; avisar cuando salga |
+| `support.callback_requested` | billing | tenantId, subscriptionId, reason, detail, comment, priority | email interno a soporte (audiencia `SUPPORT_INBOX`) |
 | `payment_method.configured` | backend | tenantId, kinds[] | checklist |
 | `purchase.first_created` | backend | tenantId, purchaseId | checklist |
 | `pos.session_started` | backend | tenantId, userId, deviceId?, runtime (DESKTOP/WEB) | checklist (abrir la caja) |
