@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import type { CartItem, Product } from '../types'
 import { STRINGS } from '../constants/strings'
 import { usePromotions } from './usePromotions'
@@ -7,13 +7,28 @@ import { lineTotal, roundKg } from '@/lib/quantity'
 
 export const useCart = (showNotification?: (message: string, type: 'success' | 'error' | 'info') => void) => {
   const [rawCart, setRawCart] = useState<CartItem[]>([])
-  const { applyPromotions } = usePromotions()
+  const [scheduleTick, setScheduleTick] = useState(0)
+  const { applyPromotions, promotions } = usePromotions()
+  const watchSchedule = rawCart.length > 0 && promotions.some(promo =>
+    promo.startsAt || promo.endsAt || promo.days?.length || (promo.timeFrom && promo.timeTo)
+  )
 
-  // Aplicar promociones usando useMemo para evitar re-renders innecesarios
+  useEffect(() => {
+    if (!watchSchedule) return
+    const timer = window.setInterval(() => setScheduleTick(tick => tick + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [watchSchedule])
+
   const cart = useMemo(() => {
     if (rawCart.length === 0) return []
     return applyPromotions(rawCart)
-  }, [rawCart, applyPromotions])
+  }, [rawCart, applyPromotions, scheduleTick])
+
+  // El cobro recalcula justo al abrirse y conserva esas líneas durante el pago.
+  const getCheckout = () => {
+    const items = applyPromotions(rawCart)
+    return { items, total: cartTotal(items) }
+  }
 
   /** Agrega unidades. Las líneas por unidad de un mismo producto se acumulan en una sola. */
   const addToCart = (product: Product, quantity: number) => {
@@ -91,8 +106,6 @@ export const useCart = (showNotification?: (message: string, type: 'success' | '
     }
   }
 
-  const total = Math.round(cart.reduce((sum, item) => sum + (item.total || 0), 0) * 100) / 100
-
   return {
     cart,
     addToCart,
@@ -101,7 +114,12 @@ export const useCart = (showNotification?: (message: string, type: 'success' | '
     updateCartItemWeight,
     removeFromCart,
     clearCart,
-    total,
+    total: cartTotal(cart),
+    getCheckout,
     itemCount: cart.length
   }
+}
+
+function cartTotal(items: CartItem[]): number {
+  return Math.round(items.reduce((sum, item) => sum + (item.total || 0), 0) * 100) / 100
 }

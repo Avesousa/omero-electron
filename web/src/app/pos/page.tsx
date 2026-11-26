@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import type { InputMode, DeleteModalState, Product } from './types'
+import type { CartItem, InputMode, DeleteModalState, Product } from './types'
 import { STRINGS, MOCK_PRODUCTS } from './constants'
 
 // Components
@@ -116,8 +116,9 @@ export default function POSPage() {
     lastPaymentTime,
   })
   const {
-    cart, addToCart, addWeightToCart, updateCartItemQuantity, updateCartItemWeight, removeFromCart, clearCart, total,
+    cart, addToCart, addWeightToCart, updateCartItemQuantity, updateCartItemWeight, removeFromCart, clearCart, total, getCheckout,
   } = useCart(showNotification)
+  const checkoutItems = useRef<CartItem[]>([])
   const { 
     paymentState, 
     openPaymentModal, 
@@ -510,7 +511,9 @@ export default function POSPage() {
     void refreshPaymentMethods() // por si se cambiaron en Configuración (sigue vigente la última lista conocida)
     paymentPicker.reset()
     if (canCredit) void refreshCustomers()
-    openPaymentModal(total, creditCollection ? { creditDebt: creditCollection.debt, creditCustomer: creditCollection.customer } : {})
+    const checkout = getCheckout()
+    checkoutItems.current = checkout.items
+    openPaymentModal(checkout.total, creditCollection ? { creditDebt: creditCollection.debt, creditCustomer: creditCollection.customer } : {})
   }
 
   // Clientes con crédito: abrir, elegir (carga sus líneas pendientes al proceso de venta) y cerrar
@@ -564,6 +567,7 @@ export default function POSPage() {
     creditCustomer: Customer | null = null
   ): Promise<boolean> => {
     try {
+      const items = checkoutItems.current
       // Cobro de deuda + venta nueva en un mismo pago: son DOS registros. Los pagos ingresados van primero al
       // cobro del crédito (en orden) y el resto a la venta.
       const hasCollection = !!creditCollection && collectAmount > 0
@@ -594,10 +598,10 @@ export default function POSPage() {
         clearCreditCollection()
         void outbox.refresh()
         void refreshCustomers()
-        if (cart.length === 0) return true
+        if (items.length === 0) return true
       }
 
-      const result = await createSale(cart, sale, change, creditCustomer?.id)
+      const result = await createSale(items, sale, change, creditCustomer?.id)
 
       if (result.success) {
         if (creditCustomer) void refreshCustomers()
