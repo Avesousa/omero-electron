@@ -1,0 +1,319 @@
+{
+  "_comment": "Casos compartidos entre PromotionCasesTest (backend) y los tests del admin (omero) y de la caja (omero-electron). Vigencia: startsAt inclusivo, endsAt exclusivo, días 1=lunes..7=domingo, horario [timeFrom,timeTo) en la zona del negocio ('zone'). 'expect' del schedule: ALWAYS (aplica ahora) | SCHEDULED | OUT_OF_HOURS | EXPIRED; la caja aplica la promo solo si es ALWAYS. Escalones (VOLUME): rige el escalón más alto cuyo minQuantity <= cantidad, a TODAS las unidades; debajo del primero, precio normal.",
+  "scheduleCases": [
+    {
+      "name": "sin vigencia: siempre",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {},
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "programada: todavía no empezó",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "startsAt": "2026-12-01T03:00:00Z"
+      },
+      "expect": "SCHEDULED"
+    },
+    {
+      "name": "empieza justo ahora: ya aplica (inicio inclusivo)",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "startsAt": "2026-11-25T15:00:00Z"
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "terminó",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "endsAt": "2026-11-20T03:00:00Z"
+      },
+      "expect": "EXPIRED"
+    },
+    {
+      "name": "termina justo ahora: ya no aplica (fin exclusivo)",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "endsAt": "2026-11-25T15:00:00Z"
+      },
+      "expect": "EXPIRED"
+    },
+    {
+      "name": "dentro de las fechas",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "startsAt": "2026-11-01T03:00:00Z",
+        "endsAt": "2026-12-01T03:00:00Z"
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "lunes a viernes, un miércoles",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "lunes a viernes, un sábado",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-28T15:00:00Z",
+      "promo": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "expect": "OUT_OF_HOURS"
+    },
+    {
+      "name": "solo domingo, un domingo",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-29T15:00:00Z",
+      "promo": {
+        "days": [
+          7
+        ]
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "los 7 días equivale a todos",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-28T15:00:00Z",
+      "promo": {
+        "days": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "horario 18 a 23, a las 20",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T23:00:00Z",
+      "promo": {
+        "timeFrom": "18:00",
+        "timeTo": "23:00"
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "horario 18 a 23, a las 18 justas (inicio inclusivo)",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T21:00:00Z",
+      "promo": {
+        "timeFrom": "18:00",
+        "timeTo": "23:00"
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "horario 18 a 23, a las 23 justas (fin exclusivo)",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-26T02:00:00Z",
+      "promo": {
+        "timeFrom": "18:00",
+        "timeTo": "23:00"
+      },
+      "expect": "OUT_OF_HOURS"
+    },
+    {
+      "name": "horario 18 a 23, a las 10",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T13:00:00Z",
+      "promo": {
+        "timeFrom": "18:00",
+        "timeTo": "23:00"
+      },
+      "expect": "OUT_OF_HOURS"
+    },
+    {
+      "name": "zona del negocio: 22:30 en Buenos Aires",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-26T01:30:00Z",
+      "promo": {
+        "timeFrom": "22:00",
+        "timeTo": "23:00"
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "zona del negocio: ese mismo instante en UTC es 01:30",
+      "zone": "UTC",
+      "now": "2026-11-26T01:30:00Z",
+      "promo": {
+        "timeFrom": "22:00",
+        "timeTo": "23:00"
+      },
+      "expect": "OUT_OF_HOURS"
+    },
+    {
+      "name": "zona del negocio: miércoles 22:30 en Buenos Aires",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-26T01:30:00Z",
+      "promo": {
+        "days": [
+          3
+        ]
+      },
+      "expect": "ALWAYS"
+    },
+    {
+      "name": "zona del negocio: ese instante ya es jueves en UTC",
+      "zone": "UTC",
+      "now": "2026-11-26T01:30:00Z",
+      "promo": {
+        "days": [
+          3
+        ]
+      },
+      "expect": "OUT_OF_HOURS"
+    },
+    {
+      "name": "vencida gana sobre fuera de horario",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "endsAt": "2026-11-20T03:00:00Z",
+        "days": [
+          6
+        ]
+      },
+      "expect": "EXPIRED"
+    },
+    {
+      "name": "programada gana sobre fuera de horario",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "startsAt": "2026-12-01T03:00:00Z",
+        "days": [
+          6
+        ]
+      },
+      "expect": "SCHEDULED"
+    },
+    {
+      "name": "fechas + días + horario, todo adentro",
+      "zone": "America/Argentina/Buenos_Aires",
+      "now": "2026-11-25T15:00:00Z",
+      "promo": {
+        "startsAt": "2026-11-01T03:00:00Z",
+        "endsAt": "2026-12-01T03:00:00Z",
+        "days": [
+          3
+        ],
+        "timeFrom": "09:00",
+        "timeTo": "13:00"
+      },
+      "expect": "ALWAYS"
+    }
+  ],
+  "tierCases": [
+    {
+      "name": "debajo del primer escalón: precio normal",
+      "normalPrice": "1500",
+      "tiers": [
+        {
+          "minQuantity": 3,
+          "price": "1200"
+        },
+        {
+          "minQuantity": 6,
+          "price": "1000"
+        }
+      ],
+      "quantity": 2,
+      "expectUnitPrice": "1500"
+    },
+    {
+      "name": "justo en el primer escalón",
+      "normalPrice": "1500",
+      "tiers": [
+        {
+          "minQuantity": 3,
+          "price": "1200"
+        },
+        {
+          "minQuantity": 6,
+          "price": "1000"
+        }
+      ],
+      "quantity": 3,
+      "expectUnitPrice": "1200"
+    },
+    {
+      "name": "entre escalones: el más alto alcanzado, para todas las unidades",
+      "normalPrice": "1500",
+      "tiers": [
+        {
+          "minQuantity": 3,
+          "price": "1200"
+        },
+        {
+          "minQuantity": 6,
+          "price": "1000"
+        }
+      ],
+      "quantity": 5,
+      "expectUnitPrice": "1200"
+    },
+    {
+      "name": "justo en el segundo escalón",
+      "normalPrice": "1500",
+      "tiers": [
+        {
+          "minQuantity": 3,
+          "price": "1200"
+        },
+        {
+          "minQuantity": 6,
+          "price": "1000"
+        }
+      ],
+      "quantity": 6,
+      "expectUnitPrice": "1000"
+    },
+    {
+      "name": "muy por encima del último",
+      "normalPrice": "1500",
+      "tiers": [
+        {
+          "minQuantity": 3,
+          "price": "1200"
+        },
+        {
+          "minQuantity": 6,
+          "price": "1000"
+        }
+      ],
+      "quantity": 20,
+      "expectUnitPrice": "1000"
+    }
+  ]
+}

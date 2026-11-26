@@ -126,6 +126,30 @@ describe('useCart', () => {
   })
 
   describe('promociones', () => {
+    it('actualiza el carrito sin cambios y recalcula al abrir el cobro', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(new Date('2026-11-26T15:00:00.000Z'))
+        promotions = [{ ...promo, endsAt: '2026-11-26T15:00:00.500Z' }]
+        const { result, unmount } = await cart()
+        act(() => result.current.addToCart(unitProduct(), 3))
+        expect(result.current.total).toBe(2700)
+        const checkout = result.current.getCheckout()
+
+        act(() => vi.advanceTimersByTime(500))
+        expect(result.current.getCheckout().total).toBe(3000)
+        expect(checkout.items[0].promotionId).toBe('p1')
+        expect(checkout.total).toBe(2700)
+
+        act(() => vi.advanceTimersByTime(500))
+        expect(result.current.total).toBe(3000)
+        expect(result.current.cart[0].promotionId).toBeUndefined()
+        unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('una promoción por cantidad aplica a las unidades', async () => {
       promotions = [promo]
       const { result } = await cart()
