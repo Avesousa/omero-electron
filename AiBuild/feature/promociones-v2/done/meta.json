@@ -9,16 +9,16 @@
   "tests_required": true,
   "language": "es",
   "create_claude_md": false,
-  "status": "specs-ready",
+  "status": "done",
   "created_at": "2026-11-26T01:10:00Z",
-  "updated_at": "2026-11-26T01:10:00Z",
+  "updated_at": "2026-11-26T02:00:00Z",
   "git": true,
   "steps": {
     "functional_spec": "done",
     "technical_spec": "done",
-    "plan": "pending",
-    "build": "pending",
-    "finish": "pending"
+    "plan": "done",
+    "build": "done",
+    "finish": "done"
   },
   "depends_on": [
     "ui-kit-altas"
@@ -30,5 +30,35 @@
   ],
   "program_doc": "AiBuild/redisenio-altas-compras.md",
   "design": "https://claude.ai/artifact/STxp7XLM8ie2adNRFfaxMq",
-  "tasks": []
+  "tasks": [
+    {
+      "id": "T1",
+      "status": "done"
+    },
+    {
+      "id": "T2",
+      "status": "done"
+    },
+    {
+      "id": "T3",
+      "status": "done"
+    },
+    {
+      "id": "T4",
+      "status": "done"
+    },
+    {
+      "id": "T5",
+      "status": "done"
+    },
+    {
+      "id": "T6",
+      "status": "done"
+    },
+    {
+      "id": "T7",
+      "status": "done"
+    }
+  ],
+  "notes": "Backend ya está (rac-be-promos, contrato promo-cases.json). El admin (omero) sigue pendiente: desplegar esta caja antes de habilitar la carga de vigencia/escalones."
 }
