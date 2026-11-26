@@ -449,6 +449,7 @@ El snapshot SQLite de medios de pago es por tenant, no por usuario: `catalog-pro
 
 Backend: ver `omero-backend/CLAUDE.md` ("Promociones v2"). Cada promo de `GET /api/promotions` puede traer `startsAt`/`endsAt`, `days` (1=lunes..7), `timeFrom`/`timeTo` ("HH:mm") y `schedule`.
 - **Vigencia:** `lib/promotions/schedule.ts` → `isPromotionActiveNow(promo, now, timeZone)` (puro). `usePromotions.detectApplicablePromotions` lo evalúa en cada cálculo del carrito con `new Date()` y `getTenantTimeZone()` (hora del negocio, no la del equipo); las promos fuera de vigencia no se detectan ni se aplican. La caja ignora `schedule` (puede venir viejo por un 304) y recalcula con los campos. Sin campos = siempre activa. La franja solo rige si vienen `timeFrom` y `timeTo`.
+- **Carrito y cobro:** un carrito con productos se actualiza cada segundo si hay promociones con vigencia. Al abrir el cobro se recalcula en el instante y se conservan esas líneas durante el pago para mantener el total informado al cajero.
 - **Escalones (VOLUME):** el producto se repite en `products` con distinto `minQuantity`; `lib/promotions/tiers.ts` → `pickTier` elige el más alto alcanzado y su precio rige para TODAS las unidades.
 - **Offline / allowlist:** la caché guarda el JSON crudo (los campos viajan solos); no hay rutas nuevas.
 - Tests: `lib/promotions/*.test.ts` y `hooks/__tests__/usePromotions.test.ts`, con `lib/__fixtures__/promo-cases.json` (copia del backend: mantener idéntico).
