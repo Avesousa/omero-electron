@@ -444,3 +444,11 @@ El snapshot SQLite de medios de pago es por tenant, no por usuario: `catalog-pro
 - **Offline**: lista y detalle salen de la caché SQLite (el detalle solo si el cliente se consultó antes con conexión; si no, error claro). El cobro de deuda va SIEMPRE al outbox (`CREDIT_COLLECTION`, responde `queued` con `debtAfter` aproximada). La venta a crédito lleva `customerId` y va por el outbox como cualquier venta.
 - **Sin soporte offline: alta rápida de cliente** (`POST /api/customers/quick`): el código lo asigna el backend, así que sin conexión se muestra "Sin conexión: no se puede crear un cliente nuevo ahora…". Decisión: no se inventa un alta local.
 - Tests: `app/pos/__tests__/creditFlow.test.tsx` (pantalla completa con teclas), `PaymentModal.test`, `utils/credit.test`, `lib/customersApi.test`, `hooks/__tests__/useCustomers.test`.
+
+## Promociones v2: vigencia y escalones en la caja (branch: feature/promociones-v2)
+
+Backend: ver `omero-backend/CLAUDE.md` ("Promociones v2"). Cada promo de `GET /api/promotions` puede traer `startsAt`/`endsAt`, `days` (1=lunes..7), `timeFrom`/`timeTo` ("HH:mm") y `schedule`.
+- **Vigencia:** `lib/promotions/schedule.ts` → `isPromotionActiveNow(promo, now, timeZone)` (puro). `usePromotions.detectApplicablePromotions` lo evalúa en cada cálculo del carrito con `new Date()` y `getTenantTimeZone()` (hora del negocio, no la del equipo); las promos fuera de vigencia no se detectan ni se aplican. La caja ignora `schedule` (puede venir viejo por un 304) y recalcula con los campos. Sin campos = siempre activa. La franja solo rige si vienen `timeFrom` y `timeTo`.
+- **Escalones (VOLUME):** el producto se repite en `products` con distinto `minQuantity`; `lib/promotions/tiers.ts` → `pickTier` elige el más alto alcanzado y su precio rige para TODAS las unidades.
+- **Offline / allowlist:** la caché guarda el JSON crudo (los campos viajan solos); no hay rutas nuevas.
+- Tests: `lib/promotions/*.test.ts` y `hooks/__tests__/usePromotions.test.ts`, con `lib/__fixtures__/promo-cases.json` (copia del backend: mantener idéntico).

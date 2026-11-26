@@ -3,6 +3,9 @@ import type { CartItem } from '../types'
 import { apiFetch } from '@/lib/apiClient'
 import { lineTotal } from '@/lib/quantity'
 import { isWeightLine } from '../lib/cartLines'
+import { getTenantTimeZone } from '@/lib/tenantTime'
+import { isPromotionActiveNow, type PromotionSchedule } from '@/lib/promotions/schedule'
+import { pickTier } from '@/lib/promotions/tiers'
 
 interface PromotionProduct {
   productCode: string
@@ -10,9 +13,11 @@ interface PromotionProduct {
   promotionalPrice: number
   minQuantity: number
   variantGroupTag?: string | null
+  normalPrice?: number | null
+  costPrice?: number | null
 }
 
-interface Promotion {
+interface Promotion extends PromotionSchedule {
   id: string
   name: string
   type: 'ASSOCIATION' | 'ASSOCIATION_VOLUME' | 'VOLUME' | 'VOLUME_ASSOCIATION'
@@ -48,8 +53,13 @@ export const usePromotions = () => {
     // Las promociones se activan por cantidad de unidades: una pesada (línea por kg) no cuenta.
     const cart = fullCart.filter(item => !isWeightLine(item))
 
+    const now = new Date()
+    const timeZone = getTenantTimeZone()
+
     for (const promotion of promotions) {
       if (promotion.status !== 'ACTIVE') continue
+      // Vigencia (fechas, días, horario): se evalúa en cada cálculo, con la hora del negocio.
+      if (!isPromotionActiveNow(promotion, now, timeZone)) continue
 
       let isApplicable = false
 
@@ -105,11 +115,17 @@ export const usePromotions = () => {
     const promoMap = new Map<string, { id: string; name: string; price: number }>()
 
     for (const promotion of applicablePromotions) {
+      // VOLUME con escalones: el producto se repite con distinto minQuantity; rige el más alto alcanzado.
+      const volumeTiers = promotion.type === 'VOLUME' ? groupTiers(promotion.products) : null
       for (const pp of promotion.products) {
-        if (promotion.type === 'VOLUME') {
-          // Only apply to products that individually meet their threshold
+        if (volumeTiers) {
           const cartItem = cart.find(item => item.code === pp.productCode)
-          if (!cartItem || cartItem.quantity < pp.minQuantity) continue
+          const tier = cartItem ? pickTier(volumeTiers.get(pp.productCode) ?? [], cartItem.quantity) : null
+          if (!tier) continue
+          if (!promoMap.has(pp.productCode)) {
+            promoMap.set(pp.productCode, { id: promotion.id, name: promotion.name, price: tier.promotionalPrice })
+          }
+          continue
         }
 
         if (!promoMap.has(pp.productCode)) {
@@ -158,6 +174,16 @@ export const usePromotions = () => {
     detectApplicablePromotions,
     applyPromotions
   }
+}
+
+function groupTiers(products: PromotionProduct[]): Map<string, PromotionProduct[]> {
+  const map = new Map<string, PromotionProduct[]>()
+  for (const pp of products) {
+    const list = map.get(pp.productCode) ?? []
+    list.push(pp)
+    map.set(pp.productCode, list)
+  }
+  return map
 }
 
 /**
